@@ -19,6 +19,9 @@ go.work
 .vscode/
 .idea/
 
+# Browser edition build output
+browser-edition/dist/
+
 # OS
 .DS_Store
 Thumbs.db

@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Truco Browser Edition (WASM)</title>
+  <link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+  <div class="bg-shape bg-a"></div>
+  <div class="bg-shape bg-b"></div>
+
+  <main class="app">
+    <header class="topbar">
+      <h1>Truco Browser Edition</h1>
+      <p>WebAssembly fork para deploy estático</p>
+    </header>
+
+    <section class="panel setup" id="setup-panel">
+      <h2>Nova partida</h2>
+      <div class="row">
+        <label for="player-name">Seu nome</label>
+        <input id="player-name" type="text" value="Você" />
+      </div>
+      <div class="row">
+        <label for="num-players">Jogadores</label>
+        <select id="num-players">
+          <option value="2">2 jogadores</option>
+          <option value="4">4 jogadores</option>
+        </select>
+      </div>
+      <button id="btn-start" class="btn btn-primary">Iniciar</button>
+      <p class="hint">[1-3] cartas | Truco/6/9/12 | CPU automática</p>
+    </section>
+
+    <section class="panel game hidden" id="game-panel">
+      <div class="scoreline">
+        <div id="score-label">T1 0 x 0 T2</div>
+        <div id="stake-label">Aposta 1</div>
+        <div id="turn-label">Vez de ...</div>
+      </div>
+
+      <div class="table">
+        <div class="players" id="players-line"></div>
+        <div class="round-cards" id="round-cards"></div>
+      </div>
+
+      <div class="actions">
+        <button id="btn-truco" class="btn">Truco / Subir</button>
+        <button id="btn-accept" class="btn">Aceitar</button>
+        <button id="btn-refuse" class="btn">Recusar</button>
+        <button id="btn-new-hand" class="btn">Nova mão</button>
+      </div>
+
+      <div class="hand" id="my-hand"></div>
+      <div class="status" id="status-line">Pronto.</div>
+      <pre class="log" id="log-box"></pre>
+    </section>
+  </main>
+
+  <script src="./wasm_exec.js"></script>
+  <script src="./app.js" type="module"></script>
+</body>
+</html>
