@@ -250,7 +250,7 @@ func (m onlineLobbyModel) View() string {
 		prompt = tr("host_prompt")
 	}
 
-	lines = append(lines, headerStyle.Copy().AlignHorizontal(0.5).Render(tr("online_title")))
+	lines = append(lines, headerStyle.AlignHorizontal(0.5).Render(tr("online_title")))
 	lines = append(lines, lobbyHelpStyle.Render(tr("lobby_help")))
 	lines = append(lines, "")
 	lines = append(lines, titleKey)
@@ -282,7 +282,7 @@ func (m onlineLobbyModel) View() string {
 	}
 	if m.err != nil {
 		lines = append(lines, "")
-		lines = append(lines, alertStyle.Copy().Foreground(lgRed).Render(tr("error_prefix")+m.err.Error()))
+		lines = append(lines, alertStyle.Foreground(lgRed).Render(tr("error_prefix")+m.err.Error()))
 	}
 	lines = append(lines, "")
 	lines = append(lines, fmt.Sprintf("%s %s", prompt, m.renderInputWithCursor()))

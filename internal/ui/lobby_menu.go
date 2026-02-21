@@ -95,7 +95,7 @@ func (m lobbyMenuModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m lobbyMenuModel) View() string {
 	ensureThemeStyles()
 	titleText := fitSingleLine(tr("app_title"), 42)
-	title := headerStyle.Copy().
+	title := headerStyle.
 		Width(46).
 		Align(lipgloss.Center).
 		Render(titleText)

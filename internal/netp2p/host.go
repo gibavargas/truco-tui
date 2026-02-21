@@ -900,7 +900,7 @@ func (h *HostSession) handleConn(conn net.Conn) {
 	slot := -1
 	reconnect := false
 	replacement := false
-	sessionID := joinMsg.SessionID
+	var sessionID string
 	if h.started {
 		slot = h.reconnectSlotLocked(joinMsg.SessionID)
 		if slot != -1 {

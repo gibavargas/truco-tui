@@ -4,139 +4,161 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Truco Browser Edition</title>
-  <meta name="description" content="Truco Paulista jogável no navegador via WebAssembly" />
+  <meta name="description" content="Truco Paulista browser edition em WebAssembly, com paridade de regras com a versão TUI." />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="./style.css" />
 </head>
 <body>
-  <!-- ambient background blobs -->
-  <div class="bg-blob bg-blob--gold"></div>
-  <div class="bg-blob bg-blob--green"></div>
+  <div class="ambient ambient-a"></div>
+  <div class="ambient ambient-b"></div>
 
-  <main class="app">
-    <!-- ─── HEADER ─── -->
-    <header class="header">
-      <div class="header__brand">
-        <span class="header__icon">🃏</span>
+  <main class="app-shell">
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-mark">🂡</span>
         <div>
-          <h1 class="header__title">Truco</h1>
-          <p class="header__sub">Browser Edition · WASM</p>
+          <h1 id="title-main">Truco Browser Edition</h1>
+          <p id="title-sub">Compatível com regras da TUI (WASM)</p>
         </div>
+      </div>
+      <div class="topbar-actions">
+        <label for="locale-select" id="locale-label">Idioma</label>
+        <select id="locale-select" class="field field-sm">
+          <option value="pt-BR">Português (BR)</option>
+          <option value="en-US">English (US)</option>
+        </select>
       </div>
     </header>
 
-    <!-- ─── SETUP PANEL ─── -->
-    <section class="card-panel setup" id="setup-panel">
-      <h2 class="setup__heading">Nova Partida</h2>
-      <div class="form-group">
-        <label class="form-label" for="player-name">
-          <span class="form-label__icon">👤</span> Seu nome
-        </label>
-        <input class="form-input" id="player-name" type="text" value="Você" autocomplete="off" />
+    <section id="setup-panel" class="panel setup-panel">
+      <h2 id="setup-title">Nova partida</h2>
+      <div class="setup-grid">
+        <div>
+          <label for="player-name" id="setup-name-label">Seu nome</label>
+          <input id="player-name" class="field" type="text" value="Você" autocomplete="off" />
+        </div>
+        <div>
+          <label for="num-players" id="setup-players-label">Jogadores</label>
+          <select id="num-players" class="field">
+            <option value="2">2</option>
+            <option value="4">4</option>
+          </select>
+        </div>
       </div>
-      <div class="form-group">
-        <label class="form-label" for="num-players">
-          <span class="form-label__icon">👥</span> Jogadores
-        </label>
-        <select class="form-input" id="num-players">
-          <option value="2">2 jogadores</option>
-          <option value="4">4 jogadores</option>
-        </select>
+      <div class="setup-actions">
+        <button id="btn-start" class="btn btn-primary">▶ <span id="setup-start-label">Iniciar partida</span></button>
       </div>
-      <button class="btn btn--primary btn--lg" id="btn-start">
-        <span class="btn__icon">▶</span> Iniciar Partida
-      </button>
-      <p class="setup__hint">Clique nas cartas para jogar · CPU joga automaticamente</p>
+      <p id="setup-help" class="setup-help">Atalhos: 1/2/3 jogar, T truco/subir, A aceitar, R recusar.</p>
     </section>
 
-    <!-- ─── GAME PANEL ─── -->
-    <section class="card-panel game hidden" id="game-panel">
-
-      <!-- Scoreboard -->
-      <div class="scoreboard">
-        <div class="scoreboard__team scoreboard__team--t1">
-          <span class="scoreboard__label">Time 1</span>
-          <span class="scoreboard__pts" id="score-t1">0</span>
+    <section id="game-panel" class="panel game-panel hidden">
+      <div class="hud">
+        <div class="score-card team-a">
+          <span class="score-label" id="team1-label">Time 1</span>
+          <strong id="score-t1" class="score-value">0</strong>
         </div>
-        <div class="scoreboard__vs">
-          <span class="scoreboard__stake" id="stake-label">1</span>
-          <span class="scoreboard__stake-label">aposta</span>
+        <div class="stake-card">
+          <div class="stake-main"><span id="stake-main-label">Aposta</span> <strong id="stake-value">1</strong></div>
+          <div id="stake-ladder" class="stake-ladder">[1]&gt;3&gt;6&gt;9&gt;12</div>
         </div>
-        <div class="scoreboard__team scoreboard__team--t2">
-          <span class="scoreboard__label">Time 2</span>
-          <span class="scoreboard__pts" id="score-t2">0</span>
+        <div class="score-card team-b">
+          <span class="score-label" id="team2-label">Time 2</span>
+          <strong id="score-t2" class="score-value">0</strong>
         </div>
       </div>
 
-      <!-- Turn indicator -->
-      <div class="turn-bar" id="turn-label">
-        <span class="turn-bar__dot"></span> Vez de ...
-      </div>
+      <div id="turn-line" class="turn-line">Vez de ...</div>
 
-      <!-- Players -->
-      <div class="players-row" id="players-line"></div>
+      <div class="layout">
+        <div class="table-panel" id="table-shell">
+          <div id="seat-top" class="seat seat-top"></div>
+          <div id="seat-left" class="seat seat-left"></div>
+          <div id="seat-right" class="seat seat-right"></div>
+          <div id="seat-bottom" class="seat seat-bottom"></div>
 
-      <!-- Table (felt) -->
-      <div class="felt-table">
-        <div class="felt-table__inner">
-          <div class="felt-table__vira" id="vira-area">
-            <span class="felt-table__vira-label">Vira</span>
-            <div class="felt-table__vira-card" id="vira-card"></div>
+          <div class="table-center">
+            <div class="center-meta">
+              <div class="meta-chip">
+                <span id="meta-vira-label">Vira</span>
+                <div id="vira-card" class="meta-card"></div>
+              </div>
+              <div class="meta-chip">
+                <span id="meta-manilha-label">Manilha</span>
+                <div id="manilha-card" class="manilha-pill">-</div>
+              </div>
+            </div>
+
+            <div id="played-layer" class="played-layer"></div>
+            <div id="anim-layer" class="anim-layer"></div>
           </div>
-          <div class="felt-table__played" id="round-cards">
-            <span class="muted">Mesa vazia</span>
-          </div>
         </div>
+
+        <aside class="side-panel">
+          <div class="side-block">
+            <h3 id="status-title">Status</h3>
+            <div id="status-line" class="status-line">Pronto.</div>
+          </div>
+
+          <div class="side-block">
+            <h3 id="tricks-title">Vazas</h3>
+            <div id="trick-score" class="small-line">T1 0 x 0 T2</div>
+            <div id="trick-history" class="trick-history">V1 ... | V2 ... | V3 ...</div>
+          </div>
+
+          <div class="side-block">
+            <h3 id="help-title">Controles</h3>
+            <ul class="help-list">
+              <li><kbd>1/2/3</kbd> <span id="help-play">jogar carta</span></li>
+              <li><kbd>T</kbd> <span id="help-truco">truco/subir</span></li>
+              <li><kbd>A/R</kbd> <span id="help-answer">responder</span></li>
+            </ul>
+          </div>
+
+          <div class="side-block side-log">
+            <h3 id="log-title">Log da partida</h3>
+            <pre id="log-box"></pre>
+            <div id="error-log" class="error-log"></div>
+          </div>
+        </aside>
       </div>
 
-      <!-- Trick results -->
-      <div class="tricks-row" id="tricks-row"></div>
-
-      <!-- Actions -->
-      <div class="actions-bar">
-        <button class="btn btn--truco" id="btn-truco">
-          <span class="btn__icon">⚡</span> Truco
-        </button>
-        <button class="btn btn--accept" id="btn-accept">
-          <span class="btn__icon">✓</span> Aceitar
-        </button>
-        <button class="btn btn--refuse" id="btn-refuse">
-          <span class="btn__icon">✕</span> Recusar
-        </button>
-        <button class="btn btn--new-hand" id="btn-new-hand">
-          <span class="btn__icon">🔄</span> Nova mão
-        </button>
+      <div class="action-row">
+        <button id="btn-truco" class="btn btn-truco">⚡ <span id="btn-truco-text">Truco</span></button>
+        <button id="btn-accept" class="btn btn-accept">✓ <span id="btn-accept-text">Aceitar</span></button>
+        <button id="btn-refuse" class="btn btn-refuse">✕ <span id="btn-refuse-text">Recusar</span></button>
+        <button id="btn-new-hand" class="btn btn-neutral">↺ <span id="btn-new-hand-text">Nova mão</span></button>
       </div>
 
-      <!-- Player hand -->
-      <div class="hand-area">
-        <span class="hand-area__label">Suas cartas</span>
-        <div class="hand" id="my-hand"></div>
+      <div class="hand-block">
+        <div class="hand-title" id="hand-title">Sua mão</div>
+        <div id="my-hand" class="my-hand"></div>
       </div>
-
-      <!-- Status -->
-      <div class="status-bar" id="status-line">Pronto.</div>
-
-      <!-- Log -->
-      <details class="log-panel">
-        <summary class="log-panel__toggle">📋 Log da partida</summary>
-        <pre class="log-panel__content" id="log-box"></pre>
-      </details>
     </section>
-
-    <!-- ─── MATCH END OVERLAY ─── -->
-    <div class="overlay hidden" id="match-overlay">
-      <div class="overlay__card">
-        <h2 class="overlay__title" id="overlay-title">🏆 Partida Encerrada</h2>
-        <p class="overlay__detail" id="overlay-detail"></p>
-        <button class="btn btn--primary btn--lg" id="btn-play-again">
-          <span class="btn__icon">🔄</span> Jogar Novamente
-        </button>
-      </div>
-    </div>
   </main>
+
+  <div id="truco-overlay" class="overlay hidden">
+    <div class="overlay-card truco-card">
+      <h2 id="truco-overlay-title">TRUCO!</h2>
+      <p id="truco-overlay-sub">Aposta em disputa</p>
+    </div>
+  </div>
+
+  <div id="trick-overlay" class="overlay hidden">
+    <div class="overlay-card trick-card">
+      <h2 id="trick-overlay-title">Fim da vaza</h2>
+      <p id="trick-overlay-text">Recolhendo vaza...</p>
+    </div>
+  </div>
+
+  <div id="match-overlay" class="overlay hidden">
+    <div class="overlay-card match-card">
+      <h2 id="match-overlay-title">Partida encerrada</h2>
+      <p id="match-overlay-detail">Placar final</p>
+      <button id="btn-play-again" class="btn btn-primary">🔄 <span id="btn-play-again-text">Jogar novamente</span></button>
+    </div>
+  </div>
 
   <script src="./wasm_exec.js"></script>
   <script src="./app.js" type="module"></script>

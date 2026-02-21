@@ -101,7 +101,6 @@ var (
 	lgGray   lipgloss.Color
 	lgPurple lipgloss.Color
 	lgDim    lipgloss.Color
-	lgBlue   lipgloss.Color
 
 	teamOneColor lipgloss.Color
 	teamTwoColor lipgloss.Color
@@ -109,7 +108,6 @@ var (
 
 // ── Reusable Styles ─────────────────────────────────────────────────────────
 var (
-	feltStyle               lipgloss.Style
 	frameBorderStyle        lipgloss.Style
 	bigCardBlack            lipgloss.Style
 	bigCardCompact          lipgloss.Style
@@ -174,14 +172,12 @@ func applyThemeStyles(p uiPalette) {
 	lgGray = p.TextMuted
 	lgPurple = p.FrameBorder
 	lgDim = p.TextDim
-	lgBlue = p.TurnBadgeBG
 
 	feltEdgeColor = p.FeltEdge
 	feltMiddleColor = p.FeltMiddle
 	feltCenterColor = p.FeltCenter
 	ansiFeltBG = colorTo256BG(p.FeltEdge)
 
-	feltStyle = lipgloss.NewStyle().Background(p.FeltEdge).Foreground(p.TextPrimary)
 	frameBorderStyle = lipgloss.NewStyle().Border(lipgloss.DoubleBorder()).BorderForeground(p.FrameBorder)
 	bigCardBlack = lipgloss.NewStyle().Background(p.CardBackground).Foreground(p.TextCardDark)
 	bigCardCompact = lipgloss.NewStyle().Background(p.CardBackground).Foreground(p.TextCardDark)
@@ -197,9 +193,9 @@ func applyThemeStyles(p uiPalette) {
 	headerStyle = lipgloss.NewStyle().Background(p.FrameBorder).Foreground(p.TextPrimary).Bold(true).Padding(0, 2)
 	scoreStyle = lipgloss.NewStyle().Background(p.ScoreBarBG).Foreground(p.TextPrimary).Padding(0, 1)
 	chipStyle = lipgloss.NewStyle().Background(p.ScoreChipBG).Foreground(p.TextPrimary).Padding(0, 1).Bold(true)
-	chipAccentStyle = chipStyle.Copy().Background(p.AccentChipBG).Foreground(p.TextAccent)
-	chipTeamOneStyle = chipStyle.Copy().Foreground(p.TeamOne)
-	chipTeamTwoStyle = chipStyle.Copy().Foreground(p.TeamTwo)
+	chipAccentStyle = chipStyle.Background(p.AccentChipBG).Foreground(p.TextAccent)
+	chipTeamOneStyle = chipStyle.Foreground(p.TeamOne)
+	chipTeamTwoStyle = chipStyle.Foreground(p.TeamTwo)
 	teamOneColor = p.TeamOne
 	teamTwoColor = p.TeamTwo
 	helpStyle = lipgloss.NewStyle().Background(p.HelpBarBG).Foreground(p.TextDim).Padding(0, 1)
@@ -207,15 +203,15 @@ func applyThemeStyles(p uiPalette) {
 	tabActiveStyle = lipgloss.NewStyle().Background(p.TabActiveBG).Foreground(p.TextWarning).Bold(true).Padding(0, 1)
 	tabInactiveStyle = lipgloss.NewStyle().Foreground(p.TextDim).Padding(0, 1)
 	nameLabelStyle = lipgloss.NewStyle().Foreground(p.TextPrimary).Bold(true)
-	nameTeamOneStyle = nameLabelStyle.Copy().Foreground(p.TeamOne)
-	nameTeamTwoStyle = nameLabelStyle.Copy().Foreground(p.TeamTwo)
+	nameTeamOneStyle = nameLabelStyle.Foreground(p.TeamOne)
+	nameTeamTwoStyle = nameLabelStyle.Foreground(p.TeamTwo)
 	indexStyle = lipgloss.NewStyle().Foreground(p.TextWarning).Bold(true).Align(lipgloss.Center)
 	viraLabelStyle = lipgloss.NewStyle().Foreground(p.TextAccent).Bold(true)
 	roundLabelStyle = lipgloss.NewStyle().Foreground(p.TextWarning).Bold(true)
 	alertStyle = lipgloss.NewStyle().Foreground(p.TextDanger).Bold(true)
 	winnerStyle = lipgloss.NewStyle().Foreground(p.TextWarning).Bold(true)
 	playerBoxStyle = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(p.TextMuted).Background(p.FeltMiddle).Padding(0, 1)
-	activePlayerBoxStyle = playerBoxStyle.Copy().BorderForeground(p.TextWarning)
+	activePlayerBoxStyle = playerBoxStyle.BorderForeground(p.TextWarning)
 	activeNameStyle = lipgloss.NewStyle().Foreground(p.TextWarning).Bold(true)
 	centerPanelStyle = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(p.TextMuted).Background(p.FeltCenter).Padding(0, 1)
 	centerPanelCompactStyle = lipgloss.NewStyle().Background(p.FeltCenter)
@@ -365,12 +361,12 @@ func (m UIModel) renderTable() string {
 
 func (m UIModel) renderTrickOverlay(innerW, bodyH int, msg string) string {
 	tone := overlayFadeColor(m.trickOverlayFrames)
-	title := roundLabelStyle.Copy().Foreground(tone).Render(tr("overlay_trick_end_title"))
-	info := winnerStyle.Copy().Foreground(tone).Render(msg)
+	title := roundLabelStyle.Foreground(tone).Render(tr("overlay_trick_end_title"))
+	info := winnerStyle.Foreground(tone).Render(msg)
 	content := lipgloss.JoinVertical(lipgloss.Center, title, "", info)
 	panel := fitBlock(content, innerW, bodyH, lipgloss.Center, lipgloss.Center, lgGreen)
 	panel = enforceBackground(panel, ansiFeltBG)
-	frame := frameBorderStyle.Copy().BorderForeground(tone)
+	frame := frameBorderStyle.BorderForeground(tone)
 	return frame.Render(panel)
 }
 
@@ -380,7 +376,7 @@ func (m UIModel) renderTrucoOverlay(innerW, bodyH int) string {
 	sub := lipgloss.NewStyle().Foreground(fg).Render(tr("overlay_stake_in_dispute"))
 	content := lipgloss.JoinVertical(lipgloss.Center, title, "", sub)
 	panel := fitBlock(content, innerW, bodyH, lipgloss.Center, lipgloss.Center, bg)
-	frame := frameBorderStyle.Copy().BorderForeground(border)
+	frame := frameBorderStyle.BorderForeground(border)
 	return frame.Render(panel)
 }
 
@@ -446,7 +442,7 @@ func (m UIModel) renderTrickSweepOverlay(innerW, bodyH int) string {
 
 	panel := fitBlock(strings.Join(lines, "\n"), innerW, bodyH, lipgloss.Left, lipgloss.Top, lgGreen)
 	panel = enforceBackground(panel, ansiFeltBG)
-	frame := frameBorderStyle.Copy().BorderForeground(lgDim)
+	frame := frameBorderStyle.BorderForeground(lgDim)
 	return frame.Render(panel)
 }
 
@@ -614,7 +610,7 @@ func (m UIModel) renderOpponentPlayer(p *truco.Player, turnID, nameMax int, comp
 	boxStyle := playerBoxStyle
 	if p.ID == turnID {
 		nameText = fmt.Sprintf("%s %s (%s)", turnMarkerForPosition(pos), nameText, tr("ui_turn_short"))
-		labelStyle = activeNameStyle.Copy().Foreground(teamColorForTeam(p.Team))
+		labelStyle = activeNameStyle.Foreground(teamColorForTeam(p.Team))
 		boxStyle = activePlayerBoxStyle
 	}
 	label := labelStyle.Render(nameText)
@@ -640,7 +636,7 @@ func (m UIModel) renderCenter(w int, turnName string, compact bool) string {
 	}
 	turnBadge := turnBadgeStyle.Render(turnBadgeText)
 	if compact {
-		turnBadge = turnBadgeStyle.Copy().Padding(0, 0).Render(turnBadgeText)
+		turnBadge = turnBadgeStyle.Padding(0, 0).Render(turnBadgeText)
 	}
 
 	// Vira card
@@ -789,7 +785,7 @@ func (m UIModel) renderBottomPlayer(localIdx int, turnID int, compact bool) stri
 	nameStyle := teamNameStyleForTeam(me.Team)
 	if turnID == me.ID {
 		nameText = fmt.Sprintf("%s %s (%s)", turnMarkerForPosition("bottom"), nameText, tr("ui_turn_short"))
-		nameStyle = activeNameStyle.Copy().Foreground(teamColorForTeam(me.Team))
+		nameStyle = activeNameStyle.Foreground(teamColorForTeam(me.Team))
 		boxStyle = activePlayerBoxStyle
 	}
 	nameLabel := nameStyle.Render(nameText)
@@ -816,9 +812,9 @@ func renderBigCard(c truco.Card, leading bool, compact bool) string {
 	}
 	if compact {
 		face := fmt.Sprintf("┌%s%s┐\n└───┘", rank, sym)
-		style := bigCardCompact.Copy().Foreground(fg)
+		style := bigCardCompact.Foreground(fg)
 		if leading {
-			style = style.Copy().Bold(true)
+			style = style.Bold(true)
 		}
 		return style.Render(face)
 	}
@@ -833,9 +829,9 @@ func renderBigCard(c truco.Card, leading bool, compact bool) string {
 		"└─────┘",
 	}
 	cardFace := strings.Join(lines, "\n")
-	style := bigCardBlack.Copy().Foreground(fg)
+	style := bigCardBlack.Foreground(fg)
 	if leading {
-		style = style.Copy().Bold(true)
+		style = style.Bold(true)
 	}
 	rendered := style.Render(cardFace)
 	if leading {

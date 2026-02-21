@@ -345,7 +345,7 @@ func enforceBackground(s, bgANSI string) string {
 func (m UIModel) renderAlert(msg string) string {
 	colors := []lipgloss.Color{lgRed, lipgloss.Color("208"), lgYellow, lipgloss.Color("208")}
 	c := colors[m.uiFrame%len(colors)]
-	return alertStyle.Copy().Foreground(c).Render(msg)
+	return alertStyle.Foreground(c).Render(msg)
 }
 
 func cpuSpinnerFrame(frame int) string {
@@ -403,11 +403,11 @@ func renderGhostCard(compact bool, flash bool) string {
 	if compact {
 		st := lipgloss.NewStyle().Background(lgWhite).Foreground(lgDim)
 		if flash {
-			st = st.Copy().Foreground(lgGreen).Bold(true)
+			st = st.Foreground(lgGreen).Bold(true)
 		}
 		return st.Render("┌··┐\n└──┘")
 	}
-	st := bigCardBlack.Copy().Foreground(lgDim)
+	st := bigCardBlack.Foreground(lgDim)
 	ghost := strings.Join([]string{
 		"┌─────┐",
 		"│··   │",
@@ -416,7 +416,7 @@ func renderGhostCard(compact bool, flash bool) string {
 		"└─────┘",
 	}, "\n")
 	if flash {
-		st = st.Copy().Foreground(lgGreen).Bold(true)
+		st = st.Foreground(lgGreen).Bold(true)
 	}
 	return st.Render(ghost)
 }

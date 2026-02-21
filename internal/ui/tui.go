@@ -217,26 +217,6 @@ func (t *TUI) runHostMatch(host *netp2p.HostSession) error {
 	return nil
 }
 
-func (t *TUI) processRemoteActions(host *netp2p.HostSession, game *truco.Game, chat *[]string) {
-	for {
-		select {
-		case a := <-host.Actions():
-			if a.Seat == 0 {
-				continue
-			}
-			if err := applyRemoteAction(game, a); err != nil {
-				host.SendSystemToSeat(a.Seat, tr("online_invalid_action_prefix")+err.Error())
-				continue
-			}
-			pushSnapshotsToClients(host, game)
-		case ev := <-host.Events():
-			*chat = append(*chat, ev)
-		default:
-			return
-		}
-	}
-}
-
 func applyRemoteAction(game *truco.Game, a netp2p.ClientAction) error {
 	switch a.Action {
 	case "play":
@@ -293,40 +273,6 @@ func (t *TUI) runClientMatch(cli *netp2p.ClientSession) error {
 		return err
 	}
 	return nil
-}
-
-func (t *TUI) drainHostEvents(host *netp2p.HostSession, out *[]string) {
-	for {
-		select {
-		case ev := <-host.Events():
-			*out = append(*out, ev)
-		default:
-			return
-		}
-	}
-}
-
-func (t *TUI) drainClientEvents(cli *netp2p.ClientSession, out *[]string) {
-	for {
-		select {
-		case ev := <-cli.Events():
-			*out = append(*out, ev)
-		default:
-			return
-		}
-	}
-}
-
-func (t *TUI) drainClientStates(cli *netp2p.ClientSession, snap **truco.Snapshot) {
-	for {
-		select {
-		case st := <-cli.StateUpdates():
-			s := st
-			*snap = &s
-		default:
-			return
-		}
-	}
 }
 
 func (t *TUI) clear() {

@@ -578,9 +578,7 @@ func (g *Game) Snapshot(forPlayer int) Snapshot {
 	defer g.mu.Unlock()
 
 	players := make([]Player, len(g.players))
-	for i := range g.players {
-		players[i] = g.players[i]
-	}
+	copy(players, g.players)
 	logs := make([]string, len(g.logs))
 	copy(logs, g.logs)
 

@@ -2,6 +2,7 @@ package netp2p
 
 import (
 	"context"
+	"crypto/ecdh"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -69,17 +70,40 @@ func deterministicECDSAKey(seed string) (*ecdsa.PrivateKey, error) {
 	d := new(big.Int).SetBytes(sum[:])
 	d.Mod(d, n)
 	d.Add(d, big.NewInt(1))
-	x, y := curve.ScalarBaseMult(d.Bytes())
-	if x == nil || y == nil {
+	// Pad d to 32 bytes (P-256 scalar size)
+	dBytes := d.Bytes()
+	if len(dBytes) < 32 {
+		padded := make([]byte, 32)
+		copy(padded[32-len(dBytes):], dBytes)
+		dBytes = padded
+	}
+	ecdhKey, err := ecdh.P256().NewPrivateKey(dBytes)
+	if err != nil {
 		return nil, errors.New("falha ao derivar chave TLS determinística")
 	}
+	// Convert crypto/ecdh key back to *ecdsa.PrivateKey
+	ecdsaKey, err := ecdhToECDSA(ecdhKey)
+	if err != nil {
+		return nil, err
+	}
+	return ecdsaKey, nil
+}
+
+func ecdhToECDSA(key *ecdh.PrivateKey) (*ecdsa.PrivateKey, error) {
+	rawPub := key.PublicKey().Bytes()
+	// rawPub is uncompressed: 0x04 || X(32) || Y(32) = 65 bytes for P-256
+	if len(rawPub) != 65 || rawPub[0] != 0x04 {
+		return nil, errors.New("falha ao converter chave ECDH para ECDSA")
+	}
+	x := new(big.Int).SetBytes(rawPub[1:33])
+	y := new(big.Int).SetBytes(rawPub[33:65])
 	return &ecdsa.PrivateKey{
 		PublicKey: ecdsa.PublicKey{
-			Curve: curve,
+			Curve: elliptic.P256(),
 			X:     x,
 			Y:     y,
 		},
-		D: d,
+		D: new(big.Int).SetBytes(key.Bytes()),
 	}, nil
 }
 
