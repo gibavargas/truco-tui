@@ -3,59 +3,139 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Truco Browser Edition (WASM)</title>
+  <title>Truco Browser Edition</title>
+  <meta name="description" content="Truco Paulista jogável no navegador via WebAssembly" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="./style.css" />
 </head>
 <body>
-  <div class="bg-shape bg-a"></div>
-  <div class="bg-shape bg-b"></div>
+  <!-- ambient background blobs -->
+  <div class="bg-blob bg-blob--gold"></div>
+  <div class="bg-blob bg-blob--green"></div>
 
   <main class="app">
-    <header class="topbar">
-      <h1>Truco Browser Edition</h1>
-      <p>WebAssembly fork para deploy estático</p>
+    <!-- ─── HEADER ─── -->
+    <header class="header">
+      <div class="header__brand">
+        <span class="header__icon">🃏</span>
+        <div>
+          <h1 class="header__title">Truco</h1>
+          <p class="header__sub">Browser Edition · WASM</p>
+        </div>
+      </div>
     </header>
 
-    <section class="panel setup" id="setup-panel">
-      <h2>Nova partida</h2>
-      <div class="row">
-        <label for="player-name">Seu nome</label>
-        <input id="player-name" type="text" value="Você" />
+    <!-- ─── SETUP PANEL ─── -->
+    <section class="card-panel setup" id="setup-panel">
+      <h2 class="setup__heading">Nova Partida</h2>
+      <div class="form-group">
+        <label class="form-label" for="player-name">
+          <span class="form-label__icon">👤</span> Seu nome
+        </label>
+        <input class="form-input" id="player-name" type="text" value="Você" autocomplete="off" />
       </div>
-      <div class="row">
-        <label for="num-players">Jogadores</label>
-        <select id="num-players">
+      <div class="form-group">
+        <label class="form-label" for="num-players">
+          <span class="form-label__icon">👥</span> Jogadores
+        </label>
+        <select class="form-input" id="num-players">
           <option value="2">2 jogadores</option>
           <option value="4">4 jogadores</option>
         </select>
       </div>
-      <button id="btn-start" class="btn btn-primary">Iniciar</button>
-      <p class="hint">[1-3] cartas | Truco/6/9/12 | CPU automática</p>
+      <button class="btn btn--primary btn--lg" id="btn-start">
+        <span class="btn__icon">▶</span> Iniciar Partida
+      </button>
+      <p class="setup__hint">Clique nas cartas para jogar · CPU joga automaticamente</p>
     </section>
 
-    <section class="panel game hidden" id="game-panel">
-      <div class="scoreline">
-        <div id="score-label">T1 0 x 0 T2</div>
-        <div id="stake-label">Aposta 1</div>
-        <div id="turn-label">Vez de ...</div>
+    <!-- ─── GAME PANEL ─── -->
+    <section class="card-panel game hidden" id="game-panel">
+
+      <!-- Scoreboard -->
+      <div class="scoreboard">
+        <div class="scoreboard__team scoreboard__team--t1">
+          <span class="scoreboard__label">Time 1</span>
+          <span class="scoreboard__pts" id="score-t1">0</span>
+        </div>
+        <div class="scoreboard__vs">
+          <span class="scoreboard__stake" id="stake-label">1</span>
+          <span class="scoreboard__stake-label">aposta</span>
+        </div>
+        <div class="scoreboard__team scoreboard__team--t2">
+          <span class="scoreboard__label">Time 2</span>
+          <span class="scoreboard__pts" id="score-t2">0</span>
+        </div>
       </div>
 
-      <div class="table">
-        <div class="players" id="players-line"></div>
-        <div class="round-cards" id="round-cards"></div>
+      <!-- Turn indicator -->
+      <div class="turn-bar" id="turn-label">
+        <span class="turn-bar__dot"></span> Vez de ...
       </div>
 
-      <div class="actions">
-        <button id="btn-truco" class="btn">Truco / Subir</button>
-        <button id="btn-accept" class="btn">Aceitar</button>
-        <button id="btn-refuse" class="btn">Recusar</button>
-        <button id="btn-new-hand" class="btn">Nova mão</button>
+      <!-- Players -->
+      <div class="players-row" id="players-line"></div>
+
+      <!-- Table (felt) -->
+      <div class="felt-table">
+        <div class="felt-table__inner">
+          <div class="felt-table__vira" id="vira-area">
+            <span class="felt-table__vira-label">Vira</span>
+            <div class="felt-table__vira-card" id="vira-card"></div>
+          </div>
+          <div class="felt-table__played" id="round-cards">
+            <span class="muted">Mesa vazia</span>
+          </div>
+        </div>
       </div>
 
-      <div class="hand" id="my-hand"></div>
-      <div class="status" id="status-line">Pronto.</div>
-      <pre class="log" id="log-box"></pre>
+      <!-- Trick results -->
+      <div class="tricks-row" id="tricks-row"></div>
+
+      <!-- Actions -->
+      <div class="actions-bar">
+        <button class="btn btn--truco" id="btn-truco">
+          <span class="btn__icon">⚡</span> Truco
+        </button>
+        <button class="btn btn--accept" id="btn-accept">
+          <span class="btn__icon">✓</span> Aceitar
+        </button>
+        <button class="btn btn--refuse" id="btn-refuse">
+          <span class="btn__icon">✕</span> Recusar
+        </button>
+        <button class="btn btn--new-hand" id="btn-new-hand">
+          <span class="btn__icon">🔄</span> Nova mão
+        </button>
+      </div>
+
+      <!-- Player hand -->
+      <div class="hand-area">
+        <span class="hand-area__label">Suas cartas</span>
+        <div class="hand" id="my-hand"></div>
+      </div>
+
+      <!-- Status -->
+      <div class="status-bar" id="status-line">Pronto.</div>
+
+      <!-- Log -->
+      <details class="log-panel">
+        <summary class="log-panel__toggle">📋 Log da partida</summary>
+        <pre class="log-panel__content" id="log-box"></pre>
+      </details>
     </section>
+
+    <!-- ─── MATCH END OVERLAY ─── -->
+    <div class="overlay hidden" id="match-overlay">
+      <div class="overlay__card">
+        <h2 class="overlay__title" id="overlay-title">🏆 Partida Encerrada</h2>
+        <p class="overlay__detail" id="overlay-detail"></p>
+        <button class="btn btn--primary btn--lg" id="btn-play-again">
+          <span class="btn__icon">🔄</span> Jogar Novamente
+        </button>
+      </div>
+    </div>
   </main>
 
   <script src="./wasm_exec.js"></script>
