@@ -308,6 +308,9 @@ func (m UIModel) renderTable() string {
 	}
 	scoreLine := joinSegmentsWithinWidth(scoreInnerW, scoreSegments...)
 	scoreBar := scoreStyle.Width(w).Render(scoreLine)
+	roleBar := helpStyle.Width(w).Render(
+		fitSingleLine(m.renderRoleLane(maxInt(1, w-statusHorizontalPadding)), maxInt(1, w-statusHorizontalPadding)),
+	)
 
 	// ─── 3. Table area ──────────────────────────────────────────────────
 	innerW := w - 2
@@ -352,6 +355,7 @@ func (m UIModel) renderTable() string {
 	return lipgloss.JoinVertical(lipgloss.Left,
 		header,
 		scoreBar,
+		roleBar,
 		framedTable,
 		tabBar,
 		tabPanel,
@@ -480,7 +484,10 @@ func (m UIModel) renderTabPanel(w int, linesLimit int) string {
 		if strings.TrimSpace(m.chatInput) == "" {
 			lines = append(lines, tr("panel_chat_hint"))
 		}
-		lines = append(lines, tailLines(m.chatLog, 2)...)
+		lines = append(lines, m.chatCommandsHint())
+		for _, line := range tailLines(m.chatLog, 2) {
+			lines = append(lines, styleEventLine(line))
+		}
 	case "log":
 		lines = append(lines, tr("panel_log_title"))
 		scoreEvents := scoreHistoryFromLogs(m.snapshot.Logs, 2)
@@ -489,9 +496,13 @@ func (m UIModel) renderTabPanel(w int, linesLimit int) string {
 		}
 		if len(m.errorLog) > 0 {
 			lines = append(lines, tr("panel_error_log_title"))
-			lines = append(lines, tailLines(m.errorLog, 2)...)
+			for _, line := range tailLines(m.errorLog, 2) {
+				lines = append(lines, styleEventLine(line))
+			}
 		}
-		lines = append(lines, tailLines(m.snapshot.Logs, 2)...)
+		for _, line := range tailLines(m.snapshot.Logs, 2) {
+			lines = append(lines, styleEventLine(line))
+		}
 	default:
 		wins := m.snapshot.CurrentHand.TrickWins
 		lines = append(lines, fmt.Sprintf("%s: %s T1 %d x %d T2 | %s %d", tr("panel_table_label"), tr("panel_tricks_label"), wins[0], wins[1], tr("panel_round_label"), m.snapshot.CurrentHand.Round))
@@ -522,6 +533,19 @@ func tailLines(items []string, n int) []string {
 		return items
 	}
 	return items[len(items)-n:]
+}
+
+func styleEventLine(line string) string {
+	trimmed := strings.TrimSpace(strings.ToLower(line))
+	errPrefix := strings.TrimSpace(strings.ToLower(tr("error_prefix")))
+	switch {
+	case strings.HasPrefix(trimmed, "[system]"):
+		return keyHintStyle.Render(line)
+	case errPrefix != "" && strings.HasPrefix(trimmed, errPrefix):
+		return alertStyle.Render(line)
+	default:
+		return line
+	}
 }
 
 // ── Sections ────────────────────────────────────────────────────────────────
@@ -614,13 +638,19 @@ func (m UIModel) renderOpponentPlayer(p *truco.Player, turnID, nameMax int, comp
 		boxStyle = activePlayerBoxStyle
 	}
 	label := labelStyle.Render(nameText)
+	localIdx := m.localPlayerIdx
+	if m.snapshot.CurrentPlayerIdx >= 0 {
+		localIdx = m.snapshot.CurrentPlayerIdx
+	}
+	roleInfo := deriveSeatRoles(m.snapshot, localIdx, m.isOnline)[p.ID]
+	roleLine := keyHintStyle.Render(strings.Join(m.roleBadgeLabels(roleInfo), " · "))
 	if compact {
 		if compactInline {
-			return lipgloss.JoinHorizontal(lipgloss.Left, label, " ", hand)
+			return lipgloss.JoinHorizontal(lipgloss.Left, label, " ", roleLine, " ", hand)
 		}
-		return lipgloss.JoinVertical(lipgloss.Left, label, hand)
+		return lipgloss.JoinVertical(lipgloss.Left, label, roleLine, hand)
 	}
-	return boxStyle.Render(lipgloss.JoinVertical(lipgloss.Center, label, hand))
+	return boxStyle.Render(lipgloss.JoinVertical(lipgloss.Center, label, roleLine, hand))
 }
 
 func (m UIModel) renderCenter(w int, turnName string, compact bool) string {
@@ -631,7 +661,7 @@ func (m UIModel) renderCenter(w int, turnName string, compact bool) string {
 		badgeName = clip(turnName, compactTurnNameMax)
 	}
 	turnBadgeText := tr("turn_badge_prefix") + badgeName
-	if s.TurnPlayer >= 0 && s.TurnPlayer < len(s.Players) && s.Players[s.TurnPlayer].CPU && !s.MatchFinished {
+	if s.TurnPlayer >= 0 && s.TurnPlayer < len(s.Players) && s.Players[s.TurnPlayer].CPU && !s.MatchFinished && s.PendingRaiseFor == -1 {
 		turnBadgeText = fmt.Sprintf("%s %s", turnBadgeText, cpuSpinnerFrame(m.uiFrame))
 	}
 	turnBadge := turnBadgeStyle.Render(turnBadgeText)
@@ -789,6 +819,7 @@ func (m UIModel) renderBottomPlayer(localIdx int, turnID int, compact bool) stri
 		boxStyle = activePlayerBoxStyle
 	}
 	nameLabel := nameStyle.Render(nameText)
+	roleLine := keyHintStyle.Render(strings.Join(m.roleBadgeLabels(deriveSeatRoles(m.snapshot, localIdx, m.isOnline)[me.ID]), " · "))
 
 	if compact {
 		rows := []string{handRow}
@@ -796,9 +827,10 @@ func (m UIModel) renderBottomPlayer(localIdx int, turnID int, compact bool) stri
 			rows = append(rows, idxRow)
 		}
 		rows = append(rows, nameLabel)
+		rows = append(rows, roleLine)
 		return lipgloss.JoinVertical(lipgloss.Center, rows...)
 	}
-	return boxStyle.Render(lipgloss.JoinVertical(lipgloss.Center, handRow, idxRow, nameLabel))
+	return boxStyle.Render(lipgloss.JoinVertical(lipgloss.Center, handRow, idxRow, nameLabel, roleLine))
 }
 
 // ── Cards ───────────────────────────────────────────────────────────────────

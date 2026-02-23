@@ -7,7 +7,7 @@
   <meta name="description" content="Truco Paulista browser edition em WebAssembly, com paridade de regras com a versão TUI." />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Sora:wght@400;600;700;800&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="./style.css" />
 </head>
 <body>
@@ -40,6 +40,13 @@
           <input id="player-name" class="field" type="text" value="Você" autocomplete="off" />
         </div>
         <div>
+          <label for="mode-select" id="setup-mode-label">Modo</label>
+          <select id="mode-select" class="field">
+            <option value="offline">Offline</option>
+            <option value="online">Online (Alpha)</option>
+          </select>
+        </div>
+        <div>
           <label for="num-players" id="setup-players-label">Jogadores</label>
           <select id="num-players" class="field">
             <option value="2">2</option>
@@ -47,10 +54,62 @@
           </select>
         </div>
       </div>
+      <div id="online-setup" class="online-setup hidden">
+        <div class="setup-grid online-grid">
+          <div>
+            <label for="online-action" id="setup-online-action-label">Ação online</label>
+            <select id="online-action" class="field">
+              <option value="host">Criar host</option>
+              <option value="join">Entrar com convite</option>
+            </select>
+          </div>
+          <div>
+            <label for="online-role" id="setup-online-role-label">Papel</label>
+            <select id="online-role" class="field">
+              <option value="auto">Auto</option>
+              <option value="partner">Parceiro</option>
+              <option value="opponent">Adversário</option>
+            </select>
+          </div>
+        </div>
+        <div class="setup-grid online-grid">
+          <div>
+            <label for="online-key" id="setup-online-key-label">Convite</label>
+            <input id="online-key" class="field" type="text" autocomplete="off" placeholder="Cole a chave" />
+          </div>
+        </div>
+      </div>
       <div class="setup-actions">
         <button id="btn-start" class="btn btn-primary">▶ <span id="setup-start-label">Iniciar partida</span></button>
       </div>
       <p id="setup-help" class="setup-help">Atalhos: 1/2/3 jogar, T truco/subir, A aceitar, R recusar.</p>
+    </section>
+
+    <section id="lobby-panel" class="panel lobby-panel hidden">
+      <h2 id="lobby-title">Lobby online</h2>
+      <div class="lobby-meta">
+        <div><strong id="lobby-mode">Host</strong></div>
+        <div><span id="lobby-key-label">Convite</span>: <code id="lobby-key">-</code></div>
+      </div>
+      <div class="lobby-grid">
+        <div class="lobby-block">
+          <h3 id="lobby-slots-title">Slots</h3>
+          <div id="lobby-slots" class="lobby-slots"></div>
+        </div>
+        <div class="lobby-block">
+          <h3 id="lobby-events-title">Eventos</h3>
+          <pre id="lobby-events"></pre>
+        </div>
+      </div>
+      <div class="lobby-chat-row">
+        <input id="lobby-chat-input" class="field" type="text" autocomplete="off" placeholder="Mensagem do lobby" />
+        <button id="btn-lobby-chat" class="btn btn-neutral">💬 <span id="btn-lobby-chat-text">Enviar</span></button>
+      </div>
+      <div class="action-row">
+        <button id="btn-lobby-start" class="btn btn-primary">▶ <span id="btn-lobby-start-text">Iniciar partida</span></button>
+        <button id="btn-lobby-refresh" class="btn btn-neutral">⟳ <span id="btn-lobby-refresh-text">Atualizar</span></button>
+        <button id="btn-lobby-leave" class="btn btn-refuse">⎋ <span id="btn-lobby-leave-text">Sair do lobby</span></button>
+      </div>
     </section>
 
     <section id="game-panel" class="panel game-panel hidden">
@@ -69,7 +128,7 @@
         </div>
       </div>
 
-      <div id="turn-line" class="turn-line">Vez de ...</div>
+      <div id="turn-line" class="turn-line" aria-live="polite">Vez de ...</div>
 
       <div class="layout">
         <div class="table-panel" id="table-shell">
@@ -98,7 +157,7 @@
         <aside class="side-panel">
           <div class="side-block">
             <h3 id="status-title">Status</h3>
-            <div id="status-line" class="status-line">Pronto.</div>
+            <div id="status-line" class="status-line" aria-live="polite">Pronto.</div>
           </div>
 
           <div class="side-block">
@@ -119,7 +178,7 @@
           <div class="side-block side-log">
             <h3 id="log-title">Log da partida</h3>
             <pre id="log-box"></pre>
-            <div id="error-log" class="error-log"></div>
+            <div id="error-log" class="error-log" aria-live="assertive"></div>
           </div>
         </aside>
       </div>
@@ -129,11 +188,13 @@
         <button id="btn-accept" class="btn btn-accept">✓ <span id="btn-accept-text">Aceitar</span></button>
         <button id="btn-refuse" class="btn btn-refuse">✕ <span id="btn-refuse-text">Recusar</span></button>
         <button id="btn-new-hand" class="btn btn-neutral">↺ <span id="btn-new-hand-text">Nova mão</span></button>
+        <button id="btn-host-vote" class="btn btn-neutral hidden">👑 <span id="btn-host-vote-text">Votar host</span></button>
+        <button id="btn-replace-invite" class="btn btn-neutral hidden">🧩 <span id="btn-replace-invite-text">Convite reposição</span></button>
       </div>
 
       <div class="hand-block">
         <div class="hand-title" id="hand-title">Sua mão</div>
-        <div id="my-hand" class="my-hand"></div>
+        <div id="my-hand" class="my-hand" role="list"></div>
       </div>
     </section>
   </main>

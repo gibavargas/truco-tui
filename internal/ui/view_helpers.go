@@ -15,9 +15,13 @@ func (m UIModel) buildStatusLine() string {
 	if s.CurrentPlayerIdx >= 0 {
 		localIdx = s.CurrentPlayerIdx
 	}
+	if localIdx < 0 || localIdx >= len(s.Players) {
+		localIdx = 0
+	}
+	localTeam := s.Players[localIdx].Team
 
 	if m.err != nil {
-		return m.renderAlert(tr("error_prefix")+m.err.Error()) + "  │  " + helpControls()
+		return m.renderAlert(tr("error_prefix")+m.err.Error()) + "  │  " + m.helpControls()
 	}
 
 	// Priority alerts
@@ -32,8 +36,14 @@ func (m UIModel) buildStatusLine() string {
 			raiseTo = nextStakeUI(s.CurrentHand.Stake)
 		}
 		raiseName := raiseLabelUI(raiseTo)
-		return m.renderAlert(fmt.Sprintf(tr("status_truco_response_format"), strings.ToUpper(raiseName), raiseTo)) +
-			"  │  " + helpControls()
+		raiseBy := safePlayerName(s.Players, s.CurrentHand.RaiseRequester)
+		return m.renderAlert(fmt.Sprintf(
+			tr("status_truco_response_owner_format"),
+			strings.ToUpper(raiseName),
+			raiseTo,
+			raiseBy,
+			tr("ui_role_you"),
+		)) + "  │  " + m.helpControls()
 	}
 
 	if s.PendingRaiseFor != -1 {
@@ -42,8 +52,17 @@ func (m UIModel) buildStatusLine() string {
 			raiseTo = nextStakeUI(s.CurrentHand.Stake)
 		}
 		raiseBy := safePlayerName(s.Players, s.CurrentHand.RaiseRequester)
-		return m.renderAlert(fmt.Sprintf(tr("status_truco_wait_format"), strings.ToUpper(raiseLabelUI(raiseTo)), raiseTo, raiseBy)) +
-			"  │  " + helpControls()
+		waiting := tr("ui_role_opponent")
+		if s.PendingRaiseFor == localTeam {
+			waiting = tr("ui_role_partner")
+		}
+		return m.renderAlert(fmt.Sprintf(
+			tr("status_truco_wait_owner_format"),
+			strings.ToUpper(raiseLabelUI(raiseTo)),
+			raiseTo,
+			raiseBy,
+			waiting,
+		)) + "  │  " + m.helpControls()
 	}
 
 	turnName := s.Players[s.CurrentHand.Turn].Name
@@ -56,20 +75,98 @@ func (m UIModel) buildStatusLine() string {
 		}
 	}
 	if len(provisional) > 0 {
-		return turnInfo + "  │  CPU*: " + strings.Join(provisional, ", ") + "  │  " + helpControls()
+		return turnInfo + "  │  " + tr("ui_role_cpu_prov") + ": " + strings.Join(provisional, ", ") + "  │  " + m.helpControls()
 	}
-	return turnInfo + "  │  " + helpControls()
+	return turnInfo + "  │  " + m.helpControls()
 }
 
-func helpControls() string {
-	return strings.Join([]string{
+func (m UIModel) helpControls() string {
+	parts := []string{
 		renderKeyHint("[1-3]", tr("help_play_cards_short")),
 		renderKeyHint("[t]", tr("help_truco_short")),
 		renderKeyHint("[a/r]", tr("help_answer_short")),
-		renderKeyHint("[/host n]", tr("help_vote_host_short")),
-		renderKeyHint("[/invite n]", tr("help_invite_short")),
-		renderKeyHint("[q]", tr("help_quit_short")),
-	}, "  ")
+	}
+	if m.activeTab == "chat" {
+		parts = append(parts, renderKeyHint("[enter]", tr("help_send_short")))
+	}
+	if m.isOnline {
+		parts = append(parts, renderKeyHint("[/host n]", tr("help_vote_host_short")))
+		if m.isHost {
+			parts = append(parts, renderKeyHint("[/invite n]", tr("help_invite_short")))
+		} else {
+			parts = append(parts, renderKeyHint("[/invite n]", tr("help_invite_request_short")))
+		}
+	}
+	parts = append(parts, renderKeyHint("[tab]", tr("help_tab_short")))
+	parts = append(parts, renderKeyHint("[q]", tr("help_quit_short")))
+	return strings.Join(parts, "  ")
+}
+
+func (m UIModel) chatCommandsHint() string {
+	if m.isOnline {
+		if m.isHost {
+			return tr("panel_chat_commands_online_host")
+		}
+		return tr("panel_chat_commands_online_client")
+	}
+	return tr("panel_chat_commands_offline")
+}
+
+func (m UIModel) renderRoleLane(width int) string {
+	if width <= 0 || len(m.snapshot.Players) == 0 {
+		return ""
+	}
+	localIdx := m.localPlayerIdx
+	if m.snapshot.CurrentPlayerIdx >= 0 {
+		localIdx = m.snapshot.CurrentPlayerIdx
+	}
+	if localIdx < 0 || localIdx >= len(m.snapshot.Players) {
+		localIdx = 0
+	}
+	localID := m.snapshot.Players[localIdx].ID
+	roles := deriveSeatRoles(m.snapshot, localIdx, m.isOnline)
+	localInfo := roles[localID]
+	badges := m.roleBadgeLabels(localInfo)
+	if len(badges) == 0 {
+		badges = []string{tr("ui_role_you")}
+	}
+
+	segments := []string{
+		chipAccentStyle.Render(fmt.Sprintf("%s %s", tr("role_lane_you_prefix"), strings.Join(badges, " · "))),
+	}
+	if m.isOnline {
+		segments = append(segments, chipStyle.Render(fmt.Sprintf("%s %s", tr("role_lane_host_prefix"), safePlayerName(m.snapshot.Players, 0))))
+	}
+	if m.snapshot.PendingRaiseFor != -1 {
+		raiseBy := safePlayerName(m.snapshot.Players, m.snapshot.CurrentHand.RaiseRequester)
+		raiseTo := m.snapshot.PendingRaiseTo
+		if raiseTo == 0 {
+			raiseTo = nextStakeUI(m.snapshot.CurrentHand.Stake)
+		}
+		segments = append(segments, alertStyle.Render(
+			fmt.Sprintf(tr("role_lane_raise_pending_format"), raiseBy, strings.ToUpper(raiseLabelUI(raiseTo)), raiseTo),
+		))
+	}
+
+	provisional := make([]string, 0, len(m.snapshot.Players))
+	for _, p := range m.snapshot.Players {
+		if p.ProvisionalCPU {
+			provisional = append(provisional, clip(p.Name, 10))
+		}
+	}
+	if len(provisional) > 0 {
+		segments = append(segments, chipStyle.Render(fmt.Sprintf("%s %s", tr("ui_role_cpu_prov"), strings.Join(provisional, ","))))
+	}
+	return joinSegmentsWithinWidth(width, segments...)
+}
+
+func (m UIModel) roleBadgeLabels(info SeatRoleInfo) []string {
+	keys := roleBadgeKeys(info)
+	labels := make([]string, 0, len(keys))
+	for _, k := range keys {
+		labels = append(labels, strings.ToUpper(tr(k)))
+	}
+	return labels
 }
 
 func renderKeyHint(key, label string) string {

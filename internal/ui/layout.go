@@ -33,8 +33,8 @@ func computeLayout(w, h int) layoutProfile {
 		panelLines = panelLinesCompact
 	}
 
-	// header + score + tabs + panel + help + outer table border
-	fixedOutsideTable := headerLines + scoreLines + tabLines + panelLines + helpLines + frameBorderLines
+	// header + score + role + tabs + panel + help + outer table border
+	fixedOutsideTable := headerLines + scoreLines + roleLines + tabLines + panelLines + helpLines + frameBorderLines
 	tableBodyH := h - fixedOutsideTable
 	if tableBodyH < minTableBodyHeight {
 		tableBodyH = minTableBodyHeight

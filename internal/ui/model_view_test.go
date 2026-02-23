@@ -258,6 +258,33 @@ func TestViewShowsCurrentTurnClues(t *testing.T) {
 	}
 }
 
+func TestHelpControlsOfflineOmitsOnlineCommands(t *testing.T) {
+	m := newUIModelForTest(t)
+	line := m.helpControls()
+	if strings.Contains(line, "/host") || strings.Contains(line, "/invite") {
+		t.Fatalf("offline help should not show online commands: %q", line)
+	}
+}
+
+func TestHelpControlsOnlineHostShowsGovernanceCommands(t *testing.T) {
+	m := newUIModelForTest(t)
+	m.isOnline = true
+	m.isHost = true
+	line := m.helpControls()
+	if !strings.Contains(line, "/host") || !strings.Contains(line, "/invite") {
+		t.Fatalf("online host help should show governance commands: %q", line)
+	}
+}
+
+func TestRoleLaneIncludesLocalRole(t *testing.T) {
+	m := newUIModelForFourPlayers(t)
+	roleLane := m.renderRoleLane(120)
+	if !strings.Contains(strings.ToLower(roleLane), "você") &&
+		!strings.Contains(strings.ToLower(roleLane), "you") {
+		t.Fatalf("role lane should contain local role marker: %q", roleLane)
+	}
+}
+
 func TestViewHighlightsLeadingRoundCard(t *testing.T) {
 	m := newUIModelForFourPlayers(t)
 	m.snapshot.CurrentHand.Manilha = truco.RA

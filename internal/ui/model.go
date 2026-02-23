@@ -33,6 +33,8 @@ type UIModel struct {
 
 	// Game State
 	localPlayerIdx int
+	isOnline       bool
+	isHost         bool
 
 	visualState
 }
@@ -64,6 +66,8 @@ func InitialModel(g *truco.Game) UIModel {
 		activeTab:      "mesa",
 		chatLog:        []string{tr("chat_welcome")},
 		localPlayerIdx: 0,
+		isOnline:       false,
+		isHost:         false,
 		visualState:    newVisualState(snap),
 	}
 }

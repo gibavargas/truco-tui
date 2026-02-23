@@ -56,6 +56,15 @@ Objeto global: `window.TrucoWasm`
 - `autoCpuLoopTick()`
 - `newHand()`
 - `reset()`
+- `startOnlineHost({ numPlayers, name })`
+- `joinOnline({ numPlayers, name, key, role })`
+- `onlineState()`
+- `startOnlineMatch()`
+- `sendChat(msg)`
+- `sendHostVote(slotNumber)`
+- `requestReplacementInvite(slotNumber)`
+- `pullOnlineEvents()`
+- `leaveSession()`
 
 Retorno padrão:
 

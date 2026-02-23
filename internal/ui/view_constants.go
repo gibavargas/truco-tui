@@ -11,6 +11,7 @@ const (
 
 	headerLines      = 1
 	scoreLines       = 1
+	roleLines        = 1
 	tabLines         = 1
 	helpLines        = 1
 	frameBorderLines = 2
