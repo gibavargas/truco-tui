@@ -1,4 +1,7 @@
 const $ = (id) => document.getElementById(id);
+const RAW_ASSET_VERSION = window.__ASSET_VERSION__ || "";
+const ASSET_VERSION = RAW_ASSET_VERSION.includes("__BUILD_ID__") ? "" : RAW_ASSET_VERSION;
+const assetPath = (path) => (ASSET_VERSION ? `${path}?v=${encodeURIComponent(ASSET_VERSION)}` : path);
 
 const els = {
   localeSelect: $("locale-select"),
@@ -1458,7 +1461,7 @@ async function bootWasm() {
     throw new Error("wasm_exec.js not loaded");
   }
   const go = new Go();
-  const result = await WebAssembly.instantiateStreaming(fetch("./main.wasm"), go.importObject);
+  const result = await WebAssembly.instantiateStreaming(fetch(assetPath("./main.wasm")), go.importObject);
   go.run(result.instance);
 }
 

@@ -24,4 +24,8 @@ fi
 
 cp "$WEB_DIR/index.html" "$WEB_DIR/app.js" "$WEB_DIR/style.css" "$DIST_DIR/"
 
+BUILD_ID="$(date +%Y%m%d%H%M%S)-$(git rev-parse --short=12 HEAD)"
+sed -i.bak "s/__BUILD_ID__/$BUILD_ID/g" "$DIST_DIR/index.html" "$DIST_DIR/app.js"
+rm -f "$DIST_DIR/index.html.bak" "$DIST_DIR/app.js.bak"
+
 echo "Build concluído em: $DIST_DIR"

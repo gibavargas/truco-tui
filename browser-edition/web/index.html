@@ -3,12 +3,15 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />
   <title>Truco Browser Edition</title>
   <meta name="description" content="Truco Paulista browser edition em WebAssembly, com paridade de regras com a versão TUI." />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Sora:wght@400;600;700;800&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="./style.css" />
+  <link rel="stylesheet" href="./style.css?v=__BUILD_ID__" />
 </head>
 <body>
   <div class="ambient ambient-a"></div>
@@ -221,7 +224,10 @@
     </div>
   </div>
 
-  <script src="./wasm_exec.js"></script>
-  <script src="./app.js" type="module"></script>
+  <script>
+    window.__ASSET_VERSION__ = "__BUILD_ID__";
+  </script>
+  <script src="./wasm_exec.js?v=__BUILD_ID__"></script>
+  <script src="./app.js?v=__BUILD_ID__" type="module"></script>
 </body>
 </html>
