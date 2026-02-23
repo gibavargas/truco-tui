@@ -76,6 +76,8 @@ func newOnlineHostModel(host *netp2p.HostSession, game *truco.Game) onlineMatchM
 		activeTab:      "mesa",
 		chatLog:        []string{tr("chat_online_started")},
 		localPlayerIdx: 0,
+		isOnline:       true,
+		isHost:         true,
 		visualState:    newVisualState(s),
 	}
 	return onlineMatchModel{
@@ -95,6 +97,8 @@ func newOnlineClientModel(cli *netp2p.ClientSession, initial truco.Snapshot) onl
 		activeTab:      "mesa",
 		chatLog:        []string{tr("chat_online_started")},
 		localPlayerIdx: seat,
+		isOnline:       true,
+		isHost:         false,
 		visualState:    newVisualState(initial),
 	}
 	return onlineMatchModel{
@@ -293,6 +297,8 @@ func (m onlineMatchModel) handleClientFailover(msg clientFailoverMsg) (tea.Model
 		prev := m.snapshot
 		m.snapshot = msg.snapshot
 		m.localPlayerIdx = 0
+		m.isOnline = true
+		m.isHost = true
 		m.visualState.applySnapshotVisualTransitions(prev, m.snapshot)
 		return m, tea.Batch(
 			waitHostActionCmd(m.host),
@@ -308,6 +314,8 @@ func (m onlineMatchModel) handleClientFailover(msg clientFailoverMsg) (tea.Model
 		}
 		m.mode = onlineModeClient
 		m.cli = msg.cli
+		m.isOnline = true
+		m.isHost = false
 		return m, tea.Batch(waitClientStateCmd(m.cli), waitClientEventCmd(m.cli))
 	}
 	return m, waitClientEventCmd(m.cli)
@@ -540,7 +548,11 @@ func (m onlineMatchModel) View() string {
 }
 
 func selectFailoverSeat(fs netp2p.ClientFailoverState) int {
-	if fs.HostSeat >= 0 && fs.HostSeat < fs.NumPlayers && strings.TrimSpace(fs.PeerHosts[fs.HostSeat]) != "" {
+	if fs.HostSeat > 0 &&
+		fs.HostSeat < fs.NumPlayers &&
+		fs.HostSeat < len(fs.Slots) &&
+		strings.TrimSpace(fs.Slots[fs.HostSeat]) != "" &&
+		strings.TrimSpace(fs.PeerHosts[fs.HostSeat]) != "" {
 		return fs.HostSeat
 	}
 	for seat := 1; seat < fs.NumPlayers; seat++ {

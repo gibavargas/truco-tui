@@ -354,6 +354,9 @@ func (c *ClientSession) send(msg Message) error {
 	if c.reconnecting {
 		return errors.New("reconectando ao host")
 	}
+	if c.conn == nil {
+		return errors.New("sem conexão ativa")
+	}
 	if err := writeMessage(c.conn, msg); err != nil {
 		closeConnWithLog(c.conn, "client send")
 		return err
@@ -369,9 +372,12 @@ func (c *ClientSession) Close() error {
 	}
 	c.closed = true
 	c.cancel()
-	err := c.conn.Close()
-	if err != nil {
-		logNetf("close conn (client close): %v", err)
+	var err error
+	if c.conn != nil {
+		err = c.conn.Close()
+		if err != nil {
+			logNetf("close conn (client close): %v", err)
+		}
 	}
 	c.mu.Unlock()
 	return err
@@ -442,6 +448,8 @@ func (c *ClientSession) tryReconnect() bool {
 	role := c.desiredRole
 	sessionID := c.sessionID
 	oldConn := c.conn
+	c.conn = nil
+	c.reader = nil
 	c.mu.Unlock()
 
 	closeConnWithLog(oldConn, "client reconnect begin")

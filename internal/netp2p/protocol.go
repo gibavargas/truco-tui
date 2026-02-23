@@ -95,20 +95,20 @@ type Message struct {
 	AdvertiseHost   string   `json:"advertise_host,omitempty"`
 	Text            string   `json:"text,omitempty"`
 	Slots           []string `json:"slots,omitempty"`
-	Assigned        int      `json:"assigned,omitempty"`
+	Assigned        int      `json:"assigned"`
 	NumPlayers      int      `json:"num_players,omitempty"`
 	Error           string   `json:"error,omitempty"`
 
 	// Campos de ação de partida (cliente -> host).
 	Action        string `json:"action,omitempty"` // play|truco|accept|refuse
-	CardIndex     int    `json:"card_index,omitempty"`
+	CardIndex     int    `json:"card_index"`
 	HostCandidate int    `json:"host_candidate,omitempty"`
 	TargetSeat    int    `json:"target_seat,omitempty"`
 
 	// Estado de partida (host -> clientes).
 	State          *truco.Snapshot `json:"state,omitempty"`
 	FullState      *truco.Snapshot `json:"full_state,omitempty"`
-	HostSeat       int             `json:"host_seat,omitempty"`
+	HostSeat       int             `json:"host_seat"`
 	HandoffPort    int             `json:"handoff_port,omitempty"`
 	PeerHosts      map[int]string  `json:"peer_hosts,omitempty"`
 	SeatSessionIDs map[int]string  `json:"seat_session_ids,omitempty"`
@@ -153,11 +153,31 @@ func readMessage(conn net.Conn, reader *bufio.Reader) (Message, error) {
 	if err := conn.SetReadDeadline(time.Now().Add(readMessageDeadline)); err != nil {
 		return msg, err
 	}
-	line, err := reader.ReadBytes('\n')
-	_ = conn.SetReadDeadline(time.Time{})
+	defer func() {
+		_ = conn.SetReadDeadline(time.Time{})
+	}()
+	line, isPrefix, err := reader.ReadLine()
+	if isPrefix {
+		// Line exceeds bufio buffer; read additional chunks up to the hard limit.
+		full := append([]byte(nil), line...)
+		for isPrefix {
+			if len(full) > scannerMaxBuffer {
+				return msg, errors.New("mensagem excede limite")
+			}
+			line, isPrefix, err = reader.ReadLine()
+			if err != nil {
+				break
+			}
+			full = append(full, line...)
+		}
+		line = full
+	}
 	if err != nil {
 		if errors.Is(err, io.EOF) && len(line) == 0 {
 			return msg, errors.New("conexão encerrada")
+		}
+		if !errors.Is(err, io.EOF) {
+			return msg, err
 		}
 		if len(line) == 0 {
 			return msg, err

@@ -253,10 +253,7 @@ func (c HostConfig) normalized() HostConfig {
 	if c.HeartbeatTimeout <= 0 {
 		c.HeartbeatTimeout = defaultHostHeartbeatTimeout
 	}
-	if c.ShutdownDrainWait < 0 {
-		c.ShutdownDrainWait = 0
-	}
-	if c.ShutdownDrainWait == 0 {
+	if c.ShutdownDrainWait <= 0 {
 		c.ShutdownDrainWait = defaultHostShutdownDrainWait
 	}
 	if c.TLSExpiryWarnBefore <= 0 {
@@ -842,7 +839,14 @@ func (h *HostSession) heartbeatLoop() {
 		now := time.Now()
 		h.maybeWarnTLSExpiryLocked(now)
 		changed := false
+		seats := make([]int, 0, len(h.clients))
 		for seat := range h.clients {
+			seats = append(seats, seat)
+		}
+		for _, seat := range seats {
+			if _, ok := h.clients[seat]; !ok {
+				continue
+			}
 			last := h.lastPong[seat]
 			if !last.IsZero() && now.Sub(last) > h.cfg.HeartbeatTimeout {
 				h.dropClientLocked(seat, "heartbeat timeout")
@@ -900,6 +904,10 @@ func (h *HostSession) handleConn(conn net.Conn) {
 	slot := -1
 	reconnect := false
 	replacement := false
+	replacementToken := ""
+	previousSlotName := ""
+	previousSessionID := ""
+	hadPreviousSessionID := false
 	var sessionID string
 	if h.started {
 		slot = h.reconnectSlotLocked(joinMsg.SessionID)
@@ -926,7 +934,9 @@ func (h *HostSession) handleConn(conn net.Conn) {
 				return
 			}
 			slot = target
-			delete(h.replaceInvites, joinMsg.ReplaceToken)
+			replacementToken = joinMsg.ReplaceToken
+			previousSlotName = h.slots[slot]
+			previousSessionID, hadPreviousSessionID = h.seatID[slot]
 			h.slots[slot] = joinMsg.Name
 			sessionID, err = randomToken()
 			if err != nil {
@@ -969,10 +979,24 @@ func (h *HostSession) handleConn(conn net.Conn) {
 	h.lastPong[slot] = time.Now()
 	cachedState, hasCachedState := h.lastState[slot]
 	if err := writeMessage(conn, Message{Type: "join_ok", ProtocolVersion: protocolVersion, Assigned: slot, NumPlayers: h.numPlayers, Slots: append([]string{}, h.slots...), SessionID: h.seatID[slot]}); err != nil {
+		if replacement {
+			h.slots[slot] = previousSlotName
+			if hadPreviousSessionID {
+				h.seatID[slot] = previousSessionID
+			} else {
+				delete(h.seatID, slot)
+			}
+			if replacementToken != "" {
+				h.replaceInvites[replacementToken] = slot
+			}
+		}
 		h.dropClientLocked(slot, "falha no handshake")
 		h.mu.Unlock()
 		closeConnWithLog(conn, "join ack failure")
 		return
+	}
+	if replacementToken != "" {
+		delete(h.replaceInvites, replacementToken)
 	}
 	if reconnect && hasCachedState {
 		snap := cloneSnapshot(cachedState)
@@ -1110,7 +1134,6 @@ func (h *HostSession) handleConn(conn net.Conn) {
 		h.sendEventLocked(fmt.Sprintf("%s saiu da sessão.", name))
 	}
 	h.mu.Unlock()
-	closeConnWithLog(conn, "normal disconnect")
 }
 
 func (h *HostSession) SendHostChat(text string) {
