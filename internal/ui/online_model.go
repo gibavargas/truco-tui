@@ -579,13 +579,17 @@ func attemptClientFailoverCmd(cli *netp2p.ClientSession) tea.Cmd {
 		if targetSeat < 0 {
 			return clientFailoverMsg{err: fmt.Errorf("não foi possível eleger novo host")}
 		}
-		hostAddr := strings.TrimSpace(fs.PeerHosts[targetSeat])
-		if hostAddr == "" {
-			return clientFailoverMsg{err: fmt.Errorf("endereço do host eleito indisponível")}
-		}
-		addr := net.JoinHostPort(hostAddr, strconv.Itoa(fs.HandoffPort))
 		inv := fs.Invite
-		inv.Addr = addr
+		hostAddr := strings.TrimSpace(fs.PeerHosts[targetSeat])
+		if inv.Transport != "relay_quic_v1" {
+			if hostAddr == "" {
+				return clientFailoverMsg{err: fmt.Errorf("endereço do host eleito indisponível")}
+			}
+			addr := net.JoinHostPort(hostAddr, strconv.Itoa(fs.HandoffPort))
+			inv.Addr = addr
+		} else {
+			inv.RelayAuthorityPeer = fs.RouteHint
+		}
 
 		if fs.AssignedSeat == targetSeat {
 			rotatedSnap, err := netp2p.RotateFailoverSnapshot(*fs.FullState, targetSeat)
@@ -605,15 +609,22 @@ func attemptClientFailoverCmd(cli *netp2p.ClientSession) tea.Cmd {
 				rotatedSlots[0],
 				fs.NumPlayers,
 				netp2p.RecoveredHostState{
-					Token:          inv.Token,
-					Slots:          rotatedSlots,
-					SeatSessionIDs: rotatedSeatIDs,
-					PeerHosts:      rotatedPeers,
-					TableHostSeat:  0,
+					Token:           inv.Token,
+					TLSSeed:         fs.TLSSeed,
+					RelayHostPeerID: fmt.Sprintf("seat-%d", targetSeat),
+					RelayEpoch:      fs.Epoch + 1,
+					Slots:           rotatedSlots,
+					SeatSessionIDs:  rotatedSeatIDs,
+					PeerHosts:       rotatedPeers,
+					TableHostSeat:   0,
 				},
 				netp2p.HostConfig{
-					HandoffPort:   fs.HandoffPort,
-					AdvertiseHost: hostAddr,
+					HandoffPort:       fs.HandoffPort,
+					AdvertiseHost:     hostAddr,
+					RelayURL:          inv.RelayURL,
+					TransportMode:     inv.Transport,
+					RelaySessionID:    inv.RelaySessionID,
+					RelaySessionToken: inv.RelaySessionToken,
 				},
 			)
 			if err != nil {

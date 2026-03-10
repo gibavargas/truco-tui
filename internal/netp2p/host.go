@@ -3,15 +3,18 @@ package netp2p
 import (
 	"context"
 	"crypto/rand"
+	"crypto/tls"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"hash/crc32"
 	"net"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
 
+	"truco-tui/internal/netrelay"
 	"truco-tui/internal/truco"
 )
 
@@ -28,11 +31,14 @@ type HostSession struct {
 	ctx             context.Context
 	cancel          context.CancelFunc
 	ln              net.Listener
+	relayAcceptor   *netrelay.HostAcceptor
 	cfg             HostConfig
 	tlsNotAfter     time.Time
 	tlsExpiryWarned bool
+	tlsSeed         string
 	token           string
 	handoffPort     int
+	epoch           int
 	inviteBase      InviteKey
 	numPlayers      int
 	hostName        string
@@ -60,6 +66,14 @@ type HostConfig struct {
 	TLSExpiryWarnBefore time.Duration
 	HandoffPort         int
 	AdvertiseHost       string
+	RelayURL            string
+	RelaySPKIPin        string
+	TransportMode       string // tcp_tls|relay_quic_v2
+	RelaySessionID      string
+	RelayHostAdminToken string
+	RelayHostPeerID     string
+	RelayHostCredential string
+	RelayEpoch          int
 }
 
 const (
@@ -105,15 +119,24 @@ func NewHostSessionWithConfig(bindAddr, hostName string, numPlayers int, cfg Hos
 	if err != nil {
 		return nil, "", err
 	}
-	return newHostSession(bindAddr, hostName, numPlayers, token, cfg)
+	tlsSeed, err := randomTLSSeed()
+	if err != nil {
+		return nil, "", err
+	}
+	return newHostSession(bindAddr, hostName, numPlayers, token, tlsSeed, cfg)
 }
 
 type RecoveredHostState struct {
-	Token          string
-	Slots          []string
-	SeatSessionIDs map[int]string
-	PeerHosts      map[int]string
-	TableHostSeat  int
+	Token               string
+	TLSSeed             string
+	RelayHostAdminToken string
+	RelayHostPeerID     string
+	RelayHostCredential string
+	RelayEpoch          int
+	Slots               []string
+	SeatSessionIDs      map[int]string
+	PeerHosts           map[int]string
+	TableHostSeat       int
 }
 
 func NewRecoveredHostSession(bindAddr, hostName string, numPlayers int, state RecoveredHostState, cfg HostConfig) (*HostSession, string, error) {
@@ -121,7 +144,21 @@ func NewRecoveredHostSession(bindAddr, hostName string, numPlayers int, state Re
 	if token == "" {
 		return nil, "", errors.New("token de recuperação inválido")
 	}
-	hs, key, err := newHostSession(bindAddr, hostName, numPlayers, token, cfg)
+	tlsSeed := strings.TrimSpace(state.TLSSeed)
+	if tlsSeed == "" {
+		return nil, "", errors.New("seed TLS de recuperação inválido")
+	}
+	if strings.TrimSpace(cfg.RelayURL) != "" {
+		cfg.RelaySessionID = strings.TrimSpace(cfg.RelaySessionID)
+		cfg.RelayHostAdminToken = strings.TrimSpace(state.RelayHostAdminToken)
+		if cfg.RelaySessionID == "" || cfg.RelayHostAdminToken == "" {
+			return nil, "", errors.New("relay session inválida para recuperação")
+		}
+		cfg.RelayHostPeerID = strings.TrimSpace(state.RelayHostPeerID)
+		cfg.RelayHostCredential = strings.TrimSpace(state.RelayHostCredential)
+		cfg.RelayEpoch = state.RelayEpoch
+	}
+	hs, key, err := newHostSession(bindAddr, hostName, numPlayers, token, tlsSeed, cfg)
 	if err != nil {
 		return nil, "", err
 	}
@@ -172,7 +209,7 @@ func NewRecoveredHostSession(bindAddr, hostName string, numPlayers int, state Re
 	return hs, key, nil
 }
 
-func newHostSession(bindAddr, hostName string, numPlayers int, token string, cfg HostConfig) (*HostSession, string, error) {
+func newHostSession(bindAddr, hostName string, numPlayers int, token, tlsSeed string, cfg HostConfig) (*HostSession, string, error) {
 	if numPlayers != 2 && numPlayers != 4 {
 		return nil, "", errors.New("numPlayers deve ser 2 ou 4")
 	}
@@ -180,26 +217,128 @@ func newHostSession(bindAddr, hostName string, numPlayers int, token string, cfg
 	if token == "" {
 		return nil, "", errors.New("token inválido")
 	}
+	tlsSeed = strings.TrimSpace(tlsSeed)
+	if tlsSeed == "" {
+		return nil, "", errors.New("seed TLS inválido")
+	}
 	cfg = cfg.normalized()
 	if cfg.HandoffPort == 0 {
 		cfg.HandoffPort = HandoffPortForToken(token)
 	}
-	ln, fingerprint, tlsNotAfter, err := generateTLSListener(bindAddr, token)
+	ctx, cancel := context.WithCancel(context.Background())
+	tlsCfg, fingerprint, tlsNotAfter, err := buildTLSConfig(tlsSeed)
 	if err != nil {
+		cancel()
 		return nil, "", err
 	}
-	ctx, cancel := context.WithCancel(context.Background())
-	listenAddr := ln.Addr().String()
-	inviteAddr := buildInviteAddr(listenAddr, cfg.AdvertiseHost)
-	inviteBase := InviteKey{Addr: inviteAddr, Token: token, Fingerprint: fingerprint}
+	var ln net.Listener
+	var relayAcceptor *netrelay.HostAcceptor
+	inviteBase := InviteKey{
+		Token:       token,
+		Fingerprint: fingerprint,
+		Transport:   cfg.TransportMode,
+	}
+	if cfg.TransportMode == "relay_quic_v2" {
+		relaySessionID := strings.TrimSpace(cfg.RelaySessionID)
+		relayHostAdminToken := strings.TrimSpace(cfg.RelayHostAdminToken)
+		hostPeerID := strings.TrimSpace(cfg.RelayHostPeerID)
+		hostCredential := strings.TrimSpace(cfg.RelayHostCredential)
+		epoch := cfg.RelayEpoch
+		relayQUICAddr := ""
+		relaySec := netrelay.ClientSecurity{RelaySPKIPin: strings.TrimSpace(cfg.RelaySPKIPin)}
+		if relaySessionID == "" || relayHostAdminToken == "" {
+			createResp, createErr := netrelay.CreateSession(cfg.RelayURL, relaySec, netrelay.CreateSessionRequest{
+				HostIdentity: hostName,
+				NumPlayers:   numPlayers,
+			})
+			if createErr != nil {
+				cancel()
+				return nil, "", createErr
+			}
+			relaySessionID = createResp.SessionID
+			relayHostAdminToken = createResp.HostAdminToken
+			hostPeerID = createResp.HostPeerID
+			hostCredential = createResp.HostPeerCredential
+			epoch = createResp.Epoch
+			relayQUICAddr = createResp.QuicAddr
+		} else {
+			if hostPeerID == "" {
+				hostPeerID = "seat-0"
+			}
+			if epoch <= 0 {
+				epoch = 1
+			}
+			published, pubErr := netrelay.PublishAuthority(cfg.RelayURL, relaySec, netrelay.PublishAuthorityRequest{
+				SessionID:    relaySessionID,
+				HostAdminToken: relayHostAdminToken,
+				HostPeerID:   hostPeerID,
+				HostIdentity: hostName,
+				Epoch:        epoch,
+			})
+			if pubErr != nil {
+				cancel()
+				return nil, "", pubErr
+			}
+			hostCredential = published.HostPeerCredential
+			epoch = published.Epoch
+			relayQUICAddr = published.QuicAddr
+		}
+		if strings.TrimSpace(relayQUICAddr) == "" {
+			relayQUICAddr = relayQUICAddrFromURL(cfg.RelayURL)
+		}
+		relayAcceptor, err = netrelay.OpenHostAcceptor(ctx, relaySec, relayQUICAddr, relaySessionID, hostPeerID, hostCredential)
+		if err != nil {
+			cancel()
+			return nil, "", err
+		}
+		rawListener := newConnListener(relayAcceptor.Addr())
+		ln = tls.NewListener(rawListener, tlsCfg)
+		go func() {
+			for {
+				c, aerr := relayAcceptor.Accept()
+				if aerr != nil {
+					_ = rawListener.Close()
+					return
+				}
+				_ = rawListener.push(c)
+			}
+		}()
+		inviteBase.TransportVersion = 2
+		inviteBase.RelayURL = cfg.RelayURL
+		inviteBase.RelaySessionID = relaySessionID
+		inviteBase.RelaySPKIPin = strings.TrimSpace(cfg.RelaySPKIPin)
+		inviteBase.RelayAuthorityPeer = hostPeerID
+		inviteBase.ExpiresAt = time.Now().UTC().Add(5 * time.Minute).Format(time.RFC3339)
+		cfg.RelaySessionID = relaySessionID
+		cfg.RelayHostAdminToken = relayHostAdminToken
+		cfg.RelayHostPeerID = hostPeerID
+		cfg.RelayHostCredential = hostCredential
+		cfg.RelayEpoch = epoch
+	} else {
+		ln, err = tls.Listen("tcp", bindAddr, tlsCfg)
+		if err != nil {
+			cancel()
+			return nil, "", err
+		}
+		listenAddr := ln.Addr().String()
+		inviteAddr := buildInviteAddr(listenAddr, cfg.AdvertiseHost)
+		inviteBase.Addr = inviteAddr
+		inviteBase.Transport = "tcp_tls"
+		inviteBase.TransportVersion = 2
+		inviteBase.ExpiresAt = time.Now().UTC().Add(24 * time.Hour).Format(time.RFC3339)
+	}
+
 	hs := &HostSession{
 		ctx:            ctx,
 		cancel:         cancel,
 		ln:             ln,
+		relayAcceptor:  relayAcceptor,
 		cfg:            cfg,
 		tlsNotAfter:    tlsNotAfter,
+		tlsSeed:        tlsSeed,
 		token:          token,
 		handoffPort:    cfg.HandoffPort,
+		epoch:          maxInt(1, cfg.RelayEpoch),
 		inviteBase:     inviteBase,
 		numPlayers:     numPlayers,
 		hostName:       hostName,
@@ -223,10 +362,18 @@ func newHostSession(bindAddr, hostName string, numPlayers int, token string, cfg
 	}
 	if normalized := normalizeAdvertiseHost(cfg.AdvertiseHost); normalized != "" {
 		hs.peerHosts[0] = normalized
-	} else if host, _, splitErr := net.SplitHostPort(inviteAddr); splitErr == nil {
+	} else if host, _, splitErr := net.SplitHostPort(inviteBase.Addr); splitErr == nil {
 		if normalized = normalizeAdvertiseHost(host); normalized != "" {
 			hs.peerHosts[0] = normalized
 		}
+	}
+	if cfg.TransportMode == "relay_quic_v2" {
+		if strings.TrimSpace(cfg.RelayHostPeerID) != "" {
+			hs.peerHosts[0] = cfg.RelayHostPeerID
+		} else {
+			hs.peerHosts[0] = "seat-0"
+		}
+		hs.inviteBase.RelayAuthorityPeer = hs.peerHosts[0]
 	}
 
 	key, err := EncodeInviteKey(inviteBase)
@@ -259,6 +406,12 @@ func (c HostConfig) normalized() HostConfig {
 	if c.TLSExpiryWarnBefore <= 0 {
 		c.TLSExpiryWarnBefore = defaultHostTLSExpiryWarnBefore
 	}
+	if strings.TrimSpace(c.TransportMode) == "" {
+		c.TransportMode = "tcp_tls"
+	}
+	if strings.TrimSpace(c.RelayURL) != "" {
+		c.TransportMode = "relay_quic_v2"
+	}
 	return c
 }
 
@@ -284,6 +437,9 @@ func (h *HostSession) Close() error {
 	h.mu.Lock()
 	for _, c := range h.clients {
 		closeConnWithLog(c, "host close")
+	}
+	if h.relayAcceptor != nil {
+		_ = h.relayAcceptor.Close()
 	}
 	if err := h.ln.Close(); err != nil {
 		logNetf("close listener (host close): %v", err)
@@ -519,6 +675,32 @@ func detectAdvertiseHost() string {
 	return ipv6Candidate
 }
 
+func relayQUICAddrFromURL(relayURL string) string {
+	u, err := url.Parse(strings.TrimSpace(relayURL))
+	if err != nil {
+		return ""
+	}
+	host := strings.TrimSpace(u.Host)
+	if host == "" {
+		host = strings.TrimSpace(relayURL)
+	}
+	h, p, err := net.SplitHostPort(host)
+	if err != nil {
+		return host
+	}
+	if p == "" || p == "443" {
+		return net.JoinHostPort(h, "9444")
+	}
+	return host
+}
+
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+
 func interfaceAddrIP(addr net.Addr) net.IP {
 	switch v := addr.(type) {
 	case *net.IPNet:
@@ -535,20 +717,34 @@ func interfaceAddrIP(addr net.Addr) net.IP {
 }
 
 type FailoverMetadata struct {
-	HostSeat       int
-	HandoffPort    int
-	PeerHosts      map[int]string
-	SeatSessionIDs map[int]string
+	HostSeat            int
+	HandoffPort         int
+	Epoch               int
+	PeerHosts           map[int]string
+	SeatSessionIDs      map[int]string
+	RelaySessionID      string
+	RelayHostAdminToken string
+	RelayHostPeerID     string
+	RelayHostCredential string
+	RelayURL            string
+	RelaySPKIPin        string
 }
 
 func (h *HostSession) FailoverMetadata() FailoverMetadata {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	meta := FailoverMetadata{
-		HostSeat:       h.tableHostSeat,
-		HandoffPort:    h.handoffPort,
-		PeerHosts:      make(map[int]string, len(h.peerHosts)),
-		SeatSessionIDs: make(map[int]string, len(h.seatID)),
+		HostSeat:            h.tableHostSeat,
+		HandoffPort:         h.handoffPort,
+		Epoch:               h.epoch,
+		PeerHosts:           make(map[int]string, len(h.peerHosts)),
+		SeatSessionIDs:      make(map[int]string, len(h.seatID)),
+		RelaySessionID:      h.cfg.RelaySessionID,
+		RelayHostAdminToken: h.cfg.RelayHostAdminToken,
+		RelayHostPeerID:     h.cfg.RelayHostPeerID,
+		RelayHostCredential: h.cfg.RelayHostCredential,
+		RelayURL:            h.cfg.RelayURL,
+		RelaySPKIPin:        h.cfg.RelaySPKIPin,
 	}
 	for seat, host := range h.peerHosts {
 		meta.PeerHosts[seat] = host
@@ -975,7 +1171,11 @@ func (h *HostSession) handleConn(conn net.Conn) {
 		closeConnWithLog(old, "replace seat connection")
 	}
 	h.clients[slot] = conn
-	h.peerHosts[slot] = h.seatAddressFromConnLocked(conn, joinMsg.AdvertiseHost)
+	if h.cfg.TransportMode == "relay_quic_v2" {
+		h.peerHosts[slot] = fmt.Sprintf("seat-%d", slot)
+	} else {
+		h.peerHosts[slot] = h.seatAddressFromConnLocked(conn, joinMsg.AdvertiseHost)
+	}
 	h.lastPong[slot] = time.Now()
 	cachedState, hasCachedState := h.lastState[slot]
 	if err := writeMessage(conn, Message{Type: "join_ok", ProtocolVersion: protocolVersion, Assigned: slot, NumPlayers: h.numPlayers, Slots: append([]string{}, h.slots...), SessionID: h.seatID[slot]}); err != nil {
@@ -1000,7 +1200,15 @@ func (h *HostSession) handleConn(conn net.Conn) {
 	}
 	if reconnect && hasCachedState {
 		snap := cloneSnapshot(cachedState)
-		if err := writeMessage(conn, Message{Type: "game_state", State: &snap}); err != nil {
+		if err := writeMessage(conn, Message{
+			Type:                 "game_state",
+			State:                &snap,
+			HostSeat:             h.tableHostSeat,
+			HandoffPort:          h.handoffPort,
+			Epoch:                h.epoch,
+			AuthorityFingerprint: h.inviteBase.Fingerprint,
+			RouteHint:            h.inviteBase.RelayAuthorityPeer,
+		}); err != nil {
 			h.dropClientLocked(slot, "falha ao sincronizar estado")
 			h.mu.Unlock()
 			closeConnWithLog(conn, "reconnect state sync failure")
@@ -1181,6 +1389,9 @@ func (h *HostSession) SendGameStateToSeat(seat int, state Message) {
 	if state.Type == "game_state" {
 		state.HostSeat = h.tableHostSeat
 		state.HandoffPort = h.handoffPort
+		state.Epoch = h.epoch
+		state.AuthorityFingerprint = h.inviteBase.Fingerprint
+		state.RouteHint = h.inviteBase.RelayAuthorityPeer
 		state.PeerHosts = make(map[int]string, len(h.peerHosts))
 		for k, v := range h.peerHosts {
 			state.PeerHosts[k] = v
@@ -1198,6 +1409,7 @@ func (h *HostSession) SendGameStateToSeat(seat int, state Message) {
 			full := trimSnapshotForFailover(*state.FullState)
 			state.FullState = &full
 		}
+		state.TLSSeed = h.tlsSeed
 	}
 	ok := h.writeToSeatLocked(seat, state)
 	if !ok && !h.started {

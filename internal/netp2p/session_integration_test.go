@@ -665,6 +665,7 @@ func TestRecoveredHostSessionReconnectBySessionID(t *testing.T) {
 		fs.NumPlayers,
 		RecoveredHostState{
 			Token:          fs.Invite.Token,
+			TLSSeed:        fs.TLSSeed,
 			Slots:          rotSlots,
 			SeatSessionIDs: rotIDs,
 			PeerHosts:      rotPeers,

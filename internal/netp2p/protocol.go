@@ -20,7 +20,7 @@ import (
 var netp2pLogger = log.New(os.Stderr, "[netp2p] ", log.LstdFlags)
 
 const (
-	protocolVersion = 1
+	protocolVersion = 2
 
 	writeMessageDeadline = 3 * time.Second
 	readMessageDeadline  = 45 * time.Second
@@ -31,6 +31,8 @@ const (
 	maxPlayerNameLen = 32
 	maxChatTextLen   = 256
 )
+
+const ProtocolVersion = protocolVersion
 
 func logNetf(format string, args ...any) {
 	if netp2pLogger != nil {
@@ -49,10 +51,18 @@ func closeConnWithLog(conn net.Conn, context string) {
 
 // InviteKey carrega os dados mínimos para conectar a um host.
 type InviteKey struct {
-	Addr         string `json:"addr"`
-	Token        string `json:"token"`
-	Fingerprint  string `json:"fingerprint,omitempty"`
-	ReplaceToken string `json:"replace_token,omitempty"`
+	Addr               string `json:"addr,omitempty"`
+	Token              string `json:"token"`
+	Fingerprint        string `json:"fingerprint,omitempty"`
+	ReplaceToken       string `json:"replace_token,omitempty"`
+	Transport          string `json:"transport,omitempty"` // tcp_tls|relay_quic_v2
+	TransportVersion   int    `json:"transport_version,omitempty"`
+	RelayURL           string `json:"relay_url,omitempty"`
+	RelaySessionID     string `json:"relay_session_id,omitempty"`
+	RelayJoinTicket    string `json:"relay_join_ticket,omitempty"`
+	RelayAuthorityPeer string `json:"relay_authority_peer,omitempty"`
+	RelaySPKIPin       string `json:"relay_spki_pin,omitempty"`
+	ExpiresAt          string `json:"expires_at,omitempty"`
 }
 
 func EncodeInviteKey(k InviteKey) (string, error) {
@@ -72,8 +82,35 @@ func DecodeInviteKey(s string) (InviteKey, error) {
 	if err := json.Unmarshal(b, &k); err != nil {
 		return k, err
 	}
-	if k.Addr == "" || k.Token == "" {
+	if k.Token == "" {
 		return k, errors.New("chave inválida")
+	}
+	if k.TransportVersion != 2 {
+		return k, errors.New("chave de convite v1 não suportada; atualize para v2")
+	}
+	if strings.TrimSpace(k.Fingerprint) == "" {
+		return k, errors.New("chave inválida: fingerprint TLS obrigatório")
+	}
+	if strings.TrimSpace(k.ExpiresAt) != "" {
+		exp, err := time.Parse(time.RFC3339, k.ExpiresAt)
+		if err != nil {
+			return k, errors.New("chave inválida: expires_at")
+		}
+		if time.Now().After(exp) {
+			return k, errors.New("chave expirada")
+		}
+	}
+	switch strings.TrimSpace(k.Transport) {
+	case "tcp_tls":
+		if k.Addr == "" {
+			return k, errors.New("chave inválida")
+		}
+	case "relay_quic_v2":
+		if strings.TrimSpace(k.RelayURL) == "" || strings.TrimSpace(k.RelaySessionID) == "" || strings.TrimSpace(k.RelayJoinTicket) == "" {
+			return k, errors.New("chave de relay inválida")
+		}
+	default:
+		return k, errors.New("transporte de convite inválido")
 	}
 	return k, nil
 }
@@ -106,12 +143,16 @@ type Message struct {
 	TargetSeat    int    `json:"target_seat,omitempty"`
 
 	// Estado de partida (host -> clientes).
-	State          *truco.Snapshot `json:"state,omitempty"`
-	FullState      *truco.Snapshot `json:"full_state,omitempty"`
-	HostSeat       int             `json:"host_seat"`
-	HandoffPort    int             `json:"handoff_port,omitempty"`
-	PeerHosts      map[int]string  `json:"peer_hosts,omitempty"`
-	SeatSessionIDs map[int]string  `json:"seat_session_ids,omitempty"`
+	State                *truco.Snapshot `json:"state,omitempty"`
+	FullState            *truco.Snapshot `json:"full_state,omitempty"`
+	HostSeat             int             `json:"host_seat"`
+	HandoffPort          int             `json:"handoff_port,omitempty"`
+	PeerHosts            map[int]string  `json:"peer_hosts,omitempty"`
+	SeatSessionIDs       map[int]string  `json:"seat_session_ids,omitempty"`
+	TLSSeed              string          `json:"tls_seed,omitempty"`
+	Epoch                int             `json:"epoch,omitempty"`
+	AuthorityFingerprint string          `json:"authority_fingerprint,omitempty"`
+	RouteHint            string          `json:"route_hint,omitempty"`
 
 	// Heartbeat opcional para monitorar conectividade.
 	HeartbeatUnix int64 `json:"heartbeat_unix,omitempty"`

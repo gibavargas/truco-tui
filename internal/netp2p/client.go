@@ -33,11 +33,15 @@ type ClientSession struct {
 	reconnecting bool
 	closed       bool
 
-	failoverHostSeat int
-	failoverPort     int
-	failoverPeers    map[int]string
-	failoverSeatIDs  map[int]string
-	failoverState    *truco.Snapshot
+	failoverHostSeat             int
+	failoverPort                 int
+	failoverPeers                map[int]string
+	failoverSeatIDs              map[int]string
+	failoverState                *truco.Snapshot
+	failoverTLSSeed              string
+	failoverEpoch                int
+	failoverAuthorityFingerprint string
+	failoverRouteHint            string
 }
 
 type joinProtocolError struct {
@@ -60,19 +64,23 @@ const (
 )
 
 type ClientFailoverState struct {
-	Ready          bool
-	HostSeat       int
-	HandoffPort    int
-	PeerHosts      map[int]string
-	SeatSessionIDs map[int]string
-	FullState      *truco.Snapshot
-	Slots          []string
-	AssignedSeat   int
-	NumPlayers     int
-	Invite         InviteKey
-	Name           string
-	DesiredRole    string
-	SessionID      string
+	Ready                bool
+	HostSeat             int
+	HandoffPort          int
+	PeerHosts            map[int]string
+	SeatSessionIDs       map[int]string
+	FullState            *truco.Snapshot
+	Slots                []string
+	AssignedSeat         int
+	NumPlayers           int
+	Invite               InviteKey
+	Name                 string
+	DesiredRole          string
+	SessionID            string
+	TLSSeed              string
+	Epoch                int
+	AuthorityFingerprint string
+	RouteHint            string
 }
 
 func JoinSession(key, playerName, desiredRole string) (*ClientSession, error) {
@@ -225,7 +233,7 @@ func inviteDialAddrs(addr string) []string {
 }
 
 func attemptDialJoin(inv InviteKey, playerName, desiredRole, sessionID string) (net.Conn, *bufio.Reader, Message, error) {
-	conn, err := dialSessionConn(inv, 2*time.Second)
+	conn, err := dialSessionConnWithRelay(inv, 2*time.Second, playerName, desiredRole, sessionID)
 	if err != nil {
 		return nil, nil, Message{}, err
 	}
@@ -296,17 +304,21 @@ func (c *ClientSession) FailoverState() ClientFailoverState {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	out := ClientFailoverState{
-		HostSeat:       c.failoverHostSeat,
-		HandoffPort:    c.failoverPort,
-		PeerHosts:      make(map[int]string, len(c.failoverPeers)),
-		SeatSessionIDs: make(map[int]string, len(c.failoverSeatIDs)),
-		Slots:          append([]string{}, c.slots...),
-		AssignedSeat:   c.assigned,
-		NumPlayers:     c.numPlayers,
-		Invite:         c.invite,
-		Name:           c.name,
-		DesiredRole:    c.desiredRole,
-		SessionID:      c.sessionID,
+		HostSeat:             c.failoverHostSeat,
+		HandoffPort:          c.failoverPort,
+		PeerHosts:            make(map[int]string, len(c.failoverPeers)),
+		SeatSessionIDs:       make(map[int]string, len(c.failoverSeatIDs)),
+		Slots:                append([]string{}, c.slots...),
+		AssignedSeat:         c.assigned,
+		NumPlayers:           c.numPlayers,
+		Invite:               c.invite,
+		Name:                 c.name,
+		DesiredRole:          c.desiredRole,
+		SessionID:            c.sessionID,
+		TLSSeed:              c.failoverTLSSeed,
+		Epoch:                c.failoverEpoch,
+		AuthorityFingerprint: c.failoverAuthorityFingerprint,
+		RouteHint:            c.failoverRouteHint,
 	}
 	for seat, host := range c.failoverPeers {
 		out.PeerHosts[seat] = host
@@ -318,7 +330,7 @@ func (c *ClientSession) FailoverState() ClientFailoverState {
 		s := cloneSnapshot(*c.failoverState)
 		out.FullState = &s
 	}
-	out.Ready = out.HandoffPort > 0 && len(out.PeerHosts) > 0 && out.FullState != nil && len(out.Slots) == out.NumPlayers
+	out.Ready = len(out.PeerHosts) > 0 && out.FullState != nil && len(out.Slots) == out.NumPlayers && strings.TrimSpace(out.TLSSeed) != ""
 	return out
 }
 
@@ -552,6 +564,13 @@ func (c *ClientSession) readLoop() {
 			c.mu.Unlock()
 			c.safeEvent("Partida iniciada pelo host.")
 		case "game_state":
+			if fp := strings.TrimSpace(msg.AuthorityFingerprint); fp != "" {
+				want := normalizeFingerprint(c.invite.Fingerprint)
+				if want != "" && normalizeFingerprint(fp) != want {
+					c.safeEvent("[erro] estado ignorado: autoridade inválida")
+					continue
+				}
+			}
 			c.mu.Lock()
 			if msg.HandoffPort > 0 {
 				c.failoverPort = msg.HandoffPort
@@ -574,6 +593,18 @@ func (c *ClientSession) readLoop() {
 			if msg.FullState != nil {
 				s := cloneSnapshot(*msg.FullState)
 				c.failoverState = &s
+			}
+			if strings.TrimSpace(msg.TLSSeed) != "" {
+				c.failoverTLSSeed = msg.TLSSeed
+			}
+			if msg.Epoch > 0 {
+				c.failoverEpoch = msg.Epoch
+			}
+			if strings.TrimSpace(msg.AuthorityFingerprint) != "" {
+				c.failoverAuthorityFingerprint = msg.AuthorityFingerprint
+			}
+			if strings.TrimSpace(msg.RouteHint) != "" {
+				c.failoverRouteHint = msg.RouteHint
 			}
 			c.mu.Unlock()
 			if msg.State != nil {

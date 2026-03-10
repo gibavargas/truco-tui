@@ -11,6 +11,8 @@ Projeto base de Truco Paulista em terminal (TUI ASCII), com:
 - Em desconexão de jogador remoto durante partida, o slot passa a CPU provisório até reconexão/substituição.
 - Transferência democrática de host da mesa por votação (`/host`).
 - Estrutura preparada para build cruzado Windows.
+- Runtime compartilhado para clientes nativos via FFI em `internal/appcore` + `cmd/truco-core-ffi`.
+- Scaffolds nativos em `native/` para macOS SwiftUI, Linux GTK4/libadwaita (Rust) e Windows WinUI 3.
 
 ## Requisitos
 
@@ -22,12 +24,38 @@ Projeto base de Truco Paulista em terminal (TUI ASCII), com:
 go run ./cmd/truco
 ```
 
+### Relay QUIC (NAT restrito)
+
+Para redes com NAT/firewall restritivo, rode o relay:
+
+```bash
+go run ./cmd/truco-relay
+```
+
+Variáveis de ambiente:
+
+- `TRUCO_RELAY_HTTP_ADDR` (default: `127.0.0.1:9443`): endpoint HTTPS de controle.
+- `TRUCO_RELAY_QUIC_ADDR` (default: `127.0.0.1:9444`): endpoint QUIC de tunelamento fallback.
+
+Observabilidade do relay:
+
+- `GET /healthz`: status + contadores agregados.
+- `GET /metrics`: métricas em texto (`truco_relay_*`).
+
+Em produção, exponha as portas públicas HTTPS+QUIC do relay e configure os hosts para criar sessão com `relay_url` no runtime (`create_host_session`).
+
 ## Build
 
 ### Build do seu SO atual
 
 ```bash
 go build -o bin/truco ./cmd/truco
+```
+
+### Build da biblioteca compartilhada (macOS atual)
+
+```bash
+make ffi
 ```
 
 ### Build para Windows (executável `.exe`)
@@ -97,6 +125,12 @@ Também há workflow de CI (`.github/workflows/ci.yml`) com:
 ## Estrutura
 
 - `cmd/truco/main.go`: bootstrap da aplicação.
+- `cmd/truco-core-ffi`: exporta o runtime compartilhado em C ABI para clientes nativos.
+- `cmd/truco-relay`: serviço relay QUIC/HTTPS (rendezvous + fallback forwarding).
+- `internal/appcore`: runtime headless com intents/eventos JSON, snapshots e orquestração offline/online.
+- `internal/netrelay`: cliente do plano de controle do relay + túnel QUIC.
+- `internal/netquic`: adaptadores/utilitários QUIC.
 - `internal/truco`: regras/cartas/motor/CPU.
 - `internal/netp2p`: protocolo de chave + lobby/chat + sincronização da partida online.
 - `internal/ui`: frontend Bubble Tea/Lipgloss, animações e modelos offline/online.
+- `native/`: scaffolds dos clientes nativos desktop.

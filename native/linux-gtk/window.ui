@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<interface>
+  <template class="TrucoWindow" parent="AdwApplicationWindow">
+    <property name="title">Truco</property>
+    <property name="default-width">1200</property>
+    <property name="default-height">800</property>
+    
+    <property name="content">
+      <object class="GtkOverlay" id="main_overlay">
+        
+        <!-- Table Backgrounds -->
+        <child>
+          <object class="GtkBox">
+            <property name="orientation">vertical</property>
+            <property name="hexpand">true</property>
+            <property name="vexpand">true</property>
+            <style>
+              <class name="table-wood"/>
+            </style>
+            
+            <child>
+              <object class="GtkBox">
+                <property name="orientation">vertical</property>
+                <property name="hexpand">true</property>
+                <property name="vexpand">true</property>
+                <style>
+                  <class name="table-felt"/>
+                </style>
+              </object>
+            </child>
+          </object>
+        </child>
+        
+        <!-- HUD Layer -->
+        <child type="overlay">
+          <object class="GtkBox" id="hud_box">
+            <property name="orientation">horizontal</property>
+            <property name="spacing">24</property>
+            <property name="halign">center</property>
+            <property name="valign">start</property>
+            <property name="margin-top">48</property>
+          </object>
+        </child>
+        
+        <!-- Opponent Layer -->
+        <child type="overlay">
+          <object class="GtkBox" id="opponent_box">
+            <property name="orientation">vertical</property>
+            <property name="spacing">8</property>
+            <property name="halign">center</property>
+            <property name="valign">start</property>
+            <property name="margin-top">160</property>
+          </object>
+        </child>
+
+        <!-- Center Table Layer -->
+        <child type="overlay">
+          <object class="GtkBox" id="center_box">
+            <property name="orientation">horizontal</property>
+            <property name="spacing">60</property>
+            <property name="halign">center</property>
+            <property name="valign">center</property>
+          </object>
+        </child>
+
+        <!-- My Hand and Controls Layer -->
+        <child type="overlay">
+          <object class="GtkBox" id="bottom_box">
+            <property name="orientation">vertical</property>
+            <property name="spacing">16</property>
+            <property name="halign">center</property>
+            <property name="valign">end</property>
+            <property name="margin-bottom">60</property>
+          </object>
+        </child>
+
+      </object>
+    </property>
+  </template>
+</interface>

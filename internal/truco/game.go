@@ -96,16 +96,23 @@ type Game struct {
 }
 
 func NewGame(playerNames []string, cpuFlags []bool) (*Game, error) {
+	rng, err := newSecureRNG()
+	if err != nil {
+		return nil, fmt.Errorf("falha ao inicializar RNG seguro: %w", err)
+	}
+	return newGameWithRNG(playerNames, cpuFlags, rng)
+}
+
+func NewGameWithSeed(playerNames []string, cpuFlags []bool, seedLo, seedHi uint64) (*Game, error) {
+	return newGameWithRNG(playerNames, cpuFlags, randv2.New(randv2.NewPCG(seedLo, seedHi)))
+}
+
+func newGameWithRNG(playerNames []string, cpuFlags []bool, rng *randv2.Rand) (*Game, error) {
 	if len(playerNames) != 2 && len(playerNames) != 4 {
 		return nil, fmt.Errorf("quantidade de jogadores inválida: %d", len(playerNames))
 	}
 	if len(playerNames) != len(cpuFlags) {
 		return nil, errors.New("playerNames e cpuFlags devem ter o mesmo tamanho")
-	}
-
-	rng, err := newSecureRNG()
-	if err != nil {
-		return nil, fmt.Errorf("falha ao inicializar RNG seguro: %w", err)
 	}
 
 	g := &Game{

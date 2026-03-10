@@ -1,0 +1,201 @@
+<Window
+    x:Class="TrucoWinUI.MainWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:TrucoWinUI.ViewModels"
+    Title="Truco"
+    Width="1200"
+    Height="800">
+
+    <Window.SystemBackdrop>
+        <MicaBackdrop />
+    </Window.SystemBackdrop>
+
+    <Grid x:Name="RootPanel">
+        <Grid.DataContext>
+            <local:AppShellViewModel/>
+        </Grid.DataContext>
+        
+        <!-- Background Wood -->
+        <Border>
+            <Border.Background>
+                <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                    <GradientStop Color="#4A2A18" Offset="0"/>
+                    <GradientStop Color="#542F1A" Offset="1"/>
+                </LinearGradientBrush>
+            </Border.Background>
+        </Border>
+        
+        <!-- Background Felt -->
+        <Border CornerRadius="80" Margin="32" BorderThickness="2" BorderBrush="#22FFFFFF" Background="#113e25">
+            <Border.Shadow>
+                <ThemeShadow />
+            </Border.Shadow>
+        </Border>
+        
+        <Grid Margin="32">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+            
+            <!-- HUD -->
+            <Grid Grid.Row="0" Margin="24">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                
+                <StackPanel Grid.Column="0" Orientation="Vertical" Background="#AA000000" Padding="16,12" CornerRadius="8" HorizontalAlignment="Left">
+                    <TextBlock Text="NÓS" FontSize="14" FontWeight="Bold" Foreground="LightGray"/>
+                    <TextBlock Text="{Binding Snapshot.MatchPoints[0], FallbackValue=0}" FontSize="32" FontWeight="Black" Foreground="White" />
+                </StackPanel>
+                
+                <StackPanel Grid.Column="1" Orientation="Vertical" Background="#CC000000" Padding="24,12" CornerRadius="12" BorderThickness="2" BorderBrush="#FFCC00" HorizontalAlignment="Center">
+                    <TextBlock Text="VALE" FontSize="16" FontWeight="Bold" Foreground="LightGray" HorizontalAlignment="Center"/>
+                    <TextBlock Text="{Binding Snapshot.CurrentHand.Stake, FallbackValue=1}" FontSize="32" FontWeight="Black" Foreground="#FFCC00" HorizontalAlignment="Center"/>
+                </StackPanel>
+                
+                <StackPanel Grid.Column="2" Orientation="Vertical" Background="#AA000000" Padding="16,12" CornerRadius="8" HorizontalAlignment="Right">
+                    <TextBlock Text="ELES" FontSize="14" FontWeight="Bold" Foreground="LightGray"/>
+                    <TextBlock Text="{Binding Snapshot.MatchPoints[1], FallbackValue=0}" FontSize="32" FontWeight="Black" Foreground="White" />
+                </StackPanel>
+            </Grid>
+            
+            <!-- Menu State -->
+            <StackPanel Grid.Row="1" Visibility="{Binding IsNotPlaying}" HorizontalAlignment="Center" VerticalAlignment="Center">
+                <TextBlock Text="Truco" FontSize="72" FontWeight="Black" Foreground="White" HorizontalAlignment="Center" Margin="0,0,0,32"/>
+                <Button Content="Criar partida offline de teste" Command="{Binding StartOfflineDemoCommand}" Width="280" Height="50" FontSize="16" Background="#FFCC00" Foreground="Black" FontWeight="Bold" HorizontalAlignment="Center" CornerRadius="8"/>
+            </StackPanel>
+            
+            <!-- Center Table -->
+            <Grid Grid.Row="1" Visibility="{Binding IsPlaying}" HorizontalAlignment="Center" VerticalAlignment="Center" ColumnSpacing="80">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                
+                <!-- Vira -->
+                <StackPanel Grid.Column="0">
+                    <TextBlock Text="VIRA" FontSize="14" FontWeight="Bold" Foreground="LightGray" HorizontalAlignment="Center"/>
+                    <Border Width="86" Height="124" Background="White" CornerRadius="8" Margin="0,8,0,0">
+                        <Grid>
+                            <TextBlock Text="{Binding Snapshot.CurrentHand.Vira.Rank, FallbackValue=?}" Margin="6,4,0,0" FontSize="18" FontWeight="Bold"/>
+                            <TextBlock Text="{Binding Snapshot.CurrentHand.Vira.SuitSymbol, FallbackValue=♠}" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="42"/>
+                        </Grid>
+                    </Border>
+                </StackPanel>
+                
+                <!-- Round Cards -->
+                <Grid Grid.Column="1" Width="180" Height="160">
+                    <Ellipse Stroke="White" StrokeThickness="2" Opacity="0.1" />
+                    <ItemsControl ItemsSource="{Binding Snapshot.CurrentHand.RoundCards}" HorizontalAlignment="Center" VerticalAlignment="Center">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <StackPanel Orientation="Horizontal" Spacing="-30" />
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border Width="86" Height="124" Background="White" CornerRadius="8" BorderBrush="LightGray" BorderThickness="1">
+                                    <Border.Shadow>
+                                        <ThemeShadow />
+                                    </Border.Shadow>
+                                    <Grid>
+                                        <TextBlock Text="{Binding Card.Rank}" Margin="6,4,0,0" FontSize="18" FontWeight="Bold" Foreground="Black"/>
+                                        <TextBlock Text="{Binding Card.SuitSymbol}" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="42" Foreground="Black"/>
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </Grid>
+                
+                <!-- Manilha -->
+                <StackPanel Grid.Column="2">
+                    <TextBlock Text="MANILHA" FontSize="14" FontWeight="Bold" Foreground="LightGray" HorizontalAlignment="Center"/>
+                    <Border Width="86" Height="124" Background="#33FFCC00" BorderBrush="#FFCC00" BorderThickness="2" CornerRadius="8" Margin="0,8,0,0">
+                        <TextBlock Text="{Binding Snapshot.CurrentHand.Manilha, FallbackValue=4}" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="46" FontWeight="Black" Foreground="#FFCC00"/>
+                    </Border>
+                </StackPanel>
+            </Grid>
+            
+            <!-- My Hand & Actions -->
+            <StackPanel Grid.Row="2" Visibility="{Binding IsPlaying}" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,24">
+                
+                <!-- Action Buttons -->
+                <StackPanel Orientation="Horizontal" Spacing="16" HorizontalAlignment="Center" Margin="0,0,0,16">
+                    <Button Content="TRUCO" Command="{Binding RequestTrucoCommand}" Background="#FF0000" Foreground="White" FontWeight="Bold" CornerRadius="8" />
+                    <Button Content="ACEITAR" Command="{Binding AcceptTrucoCommand}" Background="#00AA00" Foreground="White" FontWeight="Bold" CornerRadius="8" />
+                    <Button Content="CORRER" Command="{Binding RefuseTrucoCommand}" Background="#333333" Foreground="White" FontWeight="Bold" CornerRadius="8" />
+                </StackPanel>
+                
+                <Border Background="#FFCC00" CornerRadius="16" Padding="12,4" Margin="0,0,0,16" HorizontalAlignment="Center" Visibility="Visible">
+                    <TextBlock Text="SUA VEZ" FontSize="12" FontWeight="Bold" Foreground="Black" />
+                </Border>
+                
+                <ItemsControl ItemsSource="{Binding Snapshot.Players[0].Hand}">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <StackPanel Orientation="Horizontal" Spacing="20" />
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Button Command="{Binding DataContext.PlayCardCommand, ElementName=RootPanel}"
+                                    CommandParameter="{Binding}"
+                                    Background="Transparent" BorderThickness="0" Padding="0">
+                                
+                                <Button.Resources>
+                                    <!-- Setup implicit enter/exit animations using EventTrigger/Storyboard -->
+                                    <Storyboard x:Key="PointerEnteredStoryboard">
+                                        <DoubleAnimation Storyboard.TargetName="CardTranslateTransform"
+                                                         Storyboard.TargetProperty="Y"
+                                                         To="-20" Duration="0:0:0.2">
+                                            <DoubleAnimation.EasingFunction>
+                                                <CubicEase EasingMode="EaseOut" />
+                                            </DoubleAnimation.EasingFunction>
+                                        </DoubleAnimation>
+                                        <!-- Simulate stronger box shadow by scaling up shadow target slightly -->
+                                        <DoubleAnimation Storyboard.TargetName="CardBorder"
+                                                         Storyboard.TargetProperty="(UIElement.Shadow).(ThemeShadow.Scale)"
+                                                         To="1.15" Duration="0:0:0.2" />
+                                    </Storyboard>
+                                    <Storyboard x:Key="PointerExitedStoryboard">
+                                        <DoubleAnimation Storyboard.TargetName="CardTranslateTransform"
+                                                         Storyboard.TargetProperty="Y"
+                                                         To="0" Duration="0:0:0.3">
+                                            <DoubleAnimation.EasingFunction>
+                                                <CubicEase EasingMode="EaseOut" />
+                                            </DoubleAnimation.EasingFunction>
+                                        </DoubleAnimation>
+                                        <DoubleAnimation Storyboard.TargetName="CardBorder"
+                                                         Storyboard.TargetProperty="(UIElement.Shadow).(ThemeShadow.Scale)"
+                                                         To="1.0" Duration="0:0:0.3" />
+                                    </Storyboard>
+                                </Button.Resources>
+                                
+                                <Border x:Name="CardBorder" Width="86" Height="124" Background="White" CornerRadius="8" BorderBrush="LightGray" BorderThickness="1"
+                                        PointerEntered="Card_PointerEntered" PointerExited="Card_PointerExited" RenderTransformOrigin="0.5,0.5">
+                                    <Border.RenderTransform>
+                                        <TranslateTransform x:Name="CardTranslateTransform" Y="0" />
+                                    </Border.RenderTransform>
+                                    <Border.Shadow>
+                                        <ThemeShadow />
+                                    </Border.Shadow>
+                                    <Grid>
+                                        <TextBlock Text="{Binding Rank}" Margin="6,4,0,0" FontSize="18" FontWeight="Bold" Foreground="Black"/>
+                                        <TextBlock Text="{Binding SuitSymbol}" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="42" Foreground="Black"/>
+                                    </Grid>
+                                </Border>
+                            </Button>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </StackPanel>
+        </Grid>
+    </Grid>
+</Window>

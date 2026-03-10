@@ -13,8 +13,11 @@ import (
 	"errors"
 	"math/big"
 	"net"
+	"net/url"
 	"strings"
 	"time"
+
+	"truco-tui/internal/netrelay"
 )
 
 func normalizeFingerprint(fp string) string {
@@ -23,13 +26,13 @@ func normalizeFingerprint(fp string) string {
 	return fp
 }
 
-func generateTLSListener(bindAddr, tokenSeed string) (net.Listener, string, time.Time, error) {
-	priv, err := deterministicECDSAKey(tokenSeed)
+func buildTLSConfig(tlsSeed string) (*tls.Config, string, time.Time, error) {
+	priv, err := deterministicECDSAKey(tlsSeed)
 	if err != nil {
 		return nil, "", time.Time{}, err
 	}
 	windowStart := time.Now().UTC().Truncate(72 * time.Hour)
-	serial := deterministicSerial(tokenSeed)
+	serial := deterministicSerial(tlsSeed)
 	tmpl := &x509.Certificate{
 		SerialNumber:          serial,
 		NotBefore:             windowStart.Add(-time.Hour),
@@ -49,14 +52,22 @@ func generateTLSListener(bindAddr, tokenSeed string) (net.Listener, string, time
 	sum := sha256.Sum256(der)
 	fingerprint := hex.EncodeToString(sum[:])
 	cfg := &tls.Config{
-		MinVersion:   tls.VersionTLS12,
+		MinVersion:   tls.VersionTLS13,
 		Certificates: []tls.Certificate{cert},
+	}
+	return cfg, fingerprint, tmpl.NotAfter, nil
+}
+
+func generateTLSListener(bindAddr, tlsSeed string) (net.Listener, string, time.Time, error) {
+	cfg, fingerprint, notAfter, err := buildTLSConfig(tlsSeed)
+	if err != nil {
+		return nil, "", time.Time{}, err
 	}
 	ln, err := tls.Listen("tcp", bindAddr, cfg)
 	if err != nil {
 		return nil, "", time.Time{}, err
 	}
-	return ln, fingerprint, tmpl.NotAfter, nil
+	return ln, fingerprint, notAfter, nil
 }
 
 func deterministicECDSAKey(seed string) (*ecdsa.PrivateKey, error) {
@@ -116,13 +127,21 @@ func deterministicSerial(seed string) *big.Int {
 	return serial
 }
 
+func randomTLSSeed() (string, error) {
+	var b [32]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b[:]), nil
+}
+
 func tlsClientConfig(inv InviteKey) (*tls.Config, error) {
 	want := normalizeFingerprint(inv.Fingerprint)
 	if want == "" {
 		return nil, errors.New("fingerprint TLS ausente")
 	}
 	cfg := &tls.Config{
-		MinVersion:         tls.VersionTLS12,
+		MinVersion:         tls.VersionTLS13,
 		InsecureSkipVerify: true,
 		VerifyPeerCertificate: func(rawCerts [][]byte, _ [][]*x509.Certificate) error {
 			if len(rawCerts) == 0 {
@@ -139,17 +158,67 @@ func tlsClientConfig(inv InviteKey) (*tls.Config, error) {
 }
 
 func dialSessionConn(inv InviteKey, timeout time.Duration) (net.Conn, error) {
-	dialer := &net.Dialer{Timeout: timeout}
-	if strings.TrimSpace(inv.Fingerprint) == "" {
-		return dialer.Dial("tcp", inv.Addr)
+	return dialSessionConnWithRelay(inv, timeout, "", "", "")
+}
+
+func dialSessionConnWithRelay(inv InviteKey, timeout time.Duration, playerName, desiredRole, playerSession string) (net.Conn, error) {
+	transport := strings.TrimSpace(inv.Transport)
+	if transport == "" {
+		transport = "tcp_tls"
 	}
-	cfg, err := tlsClientConfig(inv)
+	if transport == "relay_quic_v2" {
+		sec := relaySecurityFromInvite(inv)
+		joinResp, err := netrelay.JoinSession(inv.RelayURL, sec, netrelay.JoinSessionRequest{
+			SessionID:     inv.RelaySessionID,
+			JoinTicket:    inv.RelayJoinTicket,
+			PlayerName:    playerName,
+			DesiredRole:   desiredRole,
+			PlayerSession: playerSession,
+		})
+		if err != nil {
+			return nil, err
+		}
+		target := strings.TrimSpace(joinResp.AuthorityPeerID)
+		if target == "" {
+			target = strings.TrimSpace(inv.RelayAuthorityPeer)
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		defer cancel()
+		raw, err := netrelay.OpenPeerTunnel(ctx, sec, joinResp.QuicAddr, inv.RelaySessionID, joinResp.PeerID, joinResp.PeerCredential, target)
+		if err != nil {
+			return nil, err
+		}
+		return wrapTLSClient(raw, inv)
+	}
+
+	dialer := &net.Dialer{Timeout: timeout}
+	raw, err := dialer.Dial("tcp", inv.Addr)
 	if err != nil {
 		return nil, err
 	}
-	td := &tls.Dialer{
-		NetDialer: dialer,
-		Config:    cfg,
+	return wrapTLSClient(raw, inv)
+}
+
+func relaySecurityFromInvite(inv InviteKey) netrelay.ClientSecurity {
+	sec := netrelay.ClientSecurity{
+		RelaySPKIPin: strings.TrimSpace(inv.RelaySPKIPin),
 	}
-	return td.DialContext(context.Background(), "tcp", inv.Addr)
+	if u, err := url.Parse(strings.TrimSpace(inv.RelayURL)); err == nil {
+		sec.ServerName = strings.TrimSpace(u.Hostname())
+	}
+	return sec
+}
+
+func wrapTLSClient(raw net.Conn, inv InviteKey) (net.Conn, error) {
+	cfg, err := tlsClientConfig(inv)
+	if err != nil {
+		closeConnWithLog(raw, "wrap tls config failure")
+		return nil, err
+	}
+	tconn := tls.Client(raw, cfg)
+	if err := tconn.Handshake(); err != nil {
+		closeConnWithLog(raw, "tls client handshake")
+		return nil, err
+	}
+	return tconn, nil
 }
