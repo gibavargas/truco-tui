@@ -75,11 +75,6 @@ func (s *sessionStore) set(id string, gs *gameSession) {
 	s.sessions[id] = gs
 }
 
-func (s *sessionStore) delete(id string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	delete(s.sessions, id)
-}
 
 // ---------------------------------------------------------------------------
 // API server
@@ -557,7 +552,7 @@ func pushOnlineEvent(gs *gameSession, evType, severity, msg string, actorSeat, t
 }
 
 func pickSeatForRole(slots []string, role string) int {
-	candidate := []int{}
+	var candidate []int
 	if len(slots) == 2 {
 		candidate = []int{1}
 	} else {

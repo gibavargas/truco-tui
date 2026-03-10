@@ -58,17 +58,7 @@ func buildTLSConfig(tlsSeed string) (*tls.Config, string, time.Time, error) {
 	return cfg, fingerprint, tmpl.NotAfter, nil
 }
 
-func generateTLSListener(bindAddr, tlsSeed string) (net.Listener, string, time.Time, error) {
-	cfg, fingerprint, notAfter, err := buildTLSConfig(tlsSeed)
-	if err != nil {
-		return nil, "", time.Time{}, err
-	}
-	ln, err := tls.Listen("tcp", bindAddr, cfg)
-	if err != nil {
-		return nil, "", time.Time{}, err
-	}
-	return ln, fingerprint, notAfter, nil
-}
+
 
 func deterministicECDSAKey(seed string) (*ecdsa.PrivateKey, error) {
 	if strings.TrimSpace(seed) == "" {

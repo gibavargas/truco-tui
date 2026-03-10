@@ -242,7 +242,7 @@ func newHostSession(bindAddr, hostName string, numPlayers int, token, tlsSeed st
 		relaySessionID := strings.TrimSpace(cfg.RelaySessionID)
 		relayHostAdminToken := strings.TrimSpace(cfg.RelayHostAdminToken)
 		hostPeerID := strings.TrimSpace(cfg.RelayHostPeerID)
-		hostCredential := strings.TrimSpace(cfg.RelayHostCredential)
+		var hostCredential string
 		epoch := cfg.RelayEpoch
 		relayQUICAddr := ""
 		relaySec := relayClientSecurity(cfg.RelayURL, cfg.RelaySPKIPin)

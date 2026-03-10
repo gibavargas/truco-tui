@@ -561,7 +561,7 @@ func TestFullGameLifecycle(t *testing.T) {
 				res = postAction(t, srv, "accept", sid, nil)
 				if !res["ok"].(bool) {
 					// Maybe we can't accept, try refuse
-					res = postAction(t, srv, "refuse", sid, nil)
+					_ = postAction(t, srv, "refuse", sid, nil)
 				}
 				continue
 			}
