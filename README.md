@@ -36,6 +36,7 @@ Variáveis de ambiente:
 
 - `TRUCO_RELAY_HTTP_ADDR` (default: `127.0.0.1:9443`): endpoint HTTPS de controle.
 - `TRUCO_RELAY_QUIC_ADDR` (default: `127.0.0.1:9444`): endpoint QUIC de tunelamento fallback.
+- `TRUCO_RELAY_TLS_CERT_FILE` e `TRUCO_RELAY_TLS_KEY_FILE`: certificado/chave TLS gerenciados para produção.
 
 Observabilidade do relay:
 
@@ -43,6 +44,15 @@ Observabilidade do relay:
 - `GET /metrics`: métricas em texto (`truco_relay_*`).
 
 Em produção, exponha as portas públicas HTTPS+QUIC do relay e configure os hosts para criar sessão com `relay_url` no runtime (`create_host_session`).
+
+### Segurança de rede (v2)
+
+- Protocolo online atualizado para **v2** (`ProtocolVersion=2`), com rejeição explícita de chaves/protocolo v1.
+- Convites relay v2 usam `relay_join_ticket` (uso único, TTL curto) em vez de `relay_session_token`.
+- Cliente relay valida TLS 1.3 com PKI do sistema e pode aplicar pinning SPKI (`relay_spki_pin`) para reforço.
+- Relay aplica limites de taxa, limites de capacidade, e coleta de sessões/membros/tickets expirados.
+
+> Migração: convites v1 não são mais aceitos. Gere novos convites v2.
 
 ## Build
 

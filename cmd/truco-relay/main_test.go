@@ -2,9 +2,17 @@ package main
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/sha256"
 	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/base64"
 	"encoding/json"
 	"io"
+	"math/big"
 	"net"
 	"net/http"
 	"strings"
@@ -21,14 +29,54 @@ type relayTestServer struct {
 	quicAddr string
 	httpSrv  *http.Server
 	quicLn   *quic.Listener
+	sec      netrelay.ClientSecurity
+}
+
+func testTLSConfigForLocalhost(t *testing.T) (*tls.Config, *x509.CertPool, string) {
+	t.Helper()
+	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("GenerateKey: %v", err)
+	}
+	serial, err := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
+	if err != nil {
+		t.Fatalf("rand.Int: %v", err)
+	}
+	tmpl := &x509.Certificate{
+		SerialNumber: serial,
+		Subject:      pkix.Name{CommonName: "127.0.0.1"},
+		DNSNames:     []string{"localhost"},
+		IPAddresses:  []net.IP{net.ParseIP("127.0.0.1")},
+		NotBefore:    time.Now().Add(-time.Hour),
+		NotAfter:     time.Now().Add(24 * time.Hour),
+		KeyUsage:     x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
+		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &priv.PublicKey, priv)
+	if err != nil {
+		t.Fatalf("CreateCertificate: %v", err)
+	}
+	pool := x509.NewCertPool()
+	certObj, err := x509.ParseCertificate(der)
+	if err != nil {
+		t.Fatalf("ParseCertificate: %v", err)
+	}
+	pool.AddCert(certObj)
+	sum := sha256.Sum256(certObj.RawSubjectPublicKeyInfo)
+	pin := base64.StdEncoding.EncodeToString(sum[:])
+	return &tls.Config{
+		MinVersion: tls.VersionTLS13,
+		Certificates: []tls.Certificate{{
+			Certificate: [][]byte{der},
+			PrivateKey:  priv,
+		}},
+		NextProtos: []string{netrelay.TunnelProto},
+	}, pool, pin
 }
 
 func startRelayTestServer(t *testing.T) *relayTestServer {
 	t.Helper()
-	tlsCfg, err := relayTLSConfig()
-	if err != nil {
-		t.Fatalf("relayTLSConfig: %v", err)
-	}
+	tlsCfg, pool, pin := testTLSConfigForLocalhost(t)
 	ql, err := quic.ListenAddr("127.0.0.1:0", tlsCfg, &quic.Config{
 		MaxIdleTimeout:       60 * time.Second,
 		HandshakeIdleTimeout: 5 * time.Second,
@@ -39,9 +87,10 @@ func startRelayTestServer(t *testing.T) *relayTestServer {
 	}
 	server := newRelayServer(ql.Addr().String())
 	mux := http.NewServeMux()
-	mux.HandleFunc("/v1/create-session", server.handleCreateSession)
-	mux.HandleFunc("/v1/join-session", server.handleJoinSession)
-	mux.HandleFunc("/v1/publish-authority", server.handlePublishAuthority)
+	mux.HandleFunc("/v2/create-session", server.handleCreateSession)
+	mux.HandleFunc("/v2/mint-join-ticket", server.handleMintJoinTicket)
+	mux.HandleFunc("/v2/join-session", server.handleJoinSession)
+	mux.HandleFunc("/v2/publish-authority", server.handlePublishAuthority)
 	mux.HandleFunc("/v1/heartbeat", server.handleHeartbeat)
 	mux.HandleFunc("/healthz", server.healthz)
 	mux.HandleFunc("/metrics", server.metricsHandler)
@@ -74,6 +123,11 @@ func startRelayTestServer(t *testing.T) *relayTestServer {
 		quicAddr: ql.Addr().String(),
 		httpSrv:  httpSrv,
 		quicLn:   ql,
+		sec: netrelay.ClientSecurity{
+			RootCAs:      pool,
+			ServerName:   "127.0.0.1",
+			RelaySPKIPin: pin,
+		},
 	}
 }
 
@@ -85,11 +139,15 @@ func (s *relayTestServer) Close(t *testing.T) {
 	_ = s.quicLn.Close()
 }
 
-func insecureHTTPClient() *http.Client {
+func secureHTTPClient(sec netrelay.ClientSecurity) *http.Client {
 	return &http.Client{
 		Timeout: 3 * time.Second,
 		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+			TLSClientConfig: &tls.Config{
+				MinVersion: tls.VersionTLS13,
+				RootCAs:    sec.RootCAs,
+				ServerName: sec.ServerName,
+			},
 		},
 	}
 }
@@ -98,22 +156,32 @@ func TestRelayControlPlaneAndMetrics(t *testing.T) {
 	srv := startRelayTestServer(t)
 	defer srv.Close(t)
 
-	created, err := netrelay.CreateSession(srv.httpURL, netrelay.CreateSessionRequest{
+	created, err := netrelay.CreateSession(srv.httpURL, srv.sec, netrelay.CreateSessionRequest{
 		HostIdentity: "Host",
 		NumPlayers:   2,
 	})
 	if err != nil {
 		t.Fatalf("CreateSession: %v", err)
 	}
-	joined, err := netrelay.JoinSession(srv.httpURL, netrelay.JoinSessionRequest{
-		SessionID:    created.SessionID,
-		SessionToken: created.SessionToken,
-		PlayerName:   "Guest",
+	ticket, err := netrelay.MintJoinTicket(srv.httpURL, srv.sec, netrelay.MintJoinTicketRequest{
+		SessionID:      created.SessionID,
+		HostAdminToken: created.HostAdminToken,
+		PlayerName:     "Guest",
+		DesiredRole:    "auto",
+	})
+	if err != nil {
+		t.Fatalf("MintJoinTicket: %v", err)
+	}
+	joined, err := netrelay.JoinSession(srv.httpURL, srv.sec, netrelay.JoinSessionRequest{
+		SessionID:   created.SessionID,
+		JoinTicket:  ticket.JoinTicket,
+		PlayerName:  "Guest",
+		DesiredRole: "auto",
 	})
 	if err != nil {
 		t.Fatalf("JoinSession: %v", err)
 	}
-	if err := netrelay.Heartbeat(srv.httpURL, netrelay.HeartbeatRequest{
+	if err := netrelay.Heartbeat(srv.httpURL, srv.sec, netrelay.HeartbeatRequest{
 		SessionID:      created.SessionID,
 		PeerID:         joined.PeerID,
 		PeerCredential: joined.PeerCredential,
@@ -121,18 +189,18 @@ func TestRelayControlPlaneAndMetrics(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("Heartbeat: %v", err)
 	}
-	_, err = netrelay.PublishAuthority(srv.httpURL, netrelay.PublishAuthorityRequest{
-		SessionID:    created.SessionID,
-		SessionToken: created.SessionToken,
-		HostPeerID:   "seat-1",
-		HostIdentity: "Guest",
-		Epoch:        2,
+	_, err = netrelay.PublishAuthority(srv.httpURL, srv.sec, netrelay.PublishAuthorityRequest{
+		SessionID:      created.SessionID,
+		HostAdminToken: created.HostAdminToken,
+		HostPeerID:     "seat-1",
+		HostIdentity:   "Guest",
+		Epoch:          2,
 	})
 	if err != nil {
 		t.Fatalf("PublishAuthority: %v", err)
 	}
 
-	client := insecureHTTPClient()
+	client := secureHTTPClient(srv.sec)
 	res, err := client.Get(srv.httpURL + "/healthz")
 	if err != nil {
 		t.Fatalf("GET /healthz: %v", err)
@@ -142,7 +210,7 @@ func TestRelayControlPlaneAndMetrics(t *testing.T) {
 	if err := json.NewDecoder(res.Body).Decode(&health); err != nil {
 		t.Fatalf("decode healthz: %v", err)
 	}
-	if health["sessions_created"] == nil || health["joins_total"] == nil || health["authority_publishes"] == nil {
+	if health["tickets_minted"] == nil || health["auth_failures"] == nil {
 		t.Fatalf("missing metrics in healthz: %v", health)
 	}
 
@@ -153,8 +221,85 @@ func TestRelayControlPlaneAndMetrics(t *testing.T) {
 	defer mres.Body.Close()
 	body, _ := io.ReadAll(mres.Body)
 	text := string(body)
-	if !strings.Contains(text, "truco_relay_sessions_created") || !strings.Contains(text, "truco_relay_joins_total") {
+	if !strings.Contains(text, "truco_relay_tickets_minted_total") || !strings.Contains(text, "truco_relay_auth_failures_total") {
 		t.Fatalf("missing metric lines: %s", text)
+	}
+}
+
+func TestRelayJoinTicketSingleUse(t *testing.T) {
+	srv := startRelayTestServer(t)
+	defer srv.Close(t)
+
+	created, err := netrelay.CreateSession(srv.httpURL, srv.sec, netrelay.CreateSessionRequest{HostIdentity: "Host", NumPlayers: 2})
+	if err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+	ticket, err := netrelay.MintJoinTicket(srv.httpURL, srv.sec, netrelay.MintJoinTicketRequest{
+		SessionID:      created.SessionID,
+		HostAdminToken: created.HostAdminToken,
+		PlayerName:     "Guest",
+	})
+	if err != nil {
+		t.Fatalf("MintJoinTicket: %v", err)
+	}
+	_, err = netrelay.JoinSession(srv.httpURL, srv.sec, netrelay.JoinSessionRequest{SessionID: created.SessionID, JoinTicket: ticket.JoinTicket, PlayerName: "Guest"})
+	if err != nil {
+		t.Fatalf("JoinSession first: %v", err)
+	}
+	_, err = netrelay.JoinSession(srv.httpURL, srv.sec, netrelay.JoinSessionRequest{SessionID: created.SessionID, JoinTicket: ticket.JoinTicket, PlayerName: "Guest2"})
+	if err == nil || !strings.Contains(err.Error(), "ticket_used") {
+		t.Fatalf("JoinSession replay err=%v, want ticket_used", err)
+	}
+}
+
+func TestRelaySPKIPinMismatchFails(t *testing.T) {
+	srv := startRelayTestServer(t)
+	defer srv.Close(t)
+	badSec := srv.sec
+	badSec.RelaySPKIPin = "deadbeef"
+	_, err := netrelay.CreateSession(srv.httpURL, badSec, netrelay.CreateSessionRequest{HostIdentity: "Host", NumPlayers: 2})
+	if err == nil || !strings.Contains(strings.ToLower(err.Error()), "spki") {
+		t.Fatalf("CreateSession err=%v, want SPKI mismatch", err)
+	}
+}
+
+func TestRelayInvalidCertificateChainFails(t *testing.T) {
+	srv := startRelayTestServer(t)
+	defer srv.Close(t)
+	badSec := srv.sec
+	badSec.RootCAs = nil
+	_, err := netrelay.CreateSession(srv.httpURL, badSec, netrelay.CreateSessionRequest{HostIdentity: "Host", NumPlayers: 2})
+	if err == nil {
+		t.Fatalf("CreateSession should fail with untrusted certificate")
+	}
+}
+
+func TestRelayTicketSessionMismatchFails(t *testing.T) {
+	srv := startRelayTestServer(t)
+	defer srv.Close(t)
+	a, err := netrelay.CreateSession(srv.httpURL, srv.sec, netrelay.CreateSessionRequest{HostIdentity: "A", NumPlayers: 2})
+	if err != nil {
+		t.Fatalf("CreateSession A: %v", err)
+	}
+	b, err := netrelay.CreateSession(srv.httpURL, srv.sec, netrelay.CreateSessionRequest{HostIdentity: "B", NumPlayers: 2})
+	if err != nil {
+		t.Fatalf("CreateSession B: %v", err)
+	}
+	ticket, err := netrelay.MintJoinTicket(srv.httpURL, srv.sec, netrelay.MintJoinTicketRequest{
+		SessionID:      a.SessionID,
+		HostAdminToken: a.HostAdminToken,
+		PlayerName:     "Guest",
+	})
+	if err != nil {
+		t.Fatalf("MintJoinTicket A: %v", err)
+	}
+	_, err = netrelay.JoinSession(srv.httpURL, srv.sec, netrelay.JoinSessionRequest{
+		SessionID:  b.SessionID,
+		JoinTicket: ticket.JoinTicket,
+		PlayerName: "Guest",
+	})
+	if err == nil || !strings.Contains(err.Error(), "auth_failed") {
+		t.Fatalf("JoinSession mismatch err=%v, want auth_failed", err)
 	}
 }
 
@@ -162,14 +307,14 @@ func TestRelayTunnelForwarding(t *testing.T) {
 	srv := startRelayTestServer(t)
 	defer srv.Close(t)
 
-	created, err := netrelay.CreateSession(srv.httpURL, netrelay.CreateSessionRequest{
+	created, err := netrelay.CreateSession(srv.httpURL, srv.sec, netrelay.CreateSessionRequest{
 		HostIdentity: "Host",
 		NumPlayers:   2,
 	})
 	if err != nil {
 		t.Fatalf("CreateSession: %v", err)
 	}
-	hostAcceptor, err := netrelay.OpenHostAcceptor(context.Background(), created.QuicAddr, created.SessionID, created.HostPeerID, created.HostCredential)
+	hostAcceptor, err := netrelay.OpenHostAcceptor(context.Background(), srv.sec, created.QuicAddr, created.SessionID, created.HostPeerID, created.HostPeerCredential)
 	if err != nil {
 		t.Fatalf("OpenHostAcceptor: %v", err)
 	}
@@ -196,15 +341,23 @@ func TestRelayTunnelForwarding(t *testing.T) {
 		hostErr <- werr
 	}()
 
-	joined, err := netrelay.JoinSession(srv.httpURL, netrelay.JoinSessionRequest{
-		SessionID:    created.SessionID,
-		SessionToken: created.SessionToken,
-		PlayerName:   "Guest",
+	ticket, err := netrelay.MintJoinTicket(srv.httpURL, srv.sec, netrelay.MintJoinTicketRequest{
+		SessionID:      created.SessionID,
+		HostAdminToken: created.HostAdminToken,
+		PlayerName:     "Guest",
+	})
+	if err != nil {
+		t.Fatalf("MintJoinTicket: %v", err)
+	}
+	joined, err := netrelay.JoinSession(srv.httpURL, srv.sec, netrelay.JoinSessionRequest{
+		SessionID:  created.SessionID,
+		JoinTicket: ticket.JoinTicket,
+		PlayerName: "Guest",
 	})
 	if err != nil {
 		t.Fatalf("JoinSession: %v", err)
 	}
-	peerConn, err := netrelay.OpenPeerTunnel(context.Background(), joined.QuicAddr, created.SessionID, joined.PeerID, joined.PeerCredential, joined.AuthorityPeerID)
+	peerConn, err := netrelay.OpenPeerTunnel(context.Background(), srv.sec, joined.QuicAddr, created.SessionID, joined.PeerID, joined.PeerCredential, joined.AuthorityPeerID)
 	if err != nil {
 		t.Fatalf("OpenPeerTunnel: %v", err)
 	}

@@ -245,7 +245,7 @@ func newHostSession(bindAddr, hostName string, numPlayers int, token, tlsSeed st
 		hostCredential := strings.TrimSpace(cfg.RelayHostCredential)
 		epoch := cfg.RelayEpoch
 		relayQUICAddr := ""
-		relaySec := netrelay.ClientSecurity{RelaySPKIPin: strings.TrimSpace(cfg.RelaySPKIPin)}
+		relaySec := relayClientSecurity(cfg.RelayURL, cfg.RelaySPKIPin)
 		if relaySessionID == "" || relayHostAdminToken == "" {
 			createResp, createErr := netrelay.CreateSession(cfg.RelayURL, relaySec, netrelay.CreateSessionRequest{
 				HostIdentity: hostName,
@@ -269,11 +269,11 @@ func newHostSession(bindAddr, hostName string, numPlayers int, token, tlsSeed st
 				epoch = 1
 			}
 			published, pubErr := netrelay.PublishAuthority(cfg.RelayURL, relaySec, netrelay.PublishAuthorityRequest{
-				SessionID:    relaySessionID,
+				SessionID:      relaySessionID,
 				HostAdminToken: relayHostAdminToken,
-				HostPeerID:   hostPeerID,
-				HostIdentity: hostName,
-				Epoch:        epoch,
+				HostPeerID:     hostPeerID,
+				HostIdentity:   hostName,
+				Epoch:          epoch,
 			})
 			if pubErr != nil {
 				cancel()
@@ -375,8 +375,24 @@ func newHostSession(bindAddr, hostName string, numPlayers int, token, tlsSeed st
 		}
 		hs.inviteBase.RelayAuthorityPeer = hs.peerHosts[0]
 	}
+	if cfg.TransportMode == "relay_quic_v2" {
+		ticketResp, ticketErr := netrelay.MintJoinTicket(cfg.RelayURL, relayClientSecurity(cfg.RelayURL, cfg.RelaySPKIPin), netrelay.MintJoinTicketRequest{
+			SessionID:      cfg.RelaySessionID,
+			HostAdminToken: cfg.RelayHostAdminToken,
+			PlayerName:     "",
+			DesiredRole:    "auto",
+		})
+		if ticketErr != nil {
+			if cerr := ln.Close(); cerr != nil {
+				logNetf("close listener (mint ticket failure): %v", cerr)
+			}
+			return nil, "", ticketErr
+		}
+		hs.inviteBase.RelayJoinTicket = ticketResp.JoinTicket
+		hs.inviteBase.ExpiresAt = ticketResp.ExpiresAt.UTC().Format(time.RFC3339)
+	}
 
-	key, err := EncodeInviteKey(inviteBase)
+	key, err := EncodeInviteKey(hs.inviteBase)
 	if err != nil {
 		if cerr := ln.Close(); cerr != nil {
 			logNetf("close listener (key encode failure): %v", cerr)
@@ -694,6 +710,15 @@ func relayQUICAddrFromURL(relayURL string) string {
 	return host
 }
 
+func relayClientSecurity(relayURL, pin string) netrelay.ClientSecurity {
+	sec := netrelay.ClientSecurity{RelaySPKIPin: strings.TrimSpace(pin)}
+	u, err := url.Parse(strings.TrimSpace(relayURL))
+	if err == nil {
+		sec.ServerName = strings.TrimSpace(u.Hostname())
+	}
+	return sec
+}
+
 func maxInt(a, b int) int {
 	if a > b {
 		return a
@@ -902,6 +927,21 @@ func (h *HostSession) createReplacementInviteLocked(requesterSeat, targetSeat in
 	h.replaceInvites[replaceToken] = targetSeat
 	inv := h.inviteBase
 	inv.ReplaceToken = replaceToken
+	if h.cfg.TransportMode == "relay_quic_v2" {
+		ticketResp, err := netrelay.MintJoinTicket(h.cfg.RelayURL, relayClientSecurity(h.cfg.RelayURL, h.cfg.RelaySPKIPin), netrelay.MintJoinTicketRequest{
+			SessionID:      h.cfg.RelaySessionID,
+			HostAdminToken: h.cfg.RelayHostAdminToken,
+			PlayerName:     "",
+			DesiredRole:    "auto",
+			TargetSeat:     targetSeat,
+		})
+		if err != nil {
+			delete(h.replaceInvites, replaceToken)
+			return "", err
+		}
+		inv.RelayJoinTicket = ticketResp.JoinTicket
+		inv.ExpiresAt = ticketResp.ExpiresAt.UTC().Format(time.RFC3339)
+	}
 	return EncodeInviteKey(inv)
 }
 
@@ -1208,6 +1248,7 @@ func (h *HostSession) handleConn(conn net.Conn) {
 			Epoch:                h.epoch,
 			AuthorityFingerprint: h.inviteBase.Fingerprint,
 			RouteHint:            h.inviteBase.RelayAuthorityPeer,
+			RelayHostAdminToken:  h.cfg.RelayHostAdminToken,
 		}); err != nil {
 			h.dropClientLocked(slot, "falha ao sincronizar estado")
 			h.mu.Unlock()
@@ -1392,6 +1433,7 @@ func (h *HostSession) SendGameStateToSeat(seat int, state Message) {
 		state.Epoch = h.epoch
 		state.AuthorityFingerprint = h.inviteBase.Fingerprint
 		state.RouteHint = h.inviteBase.RelayAuthorityPeer
+		state.RelayHostAdminToken = h.cfg.RelayHostAdminToken
 		state.PeerHosts = make(map[int]string, len(h.peerHosts))
 		for k, v := range h.peerHosts {
 			state.PeerHosts[k] = v

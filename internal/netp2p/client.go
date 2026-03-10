@@ -42,6 +42,7 @@ type ClientSession struct {
 	failoverEpoch                int
 	failoverAuthorityFingerprint string
 	failoverRouteHint            string
+	failoverRelayHostAdminToken  string
 }
 
 type joinProtocolError struct {
@@ -81,6 +82,7 @@ type ClientFailoverState struct {
 	Epoch                int
 	AuthorityFingerprint string
 	RouteHint            string
+	RelayHostAdminToken  string
 }
 
 func JoinSession(key, playerName, desiredRole string) (*ClientSession, error) {
@@ -319,6 +321,7 @@ func (c *ClientSession) FailoverState() ClientFailoverState {
 		Epoch:                c.failoverEpoch,
 		AuthorityFingerprint: c.failoverAuthorityFingerprint,
 		RouteHint:            c.failoverRouteHint,
+		RelayHostAdminToken:  c.failoverRelayHostAdminToken,
 	}
 	for seat, host := range c.failoverPeers {
 		out.PeerHosts[seat] = host
@@ -564,12 +567,15 @@ func (c *ClientSession) readLoop() {
 			c.mu.Unlock()
 			c.safeEvent("Partida iniciada pelo host.")
 		case "game_state":
-			if fp := strings.TrimSpace(msg.AuthorityFingerprint); fp != "" {
-				want := normalizeFingerprint(c.invite.Fingerprint)
-				if want != "" && normalizeFingerprint(fp) != want {
-					c.safeEvent("[erro] estado ignorado: autoridade inválida")
-					continue
-				}
+			want := normalizeFingerprint(c.invite.Fingerprint)
+			fp := strings.TrimSpace(msg.AuthorityFingerprint)
+			if fp == "" {
+				c.safeEvent("[erro] estado ignorado: fingerprint da autoridade ausente")
+				continue
+			}
+			if want != "" && normalizeFingerprint(fp) != want {
+				c.safeEvent("[erro] estado ignorado: autoridade inválida")
+				continue
 			}
 			c.mu.Lock()
 			if msg.HandoffPort > 0 {
@@ -605,6 +611,9 @@ func (c *ClientSession) readLoop() {
 			}
 			if strings.TrimSpace(msg.RouteHint) != "" {
 				c.failoverRouteHint = msg.RouteHint
+			}
+			if strings.TrimSpace(msg.RelayHostAdminToken) != "" {
+				c.failoverRelayHostAdminToken = msg.RelayHostAdminToken
 			}
 			c.mu.Unlock()
 			if msg.State != nil {

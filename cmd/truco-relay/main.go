@@ -5,10 +5,13 @@ import (
 	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
+	"crypto/hmac"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -29,11 +32,32 @@ import (
 	"truco-tui/internal/netrelay"
 )
 
+const (
+	memberTTL            = 20 * time.Minute
+	sessionTTL           = 6 * time.Hour
+	joinTicketTTL        = 5 * time.Minute
+	rateWindow           = 10 * time.Second
+	rateCreatePerIP      = 20
+	rateJoinPerIP        = 80
+	rateMintPerSession   = 120
+	rateRegisterPerSess  = 120
+	rateTunnelPerSess    = 240
+	maxSessions          = 4096
+	maxMembersPerSession = 8
+	maxTunnelsPerSession = 64
+	gcInterval           = 1 * time.Minute
+)
+
 type relayServer struct {
 	mu             sync.Mutex
 	sessions       map[string]*relaySession
+	tickets        map[string]*joinTicket
 	authorityConns map[string]quic.Connection
+	activeTunnels  map[string]int
+	rateByIP       map[string]rateState
+	rateBySession  map[string]rateState
 	quicAddr       string
+	ticketSecret   []byte
 	metrics        relayMetrics
 }
 
@@ -46,15 +70,25 @@ type relayMetrics struct {
 	tunnelsFailed      atomic.Int64
 	tunnelBytesUp      atomic.Int64
 	tunnelBytesDown    atomic.Int64
+	authFailures       atomic.Int64
+	ticketsMinted      atomic.Int64
+	ticketsUsed        atomic.Int64
+	ticketsExpired     atomic.Int64
+	ticketsReplay      atomic.Int64
+	rateLimited        atomic.Int64
+	gcSessionsDeleted  atomic.Int64
+	gcMembersDeleted   atomic.Int64
 }
 
 type relaySession struct {
 	ID              string
-	Token           string
+	AdminToken      string
 	NumPlayers      int
 	Epoch           int
 	AuthorityPeerID string
 	Members         map[string]*memberState
+	CreatedAt       time.Time
+	ExpiresAt       time.Time
 }
 
 type memberState struct {
@@ -65,11 +99,44 @@ type memberState struct {
 	LastBeatAt time.Time
 }
 
+type joinTicket struct {
+	TicketID      string
+	SessionID     string
+	DesiredRole   string
+	TargetSeat    int
+	PlayerSession string
+	ExpiresAt     time.Time
+	Used          bool
+}
+
+type rateState struct {
+	WindowStart time.Time
+	Count       int
+}
+
+type signedJoinTicket struct {
+	TicketID      string `json:"ticket_id"`
+	SessionID     string `json:"session_id"`
+	DesiredRole   string `json:"desired_role,omitempty"`
+	TargetSeat    int    `json:"target_seat,omitempty"`
+	PlayerSession string `json:"player_session,omitempty"`
+	ExpiresAtUnix int64  `json:"expires_at_unix"`
+}
+
 func newRelayServer(quicAddr string) *relayServer {
+	secret := make([]byte, 32)
+	if _, err := rand.Read(secret); err != nil {
+		secret = []byte("relay-v2-fallback-secret")
+	}
 	return &relayServer{
 		sessions:       map[string]*relaySession{},
+		tickets:        map[string]*joinTicket{},
 		authorityConns: map[string]quic.Connection{},
+		activeTunnels:  map[string]int{},
+		rateByIP:       map[string]rateState{},
+		rateBySession:  map[string]rateState{},
 		quicAddr:       quicAddr,
+		ticketSecret:   secret,
 	}
 }
 
@@ -83,41 +150,103 @@ func (s *relayServer) handleCreateSession(w http.ResponseWriter, r *http.Request
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "num_players must be 2 or 4"})
 		return
 	}
+	ip := remoteIP(r.RemoteAddr)
+	now := time.Now()
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !allowRateLocked(s.rateByIP, "create:"+ip, rateCreatePerIP, rateWindow, now) {
+		s.metrics.rateLimited.Add(1)
+		writeJSON(w, http.StatusTooManyRequests, map[string]any{"error": "rate_limited"})
+		return
+	}
+	if len(s.sessions) >= maxSessions {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "session_capacity_reached"})
+		return
+	}
+
 	sessionID := randomHex(12)
-	sessionToken := randomHex(24)
+	hostAdminToken := randomHex(24)
 	hostPeerID := "seat-0"
 	hostCredential := randomHex(24)
-	now := time.Now()
 	sess := &relaySession{
 		ID:              sessionID,
-		Token:           sessionToken,
+		AdminToken:      hostAdminToken,
 		NumPlayers:      req.NumPlayers,
 		Epoch:           1,
 		AuthorityPeerID: hostPeerID,
+		CreatedAt:       now,
+		ExpiresAt:       now.Add(sessionTTL),
 		Members: map[string]*memberState{
 			hostPeerID: {
 				PeerID:     hostPeerID,
 				Credential: hostCredential,
 				Identity:   strings.TrimSpace(req.HostIdentity),
-				ExpiresAt:  now.Add(20 * time.Minute),
+				ExpiresAt:  now.Add(memberTTL),
 				LastBeatAt: now,
 			},
 		},
 	}
-	s.mu.Lock()
 	s.sessions[sessionID] = sess
-	s.mu.Unlock()
 	s.metrics.sessionsCreated.Add(1)
-	log.Printf("event=create_session session_id=%s players=%d", sessionID, req.NumPlayers)
+	log.Printf("event=create_session req_id=%s session_id=%s players=%d", requestID(r), sessionID, req.NumPlayers)
 	writeJSON(w, http.StatusOK, netrelay.CreateSessionResponse{
-		SessionID:       sessionID,
-		SessionToken:    sessionToken,
-		HostPeerID:      hostPeerID,
-		HostCredential:  hostCredential,
-		AuthorityPeerID: hostPeerID,
-		Epoch:           1,
-		QuicAddr:        s.quicAddr,
+		SessionID:          sessionID,
+		HostAdminToken:     hostAdminToken,
+		HostPeerID:         hostPeerID,
+		HostPeerCredential: hostCredential,
+		AuthorityPeerID:    hostPeerID,
+		Epoch:              1,
+		QuicAddr:           s.quicAddr,
+		ExpiresAt:          sess.ExpiresAt,
 	})
+}
+
+func (s *relayServer) handleMintJoinTicket(w http.ResponseWriter, r *http.Request) {
+	var req netrelay.MintJoinTicketRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10)).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid json"})
+		return
+	}
+	now := time.Now()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	sess, ok := s.sessions[req.SessionID]
+	if !ok {
+		writeJSON(w, http.StatusNotFound, map[string]any{"error": "session_expired"})
+		return
+	}
+	if !allowRateLocked(s.rateBySession, "mint:"+req.SessionID, rateMintPerSession, rateWindow, now) {
+		s.metrics.rateLimited.Add(1)
+		writeJSON(w, http.StatusTooManyRequests, map[string]any{"error": "rate_limited"})
+		return
+	}
+	if req.HostAdminToken != sess.AdminToken {
+		s.metrics.authFailures.Add(1)
+		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "auth_failed"})
+		return
+	}
+	if sess.ExpiresAt.Before(now) {
+		writeJSON(w, http.StatusGone, map[string]any{"error": "session_expired"})
+		return
+	}
+	tid := randomHex(18)
+	t := &joinTicket{
+		TicketID:      tid,
+		SessionID:     req.SessionID,
+		DesiredRole:   strings.TrimSpace(req.DesiredRole),
+		TargetSeat:    req.TargetSeat,
+		PlayerSession: strings.TrimSpace(req.PlayerSession),
+		ExpiresAt:     now.Add(joinTicketTTL),
+	}
+	tok, err := s.signJoinTicket(t)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "ticket_sign_failed"})
+		return
+	}
+	s.tickets[tid] = t
+	s.metrics.ticketsMinted.Add(1)
+	writeJSON(w, http.StatusOK, netrelay.MintJoinTicketResponse{JoinTicket: tok, ExpiresAt: t.ExpiresAt})
 }
 
 func (s *relayServer) handleJoinSession(w http.ResponseWriter, r *http.Request) {
@@ -126,15 +255,43 @@ func (s *relayServer) handleJoinSession(w http.ResponseWriter, r *http.Request) 
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid json"})
 		return
 	}
+	now := time.Now()
+	ip := remoteIP(r.RemoteAddr)
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	sess, ok := s.sessions[req.SessionID]
-	if !ok {
-		writeJSON(w, http.StatusNotFound, map[string]any{"error": "session not found"})
+	if !allowRateLocked(s.rateByIP, "join:"+ip, rateJoinPerIP, rateWindow, now) {
+		s.metrics.rateLimited.Add(1)
+		writeJSON(w, http.StatusTooManyRequests, map[string]any{"error": "rate_limited"})
 		return
 	}
-	if req.SessionToken != sess.Token {
-		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "invalid session token"})
+
+	ticket, err := s.verifyJoinTicket(req.SessionID, req.JoinTicket, now)
+	if err != nil {
+		s.metrics.authFailures.Add(1)
+		status := http.StatusUnauthorized
+		msg := "auth_failed"
+		switch err.Error() {
+		case "ticket_expired":
+			status = http.StatusGone
+			msg = "ticket_expired"
+		case "ticket_used":
+			status = http.StatusConflict
+			msg = "ticket_used"
+		case "session_expired":
+			status = http.StatusGone
+			msg = "session_expired"
+		}
+		writeJSON(w, status, map[string]any{"error": msg})
+		return
+	}
+	sess, ok := s.sessions[req.SessionID]
+	if !ok || sess.ExpiresAt.Before(now) {
+		writeJSON(w, http.StatusGone, map[string]any{"error": "session_expired"})
+		return
+	}
+	if len(sess.Members) >= maxMembersPerSession {
+		writeJSON(w, http.StatusTooManyRequests, map[string]any{"error": "session_full"})
 		return
 	}
 	peerID := "peer-" + randomHex(10)
@@ -142,23 +299,25 @@ func (s *relayServer) handleJoinSession(w http.ResponseWriter, r *http.Request) 
 		peerID = "peer-" + strings.TrimSpace(req.PlayerSession)
 	}
 	cred := randomHex(24)
-	exp := time.Now().Add(20 * time.Minute)
+	exp := now.Add(memberTTL)
 	sess.Members[peerID] = &memberState{
 		PeerID:     peerID,
 		Credential: cred,
 		Identity:   strings.TrimSpace(req.PlayerName),
 		ExpiresAt:  exp,
-		LastBeatAt: time.Now(),
+		LastBeatAt: now,
 	}
+	ticket.Used = true
+	s.metrics.ticketsUsed.Add(1)
 	s.metrics.joinsTotal.Add(1)
-	log.Printf("event=join_session session_id=%s peer_id=%s authority=%s", req.SessionID, peerID, sess.AuthorityPeerID)
 	writeJSON(w, http.StatusOK, netrelay.JoinSessionResponse{
-		PeerID:          peerID,
-		PeerCredential:  cred,
-		AuthorityPeerID: sess.AuthorityPeerID,
-		Epoch:           sess.Epoch,
-		QuicAddr:        s.quicAddr,
-		ExpiresAt:       exp,
+		PeerID:           peerID,
+		PeerCredential:   cred,
+		AuthorityPeerID:  sess.AuthorityPeerID,
+		Epoch:            sess.Epoch,
+		QuicAddr:         s.quicAddr,
+		ExpiresAt:        exp,
+		SessionExpiresAt: sess.ExpiresAt,
 	})
 }
 
@@ -168,19 +327,21 @@ func (s *relayServer) handlePublishAuthority(w http.ResponseWriter, r *http.Requ
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid json"})
 		return
 	}
+	now := time.Now()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	sess, ok := s.sessions[req.SessionID]
-	if !ok {
-		writeJSON(w, http.StatusNotFound, map[string]any{"error": "session not found"})
+	if !ok || sess.ExpiresAt.Before(now) {
+		writeJSON(w, http.StatusGone, map[string]any{"error": "session_expired"})
 		return
 	}
-	if req.SessionToken != sess.Token {
-		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "invalid session token"})
+	if req.HostAdminToken != sess.AdminToken {
+		s.metrics.authFailures.Add(1)
+		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "auth_failed"})
 		return
 	}
 	if req.Epoch <= sess.Epoch {
-		writeJSON(w, http.StatusConflict, map[string]any{"error": "stale epoch"})
+		writeJSON(w, http.StatusConflict, map[string]any{"error": "stale_epoch"})
 		return
 	}
 	if strings.TrimSpace(req.HostPeerID) == "" {
@@ -195,18 +356,17 @@ func (s *relayServer) handlePublishAuthority(w http.ResponseWriter, r *http.Requ
 	}
 	mem.Credential = cred
 	mem.Identity = strings.TrimSpace(req.HostIdentity)
-	mem.ExpiresAt = time.Now().Add(20 * time.Minute)
-	mem.LastBeatAt = time.Now()
+	mem.ExpiresAt = now.Add(memberTTL)
+	mem.LastBeatAt = now
 	sess.AuthorityPeerID = req.HostPeerID
 	sess.Epoch = req.Epoch
 	delete(s.authorityConns, req.SessionID)
 	s.metrics.authorityPublishes.Add(1)
-	log.Printf("event=publish_authority session_id=%s host_peer_id=%s epoch=%d", req.SessionID, req.HostPeerID, req.Epoch)
 	writeJSON(w, http.StatusOK, netrelay.PublishAuthorityResponse{
-		AuthorityPeerID: req.HostPeerID,
-		Epoch:           req.Epoch,
-		HostCredential:  cred,
-		QuicAddr:        s.quicAddr,
+		AuthorityPeerID:    req.HostPeerID,
+		Epoch:              req.Epoch,
+		HostPeerCredential: cred,
+		QuicAddr:           s.quicAddr,
 	})
 }
 
@@ -216,20 +376,22 @@ func (s *relayServer) handleHeartbeat(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid json"})
 		return
 	}
+	now := time.Now()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	sess, ok := s.sessions[req.SessionID]
-	if !ok {
-		writeJSON(w, http.StatusNotFound, map[string]any{"error": "session not found"})
+	if !ok || sess.ExpiresAt.Before(now) {
+		writeJSON(w, http.StatusGone, map[string]any{"error": "session_expired"})
 		return
 	}
 	mem, ok := sess.Members[req.PeerID]
 	if !ok || mem.Credential != req.PeerCredential {
-		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "invalid peer credential"})
+		s.metrics.authFailures.Add(1)
+		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "auth_failed"})
 		return
 	}
-	mem.LastBeatAt = time.Now()
-	mem.ExpiresAt = time.Now().Add(20 * time.Minute)
+	mem.LastBeatAt = now
+	mem.ExpiresAt = now.Add(memberTTL)
 	s.metrics.heartbeatsTotal.Add(1)
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
@@ -247,6 +409,14 @@ func (s *relayServer) healthz(w http.ResponseWriter, r *http.Request) {
 		"heartbeats_total":    s.metrics.heartbeatsTotal.Load(),
 		"tunnels_opened":      s.metrics.tunnelsOpened.Load(),
 		"tunnels_failed":      s.metrics.tunnelsFailed.Load(),
+		"auth_failures":       s.metrics.authFailures.Load(),
+		"tickets_minted":      s.metrics.ticketsMinted.Load(),
+		"tickets_used":        s.metrics.ticketsUsed.Load(),
+		"tickets_expired":     s.metrics.ticketsExpired.Load(),
+		"tickets_replay":      s.metrics.ticketsReplay.Load(),
+		"rate_limited":        s.metrics.rateLimited.Load(),
+		"gc_sessions_deleted": s.metrics.gcSessionsDeleted.Load(),
+		"gc_members_deleted":  s.metrics.gcMembersDeleted.Load(),
 		"tunnel_bytes_up":     s.metrics.tunnelBytesUp.Load(),
 		"tunnel_bytes_down":   s.metrics.tunnelBytesDown.Load(),
 	})
@@ -258,6 +428,14 @@ func (s *relayServer) metricsHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "truco_relay_joins_total %d\n", s.metrics.joinsTotal.Load())
 	fmt.Fprintf(w, "truco_relay_authority_publishes_total %d\n", s.metrics.authorityPublishes.Load())
 	fmt.Fprintf(w, "truco_relay_heartbeats_total %d\n", s.metrics.heartbeatsTotal.Load())
+	fmt.Fprintf(w, "truco_relay_auth_failures_total %d\n", s.metrics.authFailures.Load())
+	fmt.Fprintf(w, "truco_relay_tickets_minted_total %d\n", s.metrics.ticketsMinted.Load())
+	fmt.Fprintf(w, "truco_relay_tickets_used_total %d\n", s.metrics.ticketsUsed.Load())
+	fmt.Fprintf(w, "truco_relay_tickets_expired_total %d\n", s.metrics.ticketsExpired.Load())
+	fmt.Fprintf(w, "truco_relay_tickets_replay_total %d\n", s.metrics.ticketsReplay.Load())
+	fmt.Fprintf(w, "truco_relay_rate_limited_total %d\n", s.metrics.rateLimited.Load())
+	fmt.Fprintf(w, "truco_relay_gc_sessions_deleted_total %d\n", s.metrics.gcSessionsDeleted.Load())
+	fmt.Fprintf(w, "truco_relay_gc_members_deleted_total %d\n", s.metrics.gcMembersDeleted.Load())
 	fmt.Fprintf(w, "truco_relay_tunnels_opened_total %d\n", s.metrics.tunnelsOpened.Load())
 	fmt.Fprintf(w, "truco_relay_tunnels_failed_total %d\n", s.metrics.tunnelsFailed.Load())
 	fmt.Fprintf(w, "truco_relay_tunnel_bytes_up_total %d\n", s.metrics.tunnelBytesUp.Load())
@@ -290,6 +468,7 @@ func (s *relayServer) handleQUICStream(conn quic.Connection, stream quic.Stream)
 	switch h.Type {
 	case "host_register":
 		if err := s.handleHostRegister(conn, stream, h); err != nil {
+			s.metrics.authFailures.Add(1)
 			_ = stream.Close()
 			return
 		}
@@ -315,15 +494,20 @@ type netrelayHeartbeatTunnelHello struct {
 }
 
 func (s *relayServer) handleHostRegister(conn quic.Connection, stream quic.Stream, h netrelayHeartbeatTunnelHello) error {
+	now := time.Now()
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if !allowRateLocked(s.rateBySession, "register:"+h.SessionID, rateRegisterPerSess, rateWindow, now) {
+		s.metrics.rateLimited.Add(1)
+		return errors.New("rate_limited")
+	}
 	sess, ok := s.sessions[h.SessionID]
-	if !ok {
-		return errors.New("session not found")
+	if !ok || sess.ExpiresAt.Before(now) {
+		return errors.New("session expired")
 	}
 	mem, ok := sess.Members[h.PeerID]
-	if !ok || mem.Credential != h.Credential || mem.ExpiresAt.Before(time.Now()) {
-		return errors.New("invalid credential")
+	if !ok || mem.Credential != h.Credential || mem.ExpiresAt.Before(now) {
+		return errors.New("auth_failed")
 	}
 	if h.PeerID != sess.AuthorityPeerID {
 		return errors.New("not authority")
@@ -335,16 +519,26 @@ func (s *relayServer) handleHostRegister(conn quic.Connection, stream quic.Strea
 }
 
 func (s *relayServer) handlePeerTunnel(downstreamReader io.Reader, downstream quic.Stream, h netrelayHeartbeatTunnelHello) error {
+	now := time.Now()
 	s.mu.Lock()
-	sess, ok := s.sessions[h.SessionID]
-	if !ok {
+	if !allowRateLocked(s.rateBySession, "tunnel:"+h.SessionID, rateTunnelPerSess, rateWindow, now) {
 		s.mu.Unlock()
-		return errors.New("session not found")
+		s.metrics.tunnelsFailed.Add(1)
+		s.metrics.rateLimited.Add(1)
+		return errors.New("rate_limited")
+	}
+	sess, ok := s.sessions[h.SessionID]
+	if !ok || sess.ExpiresAt.Before(now) {
+		s.mu.Unlock()
+		s.metrics.tunnelsFailed.Add(1)
+		return errors.New("session expired")
 	}
 	mem, ok := sess.Members[h.PeerID]
-	if !ok || mem.Credential != h.Credential || mem.ExpiresAt.Before(time.Now()) {
+	if !ok || mem.Credential != h.Credential || mem.ExpiresAt.Before(now) {
 		s.mu.Unlock()
-		return errors.New("invalid credential")
+		s.metrics.tunnelsFailed.Add(1)
+		s.metrics.authFailures.Add(1)
+		return errors.New("auth_failed")
 	}
 	targetPeer := strings.TrimSpace(h.TargetPeerID)
 	if targetPeer == "" {
@@ -352,21 +546,34 @@ func (s *relayServer) handlePeerTunnel(downstreamReader io.Reader, downstream qu
 	}
 	if targetPeer != sess.AuthorityPeerID {
 		s.mu.Unlock()
+		s.metrics.tunnelsFailed.Add(1)
 		return errors.New("target peer is not current authority")
 	}
+	if s.activeTunnels[h.SessionID] >= maxTunnelsPerSession {
+		s.mu.Unlock()
+		s.metrics.tunnelsFailed.Add(1)
+		s.metrics.rateLimited.Add(1)
+		return errors.New("rate_limited")
+	}
+	s.activeTunnels[h.SessionID]++
 	authorityConn, ok := s.authorityConns[h.SessionID]
 	s.mu.Unlock()
 	if !ok || authorityConn == nil {
 		s.metrics.tunnelsFailed.Add(1)
+		s.mu.Lock()
+		s.activeTunnels[h.SessionID]--
+		s.mu.Unlock()
 		return errors.New("authority unavailable")
 	}
 	upstream, err := authorityConn.OpenStreamSync(context.Background())
 	if err != nil {
 		s.metrics.tunnelsFailed.Add(1)
+		s.mu.Lock()
+		s.activeTunnels[h.SessionID]--
+		s.mu.Unlock()
 		return err
 	}
 	s.metrics.tunnelsOpened.Add(1)
-	log.Printf("event=open_tunnel session_id=%s from=%s to=%s", h.SessionID, h.PeerID, targetPeer)
 	errc := make(chan error, 2)
 	go func() {
 		n, e := io.Copy(upstream, downstreamReader)
@@ -381,6 +588,9 @@ func (s *relayServer) handlePeerTunnel(downstreamReader io.Reader, downstream qu
 	<-errc
 	_ = upstream.Close()
 	_ = downstream.Close()
+	s.mu.Lock()
+	s.activeTunnels[h.SessionID]--
+	s.mu.Unlock()
 	return nil
 }
 
@@ -392,6 +602,137 @@ func (s *relayServer) cleanupConn(conn quic.Connection) {
 			delete(s.authorityConns, sid)
 		}
 	}
+}
+
+func (s *relayServer) gcLoop(ctx context.Context) {
+	tk := time.NewTicker(gcInterval)
+	defer tk.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-tk.C:
+			s.gcOnce(time.Now())
+		}
+	}
+}
+
+func (s *relayServer) gcOnce(now time.Time) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for sid, sess := range s.sessions {
+		activeMembers := 0
+		for pid, mem := range sess.Members {
+			if mem.ExpiresAt.Before(now) {
+				delete(sess.Members, pid)
+				s.metrics.gcMembersDeleted.Add(1)
+				continue
+			}
+			activeMembers++
+		}
+		if sess.ExpiresAt.Before(now) || now.Sub(sess.CreatedAt) >= sessionTTL || activeMembers == 0 {
+			delete(s.sessions, sid)
+			delete(s.authorityConns, sid)
+			delete(s.activeTunnels, sid)
+			s.metrics.gcSessionsDeleted.Add(1)
+		}
+	}
+	for tid, t := range s.tickets {
+		if t.ExpiresAt.Before(now) {
+			delete(s.tickets, tid)
+			s.metrics.ticketsExpired.Add(1)
+		}
+	}
+}
+
+func (s *relayServer) signJoinTicket(t *joinTicket) (string, error) {
+	claims := signedJoinTicket{
+		TicketID:      t.TicketID,
+		SessionID:     t.SessionID,
+		DesiredRole:   t.DesiredRole,
+		TargetSeat:    t.TargetSeat,
+		PlayerSession: t.PlayerSession,
+		ExpiresAtUnix: t.ExpiresAt.Unix(),
+	}
+	payload, err := json.Marshal(claims)
+	if err != nil {
+		return "", err
+	}
+	h := hmac.New(sha256.New, s.ticketSecret)
+	_, _ = h.Write(payload)
+	sig := h.Sum(nil)
+	return base64.RawURLEncoding.EncodeToString(payload) + "." + base64.RawURLEncoding.EncodeToString(sig), nil
+}
+
+func (s *relayServer) verifyJoinTicket(sessionID, token string, now time.Time) (*joinTicket, error) {
+	parts := strings.Split(token, ".")
+	if len(parts) != 2 {
+		return nil, errors.New("auth_failed")
+	}
+	payload, err := base64.RawURLEncoding.DecodeString(parts[0])
+	if err != nil {
+		return nil, errors.New("auth_failed")
+	}
+	sig, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return nil, errors.New("auth_failed")
+	}
+	h := hmac.New(sha256.New, s.ticketSecret)
+	_, _ = h.Write(payload)
+	if !hmac.Equal(sig, h.Sum(nil)) {
+		return nil, errors.New("auth_failed")
+	}
+	var claims signedJoinTicket
+	if err := json.Unmarshal(payload, &claims); err != nil {
+		return nil, errors.New("auth_failed")
+	}
+	if claims.SessionID != sessionID {
+		return nil, errors.New("auth_failed")
+	}
+	t, ok := s.tickets[claims.TicketID]
+	if !ok {
+		return nil, errors.New("auth_failed")
+	}
+	if t.Used {
+		s.metrics.ticketsReplay.Add(1)
+		return nil, errors.New("ticket_used")
+	}
+	if now.After(t.ExpiresAt) || now.Unix() > claims.ExpiresAtUnix {
+		s.metrics.ticketsExpired.Add(1)
+		return nil, errors.New("ticket_expired")
+	}
+	sess, ok := s.sessions[sessionID]
+	if !ok || sess.ExpiresAt.Before(now) {
+		return nil, errors.New("session_expired")
+	}
+	return t, nil
+}
+
+func allowRateLocked(state map[string]rateState, key string, limit int, window time.Duration, now time.Time) bool {
+	rs := state[key]
+	if rs.WindowStart.IsZero() || now.Sub(rs.WindowStart) >= window {
+		rs.WindowStart = now
+		rs.Count = 0
+	}
+	rs.Count++
+	state[key] = rs
+	return rs.Count <= limit
+}
+
+func remoteIP(addr string) string {
+	host, _, err := net.SplitHostPort(strings.TrimSpace(addr))
+	if err != nil {
+		return strings.TrimSpace(addr)
+	}
+	return strings.TrimSpace(host)
+}
+
+func requestID(r *http.Request) string {
+	v := strings.TrimSpace(r.Header.Get("X-Request-ID"))
+	if v != "" {
+		return v
+	}
+	return randomHex(6)
 }
 
 func randomHex(n int) string {
@@ -413,6 +754,23 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 }
 
 func relayTLSConfig() (*tls.Config, error) {
+	certPath := strings.TrimSpace(os.Getenv("TRUCO_RELAY_TLS_CERT_FILE"))
+	keyPath := strings.TrimSpace(os.Getenv("TRUCO_RELAY_TLS_KEY_FILE"))
+	if certPath != "" && keyPath != "" {
+		cert, err := tls.LoadX509KeyPair(certPath, keyPath)
+		if err != nil {
+			return nil, fmt.Errorf("load managed cert: %w", err)
+		}
+		return &tls.Config{
+			MinVersion:   tls.VersionTLS13,
+			Certificates: []tls.Certificate{cert},
+			NextProtos:   []string{netrelay.TunnelProto},
+		}, nil
+	}
+	return relayTLSSelfSignedConfig()
+}
+
+func relayTLSSelfSignedConfig() (*tls.Config, error) {
 	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		return nil, err
@@ -424,7 +782,7 @@ func relayTLSConfig() (*tls.Config, error) {
 	tmpl := &x509.Certificate{
 		SerialNumber: serial,
 		Subject: pkix.Name{
-			CommonName: "truco-relay",
+			CommonName: "truco-relay-dev",
 		},
 		NotBefore:             time.Now().Add(-time.Hour),
 		NotAfter:              time.Now().Add(24 * time.Hour),
@@ -436,10 +794,7 @@ func relayTLSConfig() (*tls.Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	cert := tls.Certificate{
-		Certificate: [][]byte{der},
-		PrivateKey:  priv,
-	}
+	cert := tls.Certificate{Certificate: [][]byte{der}, PrivateKey: priv}
 	return &tls.Config{
 		MinVersion:   tls.VersionTLS13,
 		Certificates: []tls.Certificate{cert},
@@ -458,11 +813,11 @@ func main() {
 	}
 
 	server := newRelayServer(quicAddr)
-
 	mux := http.NewServeMux()
-	mux.HandleFunc("/v1/create-session", server.handleCreateSession)
-	mux.HandleFunc("/v1/join-session", server.handleJoinSession)
-	mux.HandleFunc("/v1/publish-authority", server.handlePublishAuthority)
+	mux.HandleFunc("/v2/create-session", server.handleCreateSession)
+	mux.HandleFunc("/v2/mint-join-ticket", server.handleMintJoinTicket)
+	mux.HandleFunc("/v2/join-session", server.handleJoinSession)
+	mux.HandleFunc("/v2/publish-authority", server.handlePublishAuthority)
 	mux.HandleFunc("/v1/heartbeat", server.handleHeartbeat)
 	mux.HandleFunc("/healthz", server.healthz)
 	mux.HandleFunc("/metrics", server.metricsHandler)
@@ -480,6 +835,10 @@ func main() {
 	if err != nil {
 		log.Fatalf("relay quic listen: %v", err)
 	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go server.gcLoop(ctx)
 	go func() {
 		for {
 			conn, err := ql.Accept(context.Background())

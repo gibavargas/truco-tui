@@ -581,7 +581,7 @@ func attemptClientFailoverCmd(cli *netp2p.ClientSession) tea.Cmd {
 		}
 		inv := fs.Invite
 		hostAddr := strings.TrimSpace(fs.PeerHosts[targetSeat])
-		if inv.Transport != "relay_quic_v1" {
+		if inv.Transport != "relay_quic_v2" {
 			if hostAddr == "" {
 				return clientFailoverMsg{err: fmt.Errorf("endereço do host eleito indisponível")}
 			}
@@ -609,22 +609,24 @@ func attemptClientFailoverCmd(cli *netp2p.ClientSession) tea.Cmd {
 				rotatedSlots[0],
 				fs.NumPlayers,
 				netp2p.RecoveredHostState{
-					Token:           inv.Token,
-					TLSSeed:         fs.TLSSeed,
-					RelayHostPeerID: fmt.Sprintf("seat-%d", targetSeat),
-					RelayEpoch:      fs.Epoch + 1,
-					Slots:           rotatedSlots,
-					SeatSessionIDs:  rotatedSeatIDs,
-					PeerHosts:       rotatedPeers,
-					TableHostSeat:   0,
+					Token:               inv.Token,
+					TLSSeed:             fs.TLSSeed,
+					RelayHostAdminToken: fs.RelayHostAdminToken,
+					RelayHostPeerID:     fmt.Sprintf("seat-%d", targetSeat),
+					RelayEpoch:          fs.Epoch + 1,
+					Slots:               rotatedSlots,
+					SeatSessionIDs:      rotatedSeatIDs,
+					PeerHosts:           rotatedPeers,
+					TableHostSeat:       0,
 				},
 				netp2p.HostConfig{
-					HandoffPort:       fs.HandoffPort,
-					AdvertiseHost:     hostAddr,
-					RelayURL:          inv.RelayURL,
-					TransportMode:     inv.Transport,
-					RelaySessionID:    inv.RelaySessionID,
-					RelaySessionToken: inv.RelaySessionToken,
+					HandoffPort:         fs.HandoffPort,
+					AdvertiseHost:       hostAddr,
+					RelayURL:            inv.RelayURL,
+					RelaySPKIPin:        inv.RelaySPKIPin,
+					TransportMode:       inv.Transport,
+					RelaySessionID:      inv.RelaySessionID,
+					RelayHostAdminToken: fs.RelayHostAdminToken,
 				},
 			)
 			if err != nil {

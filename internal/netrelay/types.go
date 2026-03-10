@@ -37,22 +37,22 @@ type MintJoinTicketResponse struct {
 }
 
 type JoinSessionRequest struct {
-	SessionID    string `json:"session_id"`
-	JoinTicket   string `json:"join_ticket"`
-	PlayerName   string `json:"player_name"`
-	DesiredRole  string `json:"desired_role,omitempty"`
-	TargetSeat   int    `json:"target_seat,omitempty"`
+	SessionID     string `json:"session_id"`
+	JoinTicket    string `json:"join_ticket"`
+	PlayerName    string `json:"player_name"`
+	DesiredRole   string `json:"desired_role,omitempty"`
+	TargetSeat    int    `json:"target_seat,omitempty"`
 	PlayerSession string `json:"player_session,omitempty"`
 }
 
 type JoinSessionResponse struct {
-	PeerID             string    `json:"peer_id"`
-	PeerCredential     string    `json:"peer_credential"`
-	AuthorityPeerID    string    `json:"authority_peer_id"`
-	Epoch              int       `json:"epoch"`
-	QuicAddr           string    `json:"quic_addr"`
-	ExpiresAt          time.Time `json:"expires_at"`
-	SessionExpiresAt   time.Time `json:"session_expires_at"`
+	PeerID           string    `json:"peer_id"`
+	PeerCredential   string    `json:"peer_credential"`
+	AuthorityPeerID  string    `json:"authority_peer_id"`
+	Epoch            int       `json:"epoch"`
+	QuicAddr         string    `json:"quic_addr"`
+	ExpiresAt        time.Time `json:"expires_at"`
+	SessionExpiresAt time.Time `json:"session_expires_at"`
 }
 
 type PublishAuthorityRequest struct {

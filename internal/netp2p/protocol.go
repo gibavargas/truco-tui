@@ -153,6 +153,7 @@ type Message struct {
 	Epoch                int             `json:"epoch,omitempty"`
 	AuthorityFingerprint string          `json:"authority_fingerprint,omitempty"`
 	RouteHint            string          `json:"route_hint,omitempty"`
+	RelayHostAdminToken  string          `json:"relay_host_admin_token,omitempty"`
 
 	// Heartbeat opcional para monitorar conectividade.
 	HeartbeatUnix int64 `json:"heartbeat_unix,omitempty"`
