@@ -5,6 +5,22 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 PHP_DIR="$ROOT_DIR/browser-edition/php"
 DIST_DIR="$ROOT_DIR/browser-edition/dist"
 API_BIN="$DIST_DIR/truco-api"
+API_SRC_DIR="$ROOT_DIR/browser-edition/cmd/httpapi"
+
+missing=()
+[[ -d "$PHP_DIR" ]] || missing+=("browser-edition/php")
+[[ -d "$API_SRC_DIR" ]] || missing+=("browser-edition/cmd/httpapi")
+
+if (( ${#missing[@]} > 0 )); then
+  echo "Build aborted: missing required browser edition paths:"
+  for path in "${missing[@]}"; do
+    echo "  - $path"
+  done
+  echo ""
+  echo "This repository version uses Browser Edition (PHP + Go HTTP API)."
+  echo "If your clone is partial/outdated, update the branch and retry."
+  exit 1
+fi
 
 mkdir -p "$DIST_DIR"
 rm -rf "$DIST_DIR"/*
