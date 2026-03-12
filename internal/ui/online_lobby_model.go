@@ -3,6 +3,7 @@ package ui
 import (
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -210,10 +211,33 @@ func (m *onlineLobbyModel) handleSubmit(line string) tea.Cmd {
 			m.host.SendHostChat(strings.TrimSpace(line[len("chat "):]))
 			return nil
 		}
+		if strings.HasPrefix(lower, "vote ") {
+			if seat, err := strconv.Atoi(strings.TrimSpace(line[len("vote "):])); err == nil && seat > 0 {
+				m.host.CastHostVote(0, seat-1)
+			}
+			return nil
+		}
+		if strings.HasPrefix(lower, "invite ") {
+			if seat, err := strconv.Atoi(strings.TrimSpace(line[len("invite "):])); err == nil && seat > 0 {
+				key, errReq := m.host.RequestReplacementInvite(0, seat-1)
+				if errReq != nil {
+					m.err = errReq
+				} else {
+					m.events = append(m.events, fmt.Sprintf("[system] Invite key for slot %d: %s", seat, key))
+				}
+			}
+			return nil
+		}
 	case lobbyModeClient:
 		if strings.HasPrefix(lower, "chat ") {
 			if err := m.cli.SendChat(strings.TrimSpace(line[len("chat "):])); err != nil {
 				m.err = err
+			}
+			return nil
+		}
+		if strings.HasPrefix(lower, "vote ") {
+			if seat, err := strconv.Atoi(strings.TrimSpace(line[len("vote "):])); err == nil && seat > 0 {
+				m.cli.SendHostVote(seat - 1)
 			}
 			return nil
 		}

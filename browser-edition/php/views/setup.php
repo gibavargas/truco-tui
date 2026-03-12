@@ -3,7 +3,7 @@
     <h2>
         <?= tr('setup_title') ?>
     </h2>
-    <form method="post" action="index.php">
+    <form method="post" action="index.php" data-ajax="true">
         <input type="hidden" name="action" value="startGame">
         <div class="setup-grid">
             <div>

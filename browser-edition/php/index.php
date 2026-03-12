@@ -1,15 +1,9 @@
 <?php
-/**
- * Truco Browser Edition — PHP Frontend (no JavaScript)
- * Main router: handles form POSTs, calls Go API, renders views.
- */
-
 session_start();
 
 require_once __DIR__ . '/api_client.php';
 require_once __DIR__ . '/i18n.php';
 
-// Defaults
 if (!isset($_SESSION['locale'])) {
     $_SESSION['locale'] = 'pt-BR';
 }
@@ -17,7 +11,6 @@ if (!isset($_SESSION['locale'])) {
 $apiUrl = getenv('TRUCO_API_URL') ?: 'http://localhost:9090';
 $api = new TrucoApiClient($apiUrl);
 
-// Ensure we have a Go API session
 if (empty($_SESSION['api_session_id'])) {
     $res = $api->call('createSession');
     if (!empty($res['ok']) && !empty($res['sessionId'])) {
@@ -26,123 +19,127 @@ if (empty($_SESSION['api_session_id'])) {
 }
 $sid = $_SESSION['api_session_id'] ?? '';
 
-// State tracking
-$view = $_SESSION['current_view'] ?? 'setup'; // setup | game | lobby
-$snap = null;
-$errorMsg = '';
-$statusMsg = '';
+function storeBrowserState(array $result): void
+{
+    $bundle = TrucoApiClient::parseBundle($result);
+    if (is_array($bundle)) {
+        $_SESSION['runtime_bundle'] = $bundle;
+        $_SESSION['online_session'] = $result['session'] ?? [];
+    }
+    if (!empty($result['events']) && is_array($result['events'])) {
+        $trail = $_SESSION['runtime_events'] ?? [];
+        foreach ($result['events'] as $ev) {
+            $trail[] = $ev;
+        }
+        $_SESSION['runtime_events'] = array_slice($trail, -80);
+    }
+}
 
-// ---------------------------------------------------------------------------
-// Handle POST actions
-// ---------------------------------------------------------------------------
+function refreshRuntimeState(TrucoApiClient $api, string $sid, bool $pullEvents = false): ?array
+{
+    $res = $api->call('snapshot', $sid);
+    if (empty($res['ok'])) {
+        return null;
+    }
+    storeBrowserState($res);
+    if ($pullEvents) {
+        $evRes = $api->call('pollEvents', $sid);
+        if (!empty($evRes['ok'])) {
+            storeBrowserState($evRes);
+        }
+    }
+    return $_SESSION['runtime_bundle'] ?? null;
+}
+
+function currentViewFromBundle(?array $bundle): string
+{
+    $mode = $bundle['mode'] ?? 'idle';
+    if (strpos($mode, 'lobby') !== false) {
+        return 'lobby';
+    }
+    if (strpos($mode, 'match') !== false) {
+        return 'game';
+    }
+    return 'setup';
+}
+
+$errorMsg = '';
+$ajaxRequest = !empty($_REQUEST['ajax']);
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
 
     switch ($action) {
         case 'setLocale':
             $loc = $_POST['locale'] ?? 'pt-BR';
-            $_SESSION['locale'] = in_array($loc, ['pt-BR', 'en-US']) ? $loc : 'pt-BR';
+            $_SESSION['locale'] = in_array($loc, ['pt-BR', 'en-US'], true) ? $loc : 'pt-BR';
+            $res = $api->call('setLocale', $sid, ['locale' => $_SESSION['locale']]);
+            if (!empty($res['ok'])) {
+                storeBrowserState($res);
+            }
             break;
 
         case 'startGame':
-            $name = trim($_POST['name'] ?? 'Você');
-            $numPlayers = (int) ($_POST['numPlayers'] ?? 2);
-            $_SESSION['player_name'] = $name;
+            $_SESSION['player_name'] = trim($_POST['name'] ?? 'Você');
             $res = $api->call('startGame', $sid, [
-                'numPlayers' => $numPlayers,
-                'name' => $name,
+                'numPlayers' => (int) ($_POST['numPlayers'] ?? 2),
+                'name' => $_SESSION['player_name'],
             ]);
             if (!empty($res['ok'])) {
-                $view = 'game';
-                $_SESSION['current_view'] = 'game';
-                // Run CPU turns immediately
-                $api->call('autoCpuLoopTick', $sid);
+                storeBrowserState($res);
             } else {
                 $errorMsg = $res['error'] ?? 'Failed to start game';
             }
             break;
 
         case 'play':
-            $idx = (int) ($_POST['cardIndex'] ?? 0);
-            $res = $api->call('play', $sid, ['cardIndex' => $idx]);
-            if (empty($res['ok'])) {
-                $errorMsg = $res['error'] ?? 'Failed to play card';
-            }
-            // Run CPU turns after player action
-            $api->call('autoCpuLoopTick', $sid);
-            break;
-
         case 'truco':
-            $res = $api->call('truco', $sid);
-            if (empty($res['ok'])) {
-                $errorMsg = $res['error'] ?? 'Truco failed';
-            }
-            $api->call('autoCpuLoopTick', $sid);
-            break;
-
         case 'accept':
-            $res = $api->call('accept', $sid);
-            if (empty($res['ok'])) {
-                $errorMsg = $res['error'] ?? 'Accept failed';
-            }
-            $api->call('autoCpuLoopTick', $sid);
-            break;
-
         case 'refuse':
-            $res = $api->call('refuse', $sid);
-            if (empty($res['ok'])) {
-                $errorMsg = $res['error'] ?? 'Refuse failed';
+            $payload = [];
+            if ($action === 'play') {
+                $payload['cardIndex'] = (int) ($_POST['cardIndex'] ?? -1);
             }
-            $api->call('autoCpuLoopTick', $sid);
-            break;
-
-        case 'autoCpuAndRefresh':
-            $api->call('autoCpuLoopTick', $sid);
-            break;
-
-        case 'newHand':
-            $api->call('newHand', $sid);
-            $api->call('autoCpuLoopTick', $sid);
+            $res = $api->call($action, $sid, $payload);
+            if (!empty($res['ok'])) {
+                storeBrowserState($res);
+                refreshRuntimeState($api, $sid, true);
+            } else {
+                $errorMsg = $res['error'] ?? 'Action failed';
+            }
             break;
 
         case 'reset':
-            $api->call('reset', $sid);
-            $view = 'setup';
-            $_SESSION['current_view'] = 'setup';
+        case 'leaveLobby':
+            $res = $api->call('leaveSession', $sid);
+            if (!empty($res['ok'])) {
+                storeBrowserState($res);
+                unset($_SESSION['runtime_events']);
+            } else {
+                $errorMsg = $res['error'] ?? 'Failed to close session';
+            }
             break;
 
-        // Online lobby actions
         case 'startOnlineHost':
-            $name = trim($_POST['name'] ?? 'Host');
-            $numPlayers = (int) ($_POST['numPlayers'] ?? 2);
             $res = $api->call('startOnlineHost', $sid, [
-                'name' => $name,
-                'numPlayers' => $numPlayers,
+                'name' => trim($_POST['name'] ?? 'Host'),
+                'numPlayers' => (int) ($_POST['numPlayers'] ?? 2),
             ]);
-            if (!empty($res['ok']) && !empty($res['session'])) {
-                $_SESSION['online_session'] = $res['session'];
-                $view = 'lobby';
-                $_SESSION['current_view'] = 'lobby';
+            if (!empty($res['ok'])) {
+                storeBrowserState($res);
             } else {
                 $errorMsg = $res['error'] ?? 'Failed to create lobby';
             }
             break;
 
         case 'joinOnline':
-            $name = trim($_POST['name'] ?? 'Player');
-            $key = trim($_POST['key'] ?? '');
-            $role = $_POST['role'] ?? 'auto';
-            $numPlayers = (int) ($_POST['numPlayers'] ?? 2);
             $res = $api->call('joinOnline', $sid, [
-                'name' => $name,
-                'key' => $key,
-                'role' => $role,
-                'numPlayers' => $numPlayers,
+                'name' => trim($_POST['name'] ?? 'Player'),
+                'key' => trim($_POST['key'] ?? ''),
+                'role' => $_POST['role'] ?? 'auto',
             ]);
-            if (!empty($res['ok']) && !empty($res['session'])) {
-                $_SESSION['online_session'] = $res['session'];
-                $view = 'lobby';
-                $_SESSION['current_view'] = 'lobby';
+            if (!empty($res['ok'])) {
+                storeBrowserState($res);
             } else {
                 $errorMsg = $res['error'] ?? 'Failed to join lobby';
             }
@@ -151,81 +148,84 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         case 'startOnlineMatch':
             $res = $api->call('startOnlineMatch', $sid);
             if (!empty($res['ok'])) {
-                if (!empty($res['session'])) {
-                    $_SESSION['online_session'] = $res['session'];
-                }
-                $view = 'game';
-                $_SESSION['current_view'] = 'game';
-                $api->call('autoCpuLoopTick', $sid);
+                storeBrowserState($res);
+                refreshRuntimeState($api, $sid, true);
             } else {
                 $errorMsg = $res['error'] ?? 'Failed to start match';
             }
             break;
 
         case 'refreshLobby':
-            $res = $api->call('onlineState', $sid);
-            if (!empty($res['ok']) && !empty($res['session'])) {
-                $_SESSION['online_session'] = $res['session'];
-            }
-            $evRes = $api->call('pullOnlineEvents', $sid);
-            if (!empty($evRes['ok']) && !empty($evRes['events'])) {
-                $trail = $_SESSION['online_events'] ?? [];
-                foreach ($evRes['events'] as $ev) {
-                    $ts = date('H:i', (int) (($ev['timestamp'] ?? 0) / 1000));
-                    $trail[] = "[{$ts}] " . ($ev['type'] ?? 'event') . ' · ' . ($ev['message'] ?? '');
-                }
-                $_SESSION['online_events'] = array_slice($trail, -24);
-            }
+        case 'refreshGame':
+            refreshRuntimeState($api, $sid, true);
             break;
 
         case 'sendChat':
             $msg = trim($_POST['message'] ?? '');
             if ($msg !== '') {
-                $api->call('sendChat', $sid, ['message' => $msg]);
-            }
-            // Refresh events
-            $evRes = $api->call('pullOnlineEvents', $sid);
-            if (!empty($evRes['ok']) && !empty($evRes['events'])) {
-                $trail = $_SESSION['online_events'] ?? [];
-                foreach ($evRes['events'] as $ev) {
-                    $ts = date('H:i', (int) (($ev['timestamp'] ?? 0) / 1000));
-                    $trail[] = "[{$ts}] " . ($ev['type'] ?? 'event') . ' · ' . ($ev['message'] ?? '');
+                $res = $api->call('sendChat', $sid, ['message' => $msg]);
+                if (!empty($res['ok'])) {
+                    storeBrowserState($res);
+                } else {
+                    $errorMsg = $res['error'] ?? 'Failed to send chat';
                 }
-                $_SESSION['online_events'] = array_slice($trail, -24);
             }
+            refreshRuntimeState($api, $sid, true);
             break;
 
-        case 'leaveLobby':
-            $api->call('leaveSession', $sid);
-            unset($_SESSION['online_session'], $_SESSION['online_events']);
-            $view = 'setup';
-            $_SESSION['current_view'] = 'setup';
+        case 'voteHost':
+            $res = $api->call('sendHostVote', $sid, ['slot' => (int) ($_POST['slot'] ?? -1)]);
+            if (!empty($res['ok'])) {
+                storeBrowserState($res);
+            } else {
+                $errorMsg = $res['error'] ?? 'Failed to vote host';
+            }
+            refreshRuntimeState($api, $sid, true);
+            break;
+
+        case 'requestReplacementInvite':
+            $res = $api->call('requestReplacementInvite', $sid, ['slot' => (int) ($_POST['slot'] ?? -1)]);
+            if (!empty($res['ok'])) {
+                storeBrowserState($res);
+            } else {
+                $errorMsg = $res['error'] ?? 'Failed to request replacement invite';
+            }
+            refreshRuntimeState($api, $sid, true);
             break;
     }
 
-    // Post-redirect-get (PRG): redirect to prevent form re-submission
-    header('Location: index.php');
+    if (!$ajaxRequest) {
+        header('Location: index.php');
+        exit;
+    }
+}
+
+$bundle = refreshRuntimeState($api, $sid, true) ?? ($_SESSION['runtime_bundle'] ?? null);
+$view = currentViewFromBundle($bundle);
+$snap = is_array($bundle['match'] ?? null) ? $bundle['match'] : null;
+
+ob_start();
+if ($view === 'game' && $snap !== null) {
+    include __DIR__ . '/views/game.php';
+} elseif ($view === 'lobby') {
+    include __DIR__ . '/views/lobby.php';
+} else {
+    include __DIR__ . '/views/setup.php';
+}
+if ($errorMsg) {
+    echo '<div class="error-log" style="margin-top:12px; padding:10px;">' . htmlspecialchars($errorMsg) . '</div>';
+}
+$viewHtml = ob_get_clean();
+
+if ($ajaxRequest) {
+    header('Content-Type: application/json');
+    echo json_encode([
+        'ok' => true,
+        'view' => $view,
+        'viewHtml' => $viewHtml,
+    ]);
     exit;
 }
-
-// ---------------------------------------------------------------------------
-// Fetch current snapshot for game view
-// ---------------------------------------------------------------------------
-if ($view === 'game') {
-    $res = $api->call('snapshot', $sid);
-    if (!empty($res['ok'])) {
-        $snap = TrucoApiClient::parseSnapshot($res);
-    }
-    if ($snap === null) {
-        // Game was reset or errored — go back to setup
-        $view = 'setup';
-        $_SESSION['current_view'] = 'setup';
-    }
-}
-
-// Store flash error if any
-$errorMsg = $_SESSION['flash_error'] ?? '';
-unset($_SESSION['flash_error']);
 
 $locale = $_SESSION['locale'] ?? 'pt-BR';
 $langAttr = ($locale === 'en-US') ? 'en' : 'pt-BR';
@@ -237,10 +237,8 @@ $langAttr = ($locale === 'en-US') ? 'en' : 'pt-BR';
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-    <title>
-        <?= tr('title_main') ?>
-    </title>
-    <meta name="description" content="Truco Paulista — PHP edition, no JavaScript.">
+    <title><?= tr('title_main') ?></title>
+    <meta name="description" content="Truco Paulista — PHP edition, runtime-backed browser UI.">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
@@ -258,20 +256,14 @@ $langAttr = ($locale === 'en-US') ? 'en' : 'pt-BR';
             <div class="brand">
                 <span class="brand-mark">🂡</span>
                 <div>
-                    <h1>
-                        <?= tr('title_main') ?>
-                    </h1>
-                    <p>
-                        <?= tr('title_sub') ?>
-                    </p>
+                    <h1><?= tr('title_main') ?></h1>
+                    <p><?= tr('title_sub') ?></p>
                 </div>
             </div>
             <div class="topbar-actions">
                 <form method="post" action="index.php" style="display:inline">
                     <input type="hidden" name="action" value="setLocale">
-                    <label for="locale-sel">
-                        <?= tr('locale_label') ?>
-                    </label>
+                    <label for="locale-sel"><?= tr('locale_label') ?></label>
                     <select id="locale-sel" name="locale" class="field field-sm">
                         <option value="pt-BR" <?= $locale === 'pt-BR' ? 'selected' : '' ?>>Português (BR)</option>
                         <option value="en-US" <?= $locale === 'en-US' ? 'selected' : '' ?>>English (US)</option>
@@ -281,20 +273,11 @@ $langAttr = ($locale === 'en-US') ? 'en' : 'pt-BR';
             </div>
         </header>
 
-        <?php if ($view === 'game' && $snap !== null): ?>
-            <?php include __DIR__ . '/views/game.php'; ?>
-        <?php elseif ($view === 'lobby'): ?>
-            <?php include __DIR__ . '/views/lobby.php'; ?>
-        <?php else: ?>
-            <?php include __DIR__ . '/views/setup.php'; ?>
-        <?php endif; ?>
-
-        <?php if ($errorMsg): ?>
-            <div class="error-log" style="margin-top:12px; padding:10px;">
-                <?= htmlspecialchars($errorMsg) ?>
-            </div>
-        <?php endif; ?>
+        <div id="view-root">
+            <?= $viewHtml ?>
+        </div>
     </main>
+    <script src="ajax.js" defer></script>
 </body>
 
 </html>

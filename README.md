@@ -56,11 +56,17 @@ Em produção, exponha as portas públicas HTTPS+QUIC do relay e configure os ho
 
 ## Build
 
+### Nomeação padrão
+
+Todos os binários seguem o padrão descrito em [docs/BINARY_NAMING.md](docs/BINARY_NAMING.md). O prefixo `truco-<type>-<client>-<platform>-<arch>[-<variant>]` mantém TUI em `bin/tui` e GUIs sob `bin/gui/<client>`, assim modelos podem detectar facilmente se um artefato já foi compilado.
+
 ### Build do seu SO atual
 
 ```bash
-go build -o bin/truco ./cmd/truco
+go build -o bin/tui/truco-tui-core-$(go env GOOS)-$(go env GOARCH) ./cmd/truco
 ```
+
+Ou rode `make build` para chegar ao mesmo binário.
 
 ### Build da biblioteca compartilhada (macOS atual)
 
@@ -71,14 +77,23 @@ make ffi
 ### Build para Windows (executável `.exe`)
 
 ```bash
-GOOS=windows GOARCH=amd64 go build -o bin/truco.exe ./cmd/truco
+GOOS=windows GOARCH=amd64 go build -o bin/tui/truco-tui-core-windows-amd64.exe ./cmd/truco
 ```
 
-Opcional para 32 bits:
+### Build para Windows ARM64 nativo
 
 ```bash
-GOOS=windows GOARCH=386 go build -o bin/truco-386.exe ./cmd/truco
+GOOS=windows GOARCH=arm64 go build -o bin/tui/truco-tui-core-windows-arm64-portable.exe ./cmd/truco
 ```
+
+### Build portável do cliente WinUI
+
+```powershell
+.\build-portable.bat
+```
+
+- Em Windows x64 o script publica o cliente WinUI portátil em `bin\gui\winui\truco-gui-winui-windows-amd64-portable`.
+- Em Windows ARM64, o script gera o binário TUI fallback em `bin\tui\truco-tui-core-windows-arm64-portable.exe`, porque o toolchain Go não suporta `-buildmode=c-shared` nessa plataforma.
 
 ## Fluxo Multiplayer P2P
 
@@ -144,3 +159,4 @@ Também há workflow de CI (`.github/workflows/ci.yml`) com:
 - `internal/netp2p`: protocolo de chave + lobby/chat + sincronização da partida online.
 - `internal/ui`: frontend Bubble Tea/Lipgloss, animações e modelos offline/online.
 - `native/`: scaffolds dos clientes nativos desktop.
+

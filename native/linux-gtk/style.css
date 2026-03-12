@@ -112,6 +112,48 @@ window {
   letter-spacing: 1px;
 }
 
+.lobby-title {
+  font-size: 64px;
+  font-weight: 900;
+  color: #ffcc00;
+  text-shadow: 0 4px 16px rgba(255, 204, 0, 0.3);
+  letter-spacing: 4px;
+}
+
+.lobby-subtitle {
+  font-size: 20px;
+  color: rgba(255, 255, 255, 0.6);
+  margin-top: -16px;
+}
+
+.game-over-bg {
+  background-color: rgba(0, 0, 0, 0.85);
+  backdrop-filter: blur(8px);
+}
+
+.game-over-title {
+  font-size: 48px;
+  font-weight: 900;
+  color: white;
+  text-shadow: 0 4px 16px rgba(0, 0, 0, 0.8);
+}
+
+.suggested-action {
+  background-color: #ffcc00;
+  color: #081521;
+  font-weight: 900;
+  font-size: 16px;
+  border-radius: 28px;
+  box-shadow: 0 6px 20px rgba(255, 204, 0, 0.3);
+  transition: all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.suggested-action:hover {
+  transform: scale(1.05);
+  background-color: #ffd633;
+  box-shadow: 0 8px 25px rgba(255, 204, 0, 0.5);
+}
+
 /* Gameplay Buttons */
 button {
   border-radius: 8px;
@@ -144,4 +186,121 @@ button {
 .btn-refuse:hover {
   background-color: #212121;
   transform: scale(1.05);
+}
+
+/* Phase 3: Role badges, team badges, ladder, log, truco flash */
+
+.opponent-pill-active {
+  background-color: rgba(255, 204, 0, 0.3);
+  color: white;
+  border-radius: 20px;
+  padding: 6px 20px;
+  font-weight: bold;
+  letter-spacing: 1px;
+  border: 1px solid rgba(255, 204, 0, 0.5);
+}
+
+.setup-label {
+  font-size: 10px;
+  font-weight: bold;
+  color: rgba(255, 255, 255, 0.5);
+  letter-spacing: 1px;
+}
+
+.team-badge-us {
+  background-color: rgba(66, 133, 244, 0.2);
+  color: #4285f4;
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: 10px;
+  font-weight: bold;
+}
+
+.team-badge-them {
+  background-color: rgba(255, 152, 0, 0.2);
+  color: #ff9800;
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: 10px;
+  font-weight: bold;
+}
+
+.ladder-active {
+  color: #ffcc00;
+  background-color: rgba(255, 204, 0, 0.2);
+  border-radius: 3px;
+  padding: 2px 4px;
+  font-size: 9px;
+  font-weight: bold;
+}
+
+.ladder-dim {
+  color: rgba(255, 255, 255, 0.2);
+  padding: 2px 4px;
+  font-size: 9px;
+  font-weight: bold;
+}
+
+.truco-flash-overlay {
+  background-color: rgba(211, 47, 47, 0.35);
+}
+
+.truco-flash-label {
+  font-size: 64px;
+  font-weight: 900;
+  color: #ffcc00;
+  text-shadow: 0 0 20px rgba(255, 204, 0, 0.8), 0 0 40px rgba(255, 204, 0, 0.4);
+}
+
+.truco-flash-sub {
+  font-size: 16px;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.log-panel {
+  background-color: rgba(0, 0, 0, 0.9);
+  color: white;
+  font-family: monospace;
+  font-size: 12px;
+}
+
+.log-header {
+  background-color: rgba(0, 0, 0, 0.4);
+  padding: 12px 16px;
+  font-weight: bold;
+  letter-spacing: 2px;
+  color: #ffcc00;
+}
+
+.log-entry {
+  padding: 2px 16px;
+  font-family: monospace;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.log-entry-error {
+  color: #ef5350;
+}
+
+.log-entry-truco {
+  color: #ffcc00;
+}
+
+.log-entry-win {
+  color: #66bb6a;
+}
+
+.role-badge {
+  font-size: 12px;
+  margin-right: 4px;
+}
+
+.cpu-spinner {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }

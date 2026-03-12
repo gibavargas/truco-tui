@@ -6,6 +6,11 @@ bin/
 *.so
 *.dylib
 
+# Native build output (per client)
+native/**/bin/
+native/**/obj/
+native/**/target/
+
 # Test binary
 *.test
 

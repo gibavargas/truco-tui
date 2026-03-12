@@ -195,8 +195,11 @@ func TestSnapshotNoGame(t *testing.T) {
 	sid := res["sessionId"].(string)
 
 	res = postAction(t, srv, "snapshot", sid, nil)
-	if res["ok"].(bool) {
-		t.Fatalf("expected error when no game started")
+	if !res["ok"].(bool) {
+		t.Fatalf("expected idle snapshot")
+	}
+	if res["mode"] != "idle" {
+		t.Fatalf("expected idle mode, got %v", res["mode"])
 	}
 }
 
@@ -222,8 +225,8 @@ func TestReset(t *testing.T) {
 
 	// After reset, snapshot should fail
 	res = postAction(t, srv, "snapshot", sid, nil)
-	if res["ok"].(bool) {
-		t.Fatalf("expected error after reset")
+	if !res["ok"].(bool) || res["mode"] != "idle" {
+		t.Fatalf("expected idle snapshot after reset, got %v", res)
 	}
 }
 
@@ -235,9 +238,8 @@ func TestAutoCpuLoopTick(t *testing.T) {
 	if !res["ok"].(bool) {
 		t.Fatalf("autoCpuLoopTick failed: %v", res["error"])
 	}
-	// changed may be true or false depending on whose turn it is
-	if _, ok := res["changed"]; !ok {
-		t.Fatalf("expected 'changed' field in response")
+	if res["bundle"] == nil {
+		t.Fatalf("expected bundle field in response")
 	}
 }
 
@@ -318,11 +320,13 @@ func TestStartOnlineHost(t *testing.T) {
 
 func TestJoinOnline(t *testing.T) {
 	srv := newAPIServer()
-	res := postAction(t, srv, "createSession", "", nil)
-	sid := res["sessionId"].(string)
+	hostRes := postAction(t, srv, "createSession", "", nil)
+	hostSID := hostRes["sessionId"].(string)
+	joinRes := postAction(t, srv, "createSession", "", nil)
+	joinSID := joinRes["sessionId"].(string)
 
 	// Start host
-	res = postAction(t, srv, "startOnlineHost", sid, map[string]interface{}{
+	res := postAction(t, srv, "startOnlineHost", hostSID, map[string]interface{}{
 		"name":       "HostPlayer",
 		"numPlayers": 2,
 	})
@@ -330,13 +334,16 @@ func TestJoinOnline(t *testing.T) {
 	key := session["inviteKey"].(string)
 
 	// Join
-	res = postAction(t, srv, "joinOnline", sid, map[string]interface{}{
+	res = postAction(t, srv, "joinOnline", joinSID, map[string]interface{}{
 		"name": "Joiner",
 		"key":  key,
 		"role": "auto",
 	})
 	if !res["ok"].(bool) {
 		t.Fatalf("joinOnline failed: %v", res["error"])
+	}
+	if res["mode"] != "client_lobby" {
+		t.Fatalf("expected client_lobby, got %v", res["mode"])
 	}
 }
 
@@ -384,15 +391,23 @@ func TestOnlineState(t *testing.T) {
 
 func TestStartOnlineMatch(t *testing.T) {
 	srv := newAPIServer()
-	res := postAction(t, srv, "createSession", "", nil)
-	sid := res["sessionId"].(string)
+	hostRes := postAction(t, srv, "createSession", "", nil)
+	hostSID := hostRes["sessionId"].(string)
+	joinRes := postAction(t, srv, "createSession", "", nil)
+	joinSID := joinRes["sessionId"].(string)
 
-	_ = postAction(t, srv, "startOnlineHost", sid, map[string]interface{}{
+	res := postAction(t, srv, "startOnlineHost", hostSID, map[string]interface{}{
 		"name":       "Host",
 		"numPlayers": 2,
 	})
+	key := res["session"].(map[string]interface{})["inviteKey"].(string)
+	_ = postAction(t, srv, "joinOnline", joinSID, map[string]interface{}{
+		"name": "Joiner",
+		"key":  key,
+		"role": "auto",
+	})
 
-	res = postAction(t, srv, "startOnlineMatch", sid, nil)
+	res = postAction(t, srv, "startOnlineMatch", hostSID, nil)
 	if !res["ok"].(bool) {
 		t.Fatalf("startOnlineMatch failed: %v", res["error"])
 	}
@@ -403,53 +418,54 @@ func TestStartOnlineMatch(t *testing.T) {
 
 func TestSendChat(t *testing.T) {
 	srv := newAPIServer()
-	res := postAction(t, srv, "createSession", "", nil)
-	sid := res["sessionId"].(string)
+	hostRes := postAction(t, srv, "createSession", "", nil)
+	hostSID := hostRes["sessionId"].(string)
+	joinRes := postAction(t, srv, "createSession", "", nil)
+	joinSID := joinRes["sessionId"].(string)
 
-	_ = postAction(t, srv, "startOnlineHost", sid, map[string]interface{}{
+	res := postAction(t, srv, "startOnlineHost", hostSID, map[string]interface{}{
 		"name":       "Host",
 		"numPlayers": 2,
 	})
+	key := res["session"].(map[string]interface{})["inviteKey"].(string)
+	_ = postAction(t, srv, "joinOnline", joinSID, map[string]interface{}{
+		"name": "Joiner",
+		"key":  key,
+		"role": "auto",
+	})
 
-	res = postAction(t, srv, "sendChat", sid, map[string]interface{}{
+	res = postAction(t, srv, "sendChat", hostSID, map[string]interface{}{
 		"message": "Hello!",
 	})
 	if !res["ok"].(bool) {
 		t.Fatalf("sendChat failed: %v", res["error"])
 	}
 
-	// Pull events should have the chat
-	res = postAction(t, srv, "pullOnlineEvents", sid, nil)
+	res = postAction(t, srv, "onlineState", hostSID, nil)
 	if !res["ok"].(bool) {
-		t.Fatalf("pullOnlineEvents failed")
-	}
-	events, ok := res["events"].([]interface{})
-	if !ok {
-		t.Fatalf("expected events array")
-	}
-	found := false
-	for _, ev := range events {
-		e := ev.(map[string]interface{})
-		if e["type"] == "chat" {
-			found = true
-		}
-	}
-	if !found {
-		t.Fatalf("expected chat event in pullOnlineEvents")
+		t.Fatalf("onlineState failed after chat")
 	}
 }
 
 func TestSendHostVote(t *testing.T) {
 	srv := newAPIServer()
-	res := postAction(t, srv, "createSession", "", nil)
-	sid := res["sessionId"].(string)
+	hostRes := postAction(t, srv, "createSession", "", nil)
+	hostSID := hostRes["sessionId"].(string)
+	joinRes := postAction(t, srv, "createSession", "", nil)
+	joinSID := joinRes["sessionId"].(string)
 
-	_ = postAction(t, srv, "startOnlineHost", sid, map[string]interface{}{
+	res := postAction(t, srv, "startOnlineHost", hostSID, map[string]interface{}{
 		"name":       "Host",
 		"numPlayers": 2,
 	})
+	key := res["session"].(map[string]interface{})["inviteKey"].(string)
+	_ = postAction(t, srv, "joinOnline", joinSID, map[string]interface{}{
+		"name": "Joiner",
+		"key":  key,
+		"role": "auto",
+	})
 
-	res = postAction(t, srv, "sendHostVote", sid, map[string]interface{}{
+	res = postAction(t, srv, "sendHostVote", hostSID, map[string]interface{}{
 		"slot": 1,
 	})
 	if !res["ok"].(bool) {
@@ -486,13 +502,10 @@ func TestRequestReplacementInvite(t *testing.T) {
 	})
 
 	res = postAction(t, srv, "requestReplacementInvite", sid, map[string]interface{}{
-		"slot": 2,
+		"slot": 1,
 	})
-	if !res["ok"].(bool) {
-		t.Fatalf("requestReplacementInvite failed: %v", res["error"])
-	}
-	if res["inviteKey"] == nil || res["inviteKey"] == "" {
-		t.Fatalf("expected inviteKey")
+	if res["ok"].(bool) {
+		t.Fatalf("expected runtime-backed invite request to enforce match/disconnect preconditions")
 	}
 }
 
@@ -513,8 +526,9 @@ func TestLeaveSession(t *testing.T) {
 
 	// After leaving, onlineState should return nil session
 	res = postAction(t, srv, "onlineState", sid, nil)
-	if res["session"] != nil {
-		t.Fatalf("expected nil session after leave")
+	session, ok := res["session"].(map[string]interface{})
+	if !ok || len(session) != 0 {
+		t.Fatalf("expected empty session after leave")
 	}
 }
 

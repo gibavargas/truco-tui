@@ -33,7 +33,10 @@ class TrucoApiClient {
         ]);
         $response = curl_exec($ch);
         $err = curl_error($ch);
-        curl_close($ch);
+        
+        if (PHP_VERSION_ID < 80000) {
+            curl_close($ch);
+        }
 
         if ($response === false) {
             return ['ok' => false, 'error' => 'API unavailable: ' . $err];
@@ -55,5 +58,15 @@ class TrucoApiClient {
         }
         $snap = json_decode($result['snapshot'], true);
         return is_array($snap) ? $snap : null;
+    }
+
+    /**
+     * Parse the runtime bundle from an API response.
+     */
+    public static function parseBundle(array $result): ?array {
+        if (empty($result['bundle']) || !is_array($result['bundle'])) {
+            return null;
+        }
+        return $result['bundle'];
     }
 }
