@@ -119,7 +119,7 @@ struct GameView: View {
                     Spacer()
                     
                     if let center = snap.CurrentHand {
-                        CenterTableView(hand: center)
+                        CenterTableView(hand: center, players: snap.Players ?? [])
                     }
                     
                     Spacer()
@@ -249,7 +249,22 @@ struct GameView: View {
                 // Trick end animation overlay
                 if showingTrickEndAnimation {
                     ZStack {
-                        // Emoji message in the center
+                        // Cards gathering and flying
+                        if !trickTie {
+                            ZStack {
+                                ForEach(0..<4, id: \.self) { i in
+                                    CardView(card: Card(Rank: "", Suit: ""), isFaceUp: false)
+                                        .rotationEffect(.degrees(Double(i * 12 - 18)))
+                                        .offset(x: CGFloat(i * 6 - 9), y: CGFloat(i * -4))
+                                }
+                            }
+                            .offset(trickAnimOffset)
+                            .opacity(trickAnimOffset == .zero ? 1 : 0)
+                            .scaleEffect(trickAnimOffset == .zero ? 1 : 0.4)
+                            .padding(.top, 100) // Start closer to the center table
+                        }
+                        
+                        // Emoji message in the center (moved after cards so it renders on top)
                         VStack {
                             if trickTie {
                                 Text("😐").font(.system(size: 80))
@@ -270,21 +285,6 @@ struct GameView: View {
                                 .stroke(Color.white.opacity(0.2), lineWidth: 2)
                         )
                         .shadow(radius: 20)
-                        
-                        // Cards gathering and flying
-                        if !trickTie {
-                            ZStack {
-                                ForEach(0..<4, id: \.self) { i in
-                                    CardView(card: Card(Rank: "", Suit: ""), isFaceUp: false)
-                                        .rotationEffect(.degrees(Double(i * 12 - 18)))
-                                        .offset(x: CGFloat(i * 6 - 9), y: CGFloat(i * -4))
-                                }
-                            }
-                            .offset(trickAnimOffset)
-                            .opacity(trickAnimOffset == .zero ? 1 : 0)
-                            .scaleEffect(trickAnimOffset == .zero ? 1 : 0.4)
-                            .padding(.top, 100) // Start closer to the center table
-                        }
                     }
                     .zIndex(100)
                     .allowsHitTesting(false)
@@ -426,6 +426,7 @@ private struct LogView: View {
 
 private struct CenterTableView: View {
     let hand: HandState
+    let players: [Player]
     
     var body: some View {
         HStack(spacing: 60) {
@@ -453,16 +454,33 @@ private struct CenterTableView: View {
                     let winId = hand.winningCardId
                     ForEach(Array(played.enumerated()), id: \.element.id) { index, pc in
                         let isWinning = (pc.id == winId)
-                        CardView(card: pc.Card)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 12)
-                                    .stroke(Color.yellow, lineWidth: isWinning ? 3 : 0)
-                                    .shadow(color: .yellow, radius: isWinning ? 8 : 0)
-                            )
-                            .rotationEffect(.degrees(Double(index * 15 - 10)))
-                            .offset(x: CGFloat(index * 15 - 5), y: CGFloat(index * -10))
-                            .transition(.move(edge: .bottom).combined(with: .opacity))
-                            .zIndex(isWinning ? 10 : 0)
+                        let playerName = players.first(where: { $0.playerID == pc.PlayerID })?.Name ?? "Jogador"
+                        
+                        VStack(spacing: 4) {
+                            if isWinning {
+                                Text("🏆 " + playerName.uppercased())
+                                    .font(.caption2.bold())
+                                    .foregroundColor(.yellow)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 4)
+                                    .background(Color.black.opacity(0.6))
+                                    .clipShape(Capsule())
+                                    .shadow(color: .black, radius: 2)
+                                    .transition(.opacity)
+                                    .zIndex(11) // ensure label is above card
+                            }
+                            
+                            CardView(card: pc.Card)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 12)
+                                        .stroke(Color.yellow, lineWidth: isWinning ? 3 : 0)
+                                        .shadow(color: .yellow, radius: isWinning ? 8 : 0)
+                                )
+                        }
+                        .rotationEffect(.degrees(Double(index * 15 - 10)))
+                        .offset(x: CGFloat(index * 15 - 5), y: CGFloat(index * -10))
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                        .zIndex(isWinning ? 10 : 0)
                     }
                 }
             }
