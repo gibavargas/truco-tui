@@ -262,9 +262,10 @@ struct GameView: View {
                             .opacity(trickAnimOffset == .zero ? 1 : 0)
                             .scaleEffect(trickAnimOffset == .zero ? 1 : 0.4)
                             .padding(.top, 100) // Start closer to the center table
+                            .zIndex(1)
                         }
                         
-                        // Emoji message in the center (moved after cards so it renders on top)
+                        // Emoji message in the center
                         VStack {
                             if trickTie {
                                 Text("😐").font(.system(size: 80))
@@ -285,6 +286,7 @@ struct GameView: View {
                                 .stroke(Color.white.opacity(0.2), lineWidth: 2)
                         )
                         .shadow(radius: 20)
+                        .zIndex(10)
                     }
                     .zIndex(100)
                     .allowsHitTesting(false)
@@ -456,31 +458,29 @@ private struct CenterTableView: View {
                         let isWinning = (pc.id == winId)
                         let playerName = players.first(where: { $0.playerID == pc.PlayerID })?.Name ?? "Jogador"
                         
-                        VStack(spacing: 4) {
-                            if isWinning {
-                                Text("🏆 " + playerName.uppercased())
-                                    .font(.caption2.bold())
-                                    .foregroundColor(.yellow)
-                                    .padding(.horizontal, 8)
-                                    .padding(.vertical, 4)
-                                    .background(Color.black.opacity(0.6))
-                                    .clipShape(Capsule())
-                                    .shadow(color: .black, radius: 2)
-                                    .transition(.opacity)
-                                    .zIndex(11) // ensure label is above card
-                            }
-                            
+                        ZStack {
                             CardView(card: pc.Card)
                                 .overlay(
                                     RoundedRectangle(cornerRadius: 12)
                                         .stroke(Color.yellow, lineWidth: isWinning ? 3 : 0)
                                         .shadow(color: .yellow, radius: isWinning ? 8 : 0)
                                 )
+                                .rotationEffect(.degrees(Double(index * 15 - 10)))
+                            
+                            Text((isWinning ? "🏆 " : "") + playerName.uppercased())
+                                .font(.caption2.bold())
+                                .foregroundColor(isWinning ? .yellow : .white)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(Color.black.opacity(0.8))
+                                .clipShape(Capsule())
+                                .shadow(color: .black, radius: 2)
+                                .offset(y: -65) // Float slightly above the card
+                                .zIndex(20)
                         }
-                        .rotationEffect(.degrees(Double(index * 15 - 10)))
                         .offset(x: CGFloat(index * 15 - 5), y: CGFloat(index * -10))
                         .transition(.move(edge: .bottom).combined(with: .opacity))
-                        .zIndex(isWinning ? 10 : 0)
+                        .zIndex(isWinning ? 10 : Double(index))
                     }
                 }
             }
