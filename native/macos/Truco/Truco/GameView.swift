@@ -450,11 +450,19 @@ private struct CenterTableView: View {
                     .frame(width: 160, height: 160)
                 
                 if let played = hand.RoundCards {
+                    let winId = hand.winningCardId
                     ForEach(Array(played.enumerated()), id: \.element.id) { index, pc in
+                        let isWinning = (pc.id == winId)
                         CardView(card: pc.Card)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 12)
+                                    .stroke(Color.yellow, lineWidth: isWinning ? 3 : 0)
+                                    .shadow(color: .yellow, radius: isWinning ? 8 : 0)
+                            )
                             .rotationEffect(.degrees(Double(index * 15 - 10)))
                             .offset(x: CGFloat(index * 15 - 5), y: CGFloat(index * -10))
                             .transition(.move(edge: .bottom).combined(with: .opacity))
+                            .zIndex(isWinning ? 10 : 0)
                     }
                 }
             }
