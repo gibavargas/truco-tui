@@ -265,7 +265,7 @@ $langAttr = ($locale === 'en-US') ? 'en' : 'pt-BR';
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <title><?= tr('title_main') ?></title>
-    <meta name="description" content="Truco Paulista — PHP edition, runtime-backed browser UI.">
+    <meta name="description" content="Truco Paulista no navegador, com partidas offline e online.">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link

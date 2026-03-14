@@ -6,10 +6,12 @@
 
 $I18N = [
     'pt-BR' => [
-        'title_main' => 'Truco Browser Edition',
-        'title_sub' => 'Edição PHP — sem JavaScript',
+        'title_main' => 'Truco Paulista',
+        'title_sub' => 'Mesa web para partidas offline e online',
         'locale_label' => 'Idioma',
         'setup_title' => 'Nova partida',
+        'setup_offline_title' => 'Jogar offline',
+        'setup_online_title' => 'Jogar online',
         'setup_name' => 'Seu nome',
         'setup_players' => 'Jogadores',
         'setup_start' => 'Iniciar partida',
@@ -105,10 +107,12 @@ $I18N = [
         'refresh' => 'Atualizar',
     ],
     'en-US' => [
-        'title_main' => 'Truco Browser Edition',
-        'title_sub' => 'PHP Edition — no JavaScript',
+        'title_main' => 'Truco Paulista',
+        'title_sub' => 'Web table for offline and online matches',
         'locale_label' => 'Language',
         'setup_title' => 'New match',
+        'setup_offline_title' => 'Play offline',
+        'setup_online_title' => 'Play online',
         'setup_name' => 'Your name',
         'setup_players' => 'Players',
         'setup_start' => 'Start match',
