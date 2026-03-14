@@ -35,20 +35,26 @@
 
     <div class="online-setup">
         <h3><?= tr('lobby_title') ?></h3>
-        <div class="setup-grid online-grid">
-            <form method="post" action="index.php" data-ajax="true">
-                <input type="hidden" name="action" value="startOnlineHost">
-                <input type="hidden" name="name" value="<?= htmlspecialchars($_SESSION['player_name'] ?? 'Você') ?>">
-                <input type="hidden" name="numPlayers" value="2">
-                <button type="submit" class="btn btn-neutral"><?= tr('online_action_host') ?> · 2P</button>
-            </form>
-            <form method="post" action="index.php" data-ajax="true">
-                <input type="hidden" name="action" value="startOnlineHost">
-                <input type="hidden" name="name" value="<?= htmlspecialchars($_SESSION['player_name'] ?? 'Você') ?>">
-                <input type="hidden" name="numPlayers" value="4">
-                <button type="submit" class="btn btn-neutral"><?= tr('online_action_host') ?> · 4P</button>
-            </form>
-        </div>
+        <form method="post" action="index.php" data-ajax="true">
+            <input type="hidden" name="action" value="startOnlineHost">
+            <input type="hidden" name="name" value="<?= htmlspecialchars($_SESSION['player_name'] ?? 'Você') ?>">
+            <div class="setup-grid host-grid">
+                <div>
+                    <label for="host-num-players"><?= tr('setup_online_players') ?></label>
+                    <select id="host-num-players" name="numPlayers" class="field">
+                        <option value="2">2</option>
+                        <option value="4">4</option>
+                    </select>
+                </div>
+                <div class="span-2">
+                    <label for="relay-url"><?= tr('setup_online_relay') ?></label>
+                    <input id="relay-url" name="relay_url" class="field" type="text" autocomplete="off" placeholder="https://relay.example.com">
+                </div>
+            </div>
+            <div class="setup-actions">
+                <button type="submit" class="btn btn-neutral"><?= tr('online_action_host') ?></button>
+            </div>
+        </form>
         <form method="post" action="index.php" data-ajax="true" style="margin-top:10px;">
             <input type="hidden" name="action" value="joinOnline">
             <div class="setup-grid">

@@ -16,6 +16,8 @@ $lobby = $bundle['lobby'] ?? [];
 $ui = $bundle['ui'] ?? [];
 $slotStates = $ui['lobby_slots'] ?? [];
 $actions = $ui['actions'] ?? [];
+$connection = $bundle['connection'] ?? [];
+$diagnostics = $bundle['diagnostics'] ?? [];
 $myPlayer = null;
 foreach ($players as $p) {
     if (($p['ID'] ?? -1) === $myID) {
@@ -146,15 +148,20 @@ $locale = $_SESSION['locale'] ?? 'pt-BR';
                     <h3><?= tr('game_events_title') ?></h3>
                     <pre><?php
                         foreach (array_slice($events, -18) as $ev) {
-                            $line = $ev['kind'] ?? 'event';
-                            if (!empty($ev['payload']['text'])) {
-                                $line .= ' · ' . $ev['payload']['text'];
-                            } elseif (!empty($ev['payload']['invite_key'])) {
-                                $line .= ' · ' . $ev['payload']['invite_key'];
-                            }
-                            echo htmlspecialchars($line) . "\n";
+                            echo htmlspecialchars(formatEventLine($ev)) . "\n";
                         }
                     ?></pre>
+                </div>
+                <div class="side-block">
+                    <h3><?= tr('connection_title') ?></h3>
+                    <div class="connection-grid">
+                        <div><span><?= tr('connection_status') ?></span><strong><?= htmlspecialchars((string) ($connection['status'] ?? $mode)) ?></strong></div>
+                        <div><span><?= tr('connection_mode') ?></span><strong><?= !empty($connection['is_online']) ? tr('connection_online') : tr('connection_offline') ?></strong></div>
+                        <div><span><?= tr('connection_backlog') ?></span><strong><?= (int) ($diagnostics['event_backlog'] ?? 0) ?></strong></div>
+                        <?php if (!empty($connection['last_error']['message'])): ?>
+                            <div class="connection-error"><span><?= tr('connection_error') ?></span><strong><?= htmlspecialchars((string) $connection['last_error']['message']) ?></strong></div>
+                        <?php endif; ?>
+                    </div>
                 </div>
             <?php endif; ?>
         </aside>
