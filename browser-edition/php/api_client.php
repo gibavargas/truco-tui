@@ -32,17 +32,24 @@ class TrucoApiClient {
             CURLOPT_CONNECTTIMEOUT => 3,
         ]);
         $response = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         $err = curl_error($ch);
         curl_close($ch);
 
         if ($response === false) {
-            return ['ok' => false, 'error' => 'API unavailable: ' . $err];
+            return ['ok' => false, 'error' => 'API unavailable: ' . $err, 'action' => $action];
         }
 
         $decoded = json_decode($response, true);
         if (!is_array($decoded)) {
-            return ['ok' => false, 'error' => 'Invalid API response'];
+            return ['ok' => false, 'error' => 'Invalid API response', 'httpCode' => $httpCode, 'action' => $action];
         }
+
+        // Add HTTP code to response for debugging
+        if ($httpCode >= 400) {
+            $decoded['httpCode'] = $httpCode;
+        }
+
         return $decoded;
     }
 
