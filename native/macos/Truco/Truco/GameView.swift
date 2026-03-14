@@ -4,6 +4,12 @@ struct GameView: View {
     let snapshot: MatchSnapshot?
     @EnvironmentObject var store: TrucoAppStore
 
+    @State private var lastTrickSeqViewed: Int = -1
+    @State private var showingTrickEndAnimation = false
+    @State private var trickAnimOffset: CGSize = .zero
+    @State private var trickWinnerTeam: Int = -1
+    @State private var trickTie: Bool = false
+
     private func seatPlayer(_ snap: MatchSnapshot, offset: Int) -> Player? {
         guard let players = snap.Players, let localID = snap.CurrentPlayerIdx, let count = snap.NumPlayers else { return nil }
         let seatID = (localID + offset) % count
@@ -239,10 +245,112 @@ struct GameView: View {
                         .font(.headline.weight(.black))
                     }
                 }
+                
+                // Trick end animation overlay
+                if showingTrickEndAnimation {
+                    ZStack {
+                        // Emoji message in the center
+                        VStack {
+                            if trickTie {
+                                Text("😐").font(.system(size: 80))
+                                Text("EMPATE!").font(.title.weight(.heavy)).foregroundColor(.white)
+                            } else if let myPlayer = snap.Players?.first(where: { $0.playerID == snap.CurrentPlayerIdx }), trickWinnerTeam == myPlayer.Team {
+                                Text("🎉").font(.system(size: 80))
+                                Text("VOCÊ VENCEU A VAZA!").font(.title.weight(.heavy)).foregroundColor(.green)
+                            } else {
+                                Text("😢").font(.system(size: 80))
+                                Text("ELES VENCERAM").font(.title.weight(.heavy)).foregroundColor(.red)
+                            }
+                        }
+                        .padding(24)
+                        .background(Color.black.opacity(0.85))
+                        .cornerRadius(24)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 24)
+                                .stroke(Color.white.opacity(0.2), lineWidth: 2)
+                        )
+                        .shadow(radius: 20)
+                        
+                        // Cards gathering and flying
+                        if !trickTie {
+                            ZStack {
+                                ForEach(0..<4, id: \.self) { i in
+                                    CardView(card: Card(Rank: "", Suit: ""), isFaceUp: false)
+                                        .rotationEffect(.degrees(Double(i * 12 - 18)))
+                                        .offset(x: CGFloat(i * 6 - 9), y: CGFloat(i * -4))
+                                }
+                            }
+                            .offset(trickAnimOffset)
+                            .opacity(trickAnimOffset == .zero ? 1 : 0)
+                            .scaleEffect(trickAnimOffset == .zero ? 1 : 0.4)
+                            .padding(.top, 100) // Start closer to the center table
+                        }
+                    }
+                    .zIndex(100)
+                    .allowsHitTesting(false)
+                    .transition(.opacity.animation(.easeInOut(duration: 0.2)))
+                }
+            }
+            .onChange(of: snap.LastTrickSeq) { newSeq in
+                guard let seq = newSeq, seq > 0 else { return }
+                if lastTrickSeqViewed == -1 {
+                    lastTrickSeqViewed = seq
+                    return
+                }
+                if seq > lastTrickSeqViewed {
+                    lastTrickSeqViewed = seq
+                    triggerTrickAnimation(snap: snap)
+                }
             }
         } else {
             ProgressView("Carregando snapshot...")
                 .scaleEffect(1.5)
+        }
+    }
+    
+    private func triggerTrickAnimation(snap: MatchSnapshot) {
+        let localId = snap.CurrentPlayerIdx ?? 0
+        let winnerId = snap.LastTrickWinner ?? -1
+        let numPlayers = snap.NumPlayers ?? 2
+        
+        trickWinnerTeam = snap.LastTrickTeam ?? -1
+        trickTie = snap.LastTrickTie ?? false
+        
+        var target: CGSize = .zero
+        if !trickTie && winnerId >= 0 {
+            let diff = (winnerId - localId + numPlayers) % numPlayers
+            if numPlayers == 2 {
+                target = (diff == 0) ? CGSize(width: 0, height: 400) : CGSize(width: 0, height: -400)
+            } else {
+                switch diff {
+                case 0: target = CGSize(width: 0, height: 500)
+                case 1: target = CGSize(width: 600, height: 0)
+                case 2: target = CGSize(width: 0, height: -500)
+                case 3: target = CGSize(width: -600, height: 0)
+                default: break
+                }
+            }
+        }
+        
+        trickAnimOffset = .zero
+        showingTrickEndAnimation = false
+        
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
+                showingTrickEndAnimation = true
+            }
+            
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+                withAnimation(.easeIn(duration: 0.4)) {
+                    trickAnimOffset = target
+                }
+            }
+            
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.8) {
+                withAnimation(.easeOut(duration: 0.2)) {
+                    showingTrickEndAnimation = false
+                }
+            }
         }
     }
 }

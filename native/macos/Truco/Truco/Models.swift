@@ -104,6 +104,11 @@ struct MatchSnapshot: Codable {
     let PendingRaiseBy: Int?
     let PendingRaiseTo: Int?
     let CurrentPlayerIdx: Int?
+    let LastTrickSeq: Int?
+    let LastTrickTeam: Int?
+    let LastTrickWinner: Int?
+    let LastTrickTie: Bool?
+    let LastTrickRound: Int?
     
     /// Helper to get team scores
     var teamScore: (us: Int, them: Int) {
