@@ -396,6 +396,23 @@
                             </Style>
                         </Button.Style>
                     </Button>
+                    <Button Content="CRAVAR" Command="{Binding RequestTrucoCommand}"
+                            Background="#FF0000" Foreground="White" FontWeight="Bold"
+                            Width="100" Height="40" Margin="0,0,10,0">
+                        <Button.Style>
+                            <Style TargetType="Button">
+                                <Setter Property="Template">
+                                    <Setter.Value>
+                                        <ControlTemplate TargetType="Button">
+                                            <Border Background="{TemplateBinding Background}" CornerRadius="8">
+                                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                            </Border>
+                                        </ControlTemplate>
+                                    </Setter.Value>
+                                </Setter>
+                            </Style>
+                        </Button.Style>
+                    </Button>
                     <Button Content="CORRER" Command="{Binding RefuseTrucoCommand}"
                             Background="#333333" Foreground="White" FontWeight="Bold"
                             Width="100" Height="40">
@@ -429,6 +446,7 @@
                     <DataTemplate>
                         <Button Command="{Binding DataContext.PlayCardCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                                 CommandParameter="{Binding}"
+                                IsEnabled="{Binding DataContext.CanPlayCards, RelativeSource={RelativeSource AncestorType=Window}}"
                                 Background="Transparent" BorderThickness="0" Cursor="Hand" Margin="10,0,0,0">
                             <Border Width="90" Height="130" Background="White" CornerRadius="8" 
                                     BorderBrush="Gray" BorderThickness="2">
@@ -446,7 +464,7 @@
 
             <!-- Game Chat Overlay -->
             <StackPanel Grid.Row="2" Grid.Column="2" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,20,20" Width="300"
-                        Visibility="{Binding VisibilityIfOnlineLobby}">
+                        Visibility="{Binding VisibilityIfOnlineMatch}">
                 <Border Background="#111" CornerRadius="8" Padding="10">
                     <Grid>
                         <Grid.RowDefinitions>

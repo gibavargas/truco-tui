@@ -14,6 +14,7 @@ struct AppState {
     pub last_snapshot_str: String,
     pub last_pending_raise: Option<i32>,
     pub truco_flash_ticks: u32,
+    pub event_history: Vec<String>,
 }
 
 fn main() {
@@ -35,6 +36,7 @@ fn main() {
             last_snapshot_str: String::new(),
             last_pending_raise: None,
             truco_flash_ticks: 0,
+            event_history: Vec::new(),
         }));
 
         // Start button — read setup form values
@@ -176,6 +178,11 @@ fn main() {
                         lbl.set_halign(gtk::Align::Start);
                         lbl.set_wrap(true);
                         s.window.list_chat().append(&lbl);
+                        s.event_history.push(text);
+                        if s.event_history.len() > 40 {
+                            let drain_to = s.event_history.len() - 40;
+                            s.event_history.drain(..drain_to);
+                        }
                         
                         // scroll to bottom
                         if let Some(adj) = s.window.list_chat().parent().and_then(|p| p.parent()).and_then(|p| p.downcast::<gtk::ScrolledWindow>().ok()).map(|sw| sw.vadjustment()) {
@@ -190,7 +197,7 @@ fn main() {
                 if snap_str != s.last_snapshot_str {
                     s.last_snapshot_str = snap_str.clone();
                     if let Some(bundle) = models::SnapshotBundle::from_json(&snap_str) {
-                         update_ui(&s.window, &bundle, &s.core);
+                         update_ui(&s.window, &bundle, &s.core, &s.event_history);
                     }
                 }
             }
@@ -234,13 +241,13 @@ fn clear_listbox(lb: &gtk::ListBox) {
     }
 }
 
-fn update_ui(window: &window::TrucoWindow, bundle: &models::SnapshotBundle, core: &TrucoCore) {
+fn update_ui(window: &window::TrucoWindow, bundle: &models::SnapshotBundle, core: &TrucoCore, event_history: &[String]) {
     let mode = bundle.mode.as_deref().unwrap_or("idle");
     
     if mode == "offline_match" || mode == "host_match" || mode == "client_match" || mode == "match_over" {
         window.main_stack().set_visible_child_name("game");
         if let Some(ref snap) = bundle.match_snapshot {
-            update_game_ui(window, snap, bundle, core);
+            update_game_ui(window, snap, bundle, core, event_history);
         }
     } else if mode == "host_lobby" || mode == "client_lobby" {
         window.main_stack().set_visible_child_name("online_lobby");
@@ -262,7 +269,50 @@ fn update_lobby_ui(window: &window::TrucoWindow, bundle: &models::SnapshotBundle
             }
             
             clear_listbox(&window.list_slots());
-            if let Some(slots) = lobby.slots {
+            if let Some(slot_states) = bundle.ui.as_ref().and_then(|u| u.lobby_slots.as_ref()) {
+                for slot in slot_states {
+                    let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+                    let name = slot.name.clone().unwrap_or_default();
+                    let mut display = if slot.is_empty { "Aguardando...".to_string() } else { name.clone() };
+                    if slot.is_host {
+                        display.push_str(" [host]");
+                    }
+                    if slot.is_provisional_cpu {
+                        display.push_str(" [cpu]");
+                    }
+                    if !slot.is_empty && !slot.is_connected {
+                        display.push_str(" [offline]");
+                    }
+                    let lbl = gtk::Label::new(Some(&display));
+                    row.append(&lbl);
+                    
+                    if slot.is_local {
+                        let me_lbl = gtk::Label::new(Some("(você)"));
+                        me_lbl.add_css_class("ladder-active");
+                        row.append(&me_lbl);
+                    } else if slot.can_request_replacement {
+                        let btn_invite = gtk::Button::with_label("Convite");
+                        let core_inv = core.clone();
+                        let seat = slot.seat;
+                        btn_invite.connect_clicked(move |_| {
+                            let _ = core_inv.dispatch(&format!(r#"{{"kind":"request_replacement_invite","payload":{{"target_seat":{}}}}}"#, seat));
+                        });
+                        row.append(&btn_invite);
+                    } else if slot.can_vote_host {
+                        let btn_vote = gtk::Button::with_label("Votar Host");
+                        let core_vote = core.clone();
+                        let seat = slot.seat;
+                        btn_vote.connect_clicked(move |_| {
+                            let _ = core_vote.dispatch(&format!(r#"{{"kind":"vote_host","payload":{{"candidate_seat":{}}}}}"#, seat));
+                        });
+                        row.append(&btn_vote);
+                    }
+                    
+                    let lb_row = gtk::ListBoxRow::new();
+                    lb_row.set_child(Some(&row));
+                    window.list_slots().append(&lb_row);
+                }
+            } else if let Some(slots) = lobby.slots {
                 for (i, name) in slots.iter().enumerate() {
                     let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
                     let connected = lobby.connected_seats.as_ref()
@@ -277,27 +327,6 @@ fn update_lobby_ui(window: &window::TrucoWindow, bundle: &models::SnapshotBundle
                     }
                     let lbl = gtk::Label::new(Some(&display));
                     row.append(&lbl);
-                    
-                    if Some(i as i32) == lobby.assigned_seat {
-                        let me_lbl = gtk::Label::new(Some("(você)"));
-                        me_lbl.add_css_class("ladder-active");
-                        row.append(&me_lbl);
-                    } else if name.is_empty() && mode.contains("host") {
-                        let btn_invite = gtk::Button::with_label("Convidar CPU");
-                        let core_inv = core.clone();
-                        btn_invite.connect_clicked(move |_| {
-                            let _ = core_inv.dispatch(&format!(r#"{{"kind":"request_replacement_invite","payload":{{"target_seat":{}}}}}"#, i));
-                        });
-                        row.append(&btn_invite);
-                    } else if !name.is_empty() {
-                        let btn_vote = gtk::Button::with_label("Votar Host");
-                        let core_vote = core.clone();
-                        btn_vote.connect_clicked(move |_| {
-                            let _ = core_vote.dispatch(&format!(r#"{{"kind":"vote_host","payload":{{"candidate_seat":{}}}}}"#, i));
-                        });
-                        row.append(&btn_vote);
-                    }
-                    
                     let lb_row = gtk::ListBoxRow::new();
                     lb_row.set_child(Some(&row));
                     window.list_slots().append(&lb_row);
@@ -309,7 +338,7 @@ fn update_lobby_ui(window: &window::TrucoWindow, bundle: &models::SnapshotBundle
     window.btn_start_online_match().set_visible(mode == "host_lobby");
 }
 
-fn update_game_ui(window: &window::TrucoWindow, snapshot: &models::GameSnapshot, bundle: &models::SnapshotBundle, core: &TrucoCore) {
+fn update_game_ui(window: &window::TrucoWindow, snapshot: &models::GameSnapshot, bundle: &models::SnapshotBundle, core: &TrucoCore, event_history: &[String]) {
     let mode = bundle.mode.as_deref().unwrap_or("idle");
     
     if mode == "offline_match" || mode == "host_match" || mode == "client_match" || mode == "match_over" {
@@ -344,9 +373,11 @@ fn update_game_ui(window: &window::TrucoWindow, snapshot: &models::GameSnapshot,
     // Log Layer
     let log_box = window.log_box();
     clear_box(&log_box);
-    if let Some(logs) = &snapshot.logs {
-        let max_logs = 8;
-        let recent = if logs.len() > max_logs { &logs[logs.len() - max_logs..] } else { logs.as_slice() };
+    let mut merged_logs = snapshot.logs.clone().unwrap_or_default();
+    merged_logs.extend(event_history.iter().cloned());
+    if !merged_logs.is_empty() {
+        let max_logs = 10;
+        let recent = if merged_logs.len() > max_logs { &merged_logs[merged_logs.len() - max_logs..] } else { merged_logs.as_slice() };
         for entry in recent {
             let lbl = gtk::Label::new(Some(entry));
             lbl.add_css_class("log-entry");
@@ -490,16 +521,18 @@ fn update_game_ui(window: &window::TrucoWindow, snapshot: &models::GameSnapshot,
     let bottom_box = window.bottom_box();
     clear_box(&bottom_box);
 
-    let pending_for = snapshot.pending_raise_for.unwrap_or(-1);
-    let can_ask = snapshot.can_ask_truco.unwrap_or(false);
-    let is_my_turn = snapshot.turn_player == Some(local_idx);
+    let actions = bundle.ui.as_ref().and_then(|u| u.actions.as_ref());
+    let can_ask = actions.map(|a| a.can_ask_or_raise).unwrap_or(snapshot.can_ask_truco.unwrap_or(false));
+    let must_respond = actions.map(|a| a.must_respond).unwrap_or(false);
+    let can_play_card = actions.map(|a| a.can_play_card).unwrap_or(snapshot.turn_player == Some(local_idx));
+    let is_my_turn = can_play_card || must_respond;
     let match_over = snapshot.match_finished.unwrap_or(false);
     
     if !match_over {
         let action_box = gtk::Box::new(gtk::Orientation::Horizontal, 16);
         action_box.set_halign(gtk::Align::Center);
         
-        if pending_for == my_team {
+        if must_respond {
             let btn_accept = gtk::Button::with_label("ACEITAR");
             btn_accept.add_css_class("btn-accept");
             let core_a = core.clone();
@@ -521,7 +554,7 @@ fn update_game_ui(window: &window::TrucoWindow, snapshot: &models::GameSnapshot,
             let core_f = core.clone();
             btn_refuse.connect_clicked(move |_| { dispatch_game_action(&core_f, "refuse", None); });
             action_box.append(&btn_refuse);
-        } else if is_my_turn && can_ask {
+        } else if can_ask {
             let current_stake = snapshot.current_hand.as_ref().and_then(|h| h.stake).unwrap_or(1);
             let label = raise_label_for(next_stake(current_stake));
             let btn_truco = gtk::Button::with_label(&label);
@@ -556,12 +589,14 @@ fn update_game_ui(window: &window::TrucoWindow, snapshot: &models::GameSnapshot,
                 for (idx, c) in cards.iter().enumerate() {
                     let card_widget = create_card_widget(Some(c));
                     card_widget.add_css_class("card-clickable");
-                    let gesture = gtk::GestureClick::new();
-                    let core_clone = core.clone();
-                    gesture.connect_pressed(move |_, _, _, _| {
-                        dispatch_game_action(&core_clone, "play", Some(idx));
-                    });
-                    card_widget.add_controller(gesture);
+                    if can_play_card {
+                        let gesture = gtk::GestureClick::new();
+                        let core_clone = core.clone();
+                        gesture.connect_pressed(move |_, _, _, _| {
+                            dispatch_game_action(&core_clone, "play", Some(idx));
+                        });
+                        card_widget.add_controller(gesture);
+                    }
                     my_hand.append(&card_widget);
                 }
             }

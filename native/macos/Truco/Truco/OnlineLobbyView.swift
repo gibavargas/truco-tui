@@ -28,35 +28,43 @@ struct OnlineLobbyView: View {
                     .font(.headline)
                 
                 VStack(spacing: 8) {
-                    let slots = store.bundle?.lobby?.slots ?? []
-                    let assignedSeat = store.bundle?.lobby?.assigned_seat ?? -1
-                    let isHost = store.mode == "host_lobby"
+                    let slotStates = store.bundle?.ui?.lobby_slots ?? []
                     
-                    ForEach(0..<slots.count, id: \.self) { i in
-                        let name = slots[i]
-                        let isEmpty = name.isEmpty
+                    ForEach(slotStates) { slot in
+                        let name = slot.name ?? ""
+                        let isEmpty = slot.is_empty
                         
                         HStack {
                             Text(isEmpty ? "Aguardando..." : name)
                                 .foregroundColor(isEmpty ? .secondary : .primary)
                             
-                            if i == assignedSeat {
+                            if slot.is_local {
                                 Text("(você)")
                                     .font(.caption.bold())
                                     .foregroundColor(.yellow)
                             }
+                            if slot.is_host {
+                                Text("host")
+                                    .font(.caption2.bold())
+                                    .foregroundColor(.blue)
+                            }
+                            if slot.is_provisional_cpu {
+                                Text("cpu")
+                                    .font(.caption2.bold())
+                                    .foregroundColor(.orange)
+                            }
                             
                             Spacer()
                             
-                            if isEmpty && isHost {
-                                Button("Convidar CPU") {
-                                    store.requestReplacementInvite(targetSeat: i)
+                            if slot.can_request_replacement {
+                                Button("Convite") {
+                                    store.requestReplacementInvite(targetSeat: slot.seat)
                                 }
                                 .buttonStyle(.bordered)
                                 .controlSize(.small)
-                            } else if !isEmpty && i != assignedSeat {
+                            } else if slot.can_vote_host {
                                 Button("Votar Host") {
-                                    store.voteHost(candidateSeat: i)
+                                    store.voteHost(candidateSeat: slot.seat)
                                 }
                                 .buttonStyle(.bordered)
                                 .controlSize(.small)

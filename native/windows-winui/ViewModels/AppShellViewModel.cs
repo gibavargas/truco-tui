@@ -63,6 +63,14 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private LobbySnapshot? lobbySnapshot;
 
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsMyTurn))]
+    [NotifyPropertyChangedFor(nameof(ShowTrucoActions))]
+    [NotifyPropertyChangedFor(nameof(ShowAskTruco))]
+    [NotifyPropertyChangedFor(nameof(CanPlayCards))]
+    [NotifyPropertyChangedFor(nameof(VisibilityIfOnlineMatch))]
+    private UIStateSnapshot? uiState;
+
     public System.Collections.ObjectModel.ObservableCollection<string> ChatEvents { get; } = new();
     public System.Collections.ObjectModel.ObservableCollection<LobbySlotItem> LobbySlots { get; } = new();
 
@@ -105,11 +113,16 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
     private GameSnapshot? snapshot;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(VisibilityIfPlaying))]
+    [NotifyPropertyChangedFor(nameof(VisibilityIfNotPlaying))]
+    [NotifyPropertyChangedFor(nameof(VisibilityIfOnlineLobby))]
+    [NotifyPropertyChangedFor(nameof(VisibilityIfOnlineMatch))]
+    [NotifyPropertyChangedFor(nameof(VisibilityIfHost))]
     private string mode = UiConstants.IdleMode;
 
     public bool IsPlaying => GameStateHelper.IsPlaying(Snapshot);
     public bool IsNotPlaying => GameStateHelper.IsNotPlaying(Snapshot);
-    public bool IsMyTurn => GameStateHelper.IsMyTurn(Snapshot);
+    public bool IsMyTurn => UiState?.Actions?.CanPlayCard == true || UiState?.Actions?.MustRespond == true;
 
     public Microsoft.UI.Xaml.Visibility VisibilityIfPlaying => (Mode == "offline_match" || Mode == "host_match" || Mode == "client_match" || Mode == "match_over") 
         ? Microsoft.UI.Xaml.Visibility.Visible 
@@ -121,6 +134,10 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
         
     public Microsoft.UI.Xaml.Visibility VisibilityIfOnlineLobby => (Mode == "host_lobby" || Mode == "client_lobby") 
         ? Microsoft.UI.Xaml.Visibility.Visible 
+        : Microsoft.UI.Xaml.Visibility.Collapsed;
+
+    public Microsoft.UI.Xaml.Visibility VisibilityIfOnlineMatch => (Mode == "host_match" || Mode == "client_match")
+        ? Microsoft.UI.Xaml.Visibility.Visible
         : Microsoft.UI.Xaml.Visibility.Collapsed;
 
     public Microsoft.UI.Xaml.Visibility VisibilityIfHost => (Mode == "host_lobby") 
@@ -148,9 +165,10 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
 
     public int MyTeamID => PlayerHelper.GetMyTeamId(Snapshot);
 
-    public bool ShowTrucoActions => GameStateHelper.ShowTrucoActions(Snapshot, MyTeamID);
-    public bool ShowAskTruco => GameStateHelper.ShowAskTruco(Snapshot);
+    public bool ShowTrucoActions => UiState?.Actions?.MustRespond == true;
+    public bool ShowAskTruco => UiState?.Actions?.CanAskOrRaise == true && UiState?.Actions?.MustRespond != true;
     public bool IsMatchOver => GameStateHelper.IsMatchOver(Snapshot);
+    public bool CanPlayCards => UiState?.Actions?.CanPlayCard == true;
 
     public string MatchResultText => GameStateHelper.GetMatchResultText(Snapshot, MyTeamID);
 
@@ -274,6 +292,7 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
                 {
                     Snapshot = bundle.Match;
                     LobbySnapshot = bundle.Lobby;
+                    UiState = bundle.UI;
                     Mode = bundle.Mode ?? UiConstants.IdleMode;
                     RebuildLobbySlots();
                 }
@@ -445,6 +464,24 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
     private void RebuildLobbySlots()
     {
         LobbySlots.Clear();
+        if (UiState?.LobbySlots != null && UiState.LobbySlots.Count > 0)
+        {
+            foreach (var slot in UiState.LobbySlots)
+            {
+                LobbySlots.Add(new LobbySlotItem
+                {
+                    Seat = slot.Seat,
+                    Label = string.IsNullOrWhiteSpace(slot.Name) ? "Aguardando..." : slot.Name!,
+                    IsAssigned = slot.IsLocal,
+                    IsHost = slot.IsHost,
+                    IsConnected = slot.IsConnected,
+                    CanVote = slot.CanVoteHost,
+                    CanReplace = slot.CanRequestReplacement,
+                });
+            }
+            return;
+        }
+
         if (LobbySnapshot?.Slots == null) return;
 
         for (int i = 0; i < LobbySnapshot.Slots.Count; i++)
@@ -458,7 +495,7 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
                 IsHost = LobbySnapshot.HostSeat == i,
                 IsConnected = connected,
                 CanVote = !string.IsNullOrWhiteSpace(LobbySnapshot.Slots[i]) && LobbySnapshot.AssignedSeat != i,
-                CanReplace = string.IsNullOrWhiteSpace(LobbySnapshot.Slots[i]) && Mode == "host_lobby",
+                CanReplace = !connected && !string.IsNullOrWhiteSpace(LobbySnapshot.Slots[i]) && LobbySnapshot.AssignedSeat != i,
             });
         }
     }

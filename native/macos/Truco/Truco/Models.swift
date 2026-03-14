@@ -7,6 +7,7 @@ struct SnapshotBundle: Codable {
     let locale: String?
     let match: MatchSnapshot?
     let lobby: LobbySnapshot?
+    let ui: UIStateSnapshot?
     let connection: ConnectionSnapshot?
     let diagnostics: DiagnosticsSnapshot?
 }
@@ -26,6 +27,38 @@ struct LobbySnapshot: Codable {
     let host_seat: Int?
     let connected_seats: [String: Bool]?
     let role: String?
+}
+
+struct UIStateSnapshot: Codable {
+    let lobby_slots: [LobbySlotState]?
+    let actions: ActionSnapshot?
+}
+
+struct LobbySlotState: Codable, Identifiable {
+    let seat: Int
+    let name: String?
+    let status: String
+    let is_empty: Bool
+    let is_local: Bool
+    let is_host: Bool
+    let is_connected: Bool
+    let is_occupied: Bool
+    let is_provisional_cpu: Bool
+    let can_vote_host: Bool
+    let can_request_replacement: Bool
+
+    var id: Int { seat }
+}
+
+struct ActionSnapshot: Codable {
+    let local_player_id: Int
+    let local_team: Int
+    let can_play_card: Bool
+    let can_ask_or_raise: Bool
+    let must_respond: Bool
+    let can_accept: Bool
+    let can_refuse: Bool
+    let can_close_session: Bool
 }
 
 struct ConnectionSnapshot: Codable {

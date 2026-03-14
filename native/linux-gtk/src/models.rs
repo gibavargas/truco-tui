@@ -8,6 +8,7 @@ pub struct SnapshotBundle {
     pub match_snapshot: Option<GameSnapshot>,
     // Serde rename for the "match" key (reserved word in Rust)
     pub lobby: Option<serde_json::Value>,
+    pub ui: Option<UIStateSnapshot>,
     pub connection: Option<serde_json::Value>,
     pub diagnostics: Option<serde_json::Value>,
 }
@@ -22,6 +23,7 @@ impl SnapshotBundle {
             serde_json::from_value::<GameSnapshot>(m.clone()).ok()
         });
         let lobby = v.get("lobby").cloned();
+        let ui = v.get("ui").and_then(|m| serde_json::from_value::<UIStateSnapshot>(m.clone()).ok());
         let connection = v.get("connection").cloned();
         let diagnostics = v.get("diagnostics").cloned();
         
@@ -30,10 +32,65 @@ impl SnapshotBundle {
             locale,
             match_snapshot,
             lobby,
+            ui,
             connection,
             diagnostics,
         })
     }
+}
+
+#[derive(Deserialize, Debug, Clone)]
+pub struct UIStateSnapshot {
+    #[serde(rename = "lobby_slots")]
+    pub lobby_slots: Option<Vec<LobbySlotState>>,
+    #[serde(rename = "actions")]
+    pub actions: Option<ActionSnapshot>,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+pub struct LobbySlotState {
+    #[serde(rename = "seat")]
+    pub seat: i32,
+    #[serde(rename = "name")]
+    pub name: Option<String>,
+    #[serde(rename = "status")]
+    pub status: Option<String>,
+    #[serde(rename = "is_empty")]
+    pub is_empty: bool,
+    #[serde(rename = "is_local")]
+    pub is_local: bool,
+    #[serde(rename = "is_host")]
+    pub is_host: bool,
+    #[serde(rename = "is_connected")]
+    pub is_connected: bool,
+    #[serde(rename = "is_occupied")]
+    pub is_occupied: bool,
+    #[serde(rename = "is_provisional_cpu")]
+    pub is_provisional_cpu: bool,
+    #[serde(rename = "can_vote_host")]
+    pub can_vote_host: bool,
+    #[serde(rename = "can_request_replacement")]
+    pub can_request_replacement: bool,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+pub struct ActionSnapshot {
+    #[serde(rename = "local_player_id")]
+    pub local_player_id: i32,
+    #[serde(rename = "local_team")]
+    pub local_team: i32,
+    #[serde(rename = "can_play_card")]
+    pub can_play_card: bool,
+    #[serde(rename = "can_ask_or_raise")]
+    pub can_ask_or_raise: bool,
+    #[serde(rename = "must_respond")]
+    pub must_respond: bool,
+    #[serde(rename = "can_accept")]
+    pub can_accept: bool,
+    #[serde(rename = "can_refuse")]
+    pub can_refuse: bool,
+    #[serde(rename = "can_close_session")]
+    pub can_close_session: bool,
 }
 
 #[derive(Deserialize, Debug, Clone)]

@@ -17,12 +17,51 @@ public class SnapshotBundle
     
     [JsonPropertyName("lobby")]
     public LobbySnapshot? Lobby { get; set; }
+
+    [JsonPropertyName("ui")]
+    public UIStateSnapshot? UI { get; set; }
     
     [JsonPropertyName("connection")]
     public ConnectionSnapshot? Connection { get; set; }
     
     [JsonPropertyName("diagnostics")]
     public DiagnosticsSnapshot? Diagnostics { get; set; }
+}
+
+public class UIStateSnapshot
+{
+    [JsonPropertyName("lobby_slots")]
+    public List<LobbySlotState>? LobbySlots { get; set; }
+
+    [JsonPropertyName("actions")]
+    public ActionSnapshot? Actions { get; set; }
+}
+
+public class ActionSnapshot
+{
+    [JsonPropertyName("local_player_id")]
+    public int LocalPlayerId { get; set; }
+
+    [JsonPropertyName("local_team")]
+    public int LocalTeam { get; set; }
+
+    [JsonPropertyName("can_play_card")]
+    public bool CanPlayCard { get; set; }
+
+    [JsonPropertyName("can_ask_or_raise")]
+    public bool CanAskOrRaise { get; set; }
+
+    [JsonPropertyName("must_respond")]
+    public bool MustRespond { get; set; }
+
+    [JsonPropertyName("can_accept")]
+    public bool CanAccept { get; set; }
+
+    [JsonPropertyName("can_refuse")]
+    public bool CanRefuse { get; set; }
+
+    [JsonPropertyName("can_close_session")]
+    public bool CanCloseSession { get; set; }
 }
 
 public class GameSnapshot
@@ -123,7 +162,7 @@ public class LobbySnapshot
     [JsonPropertyName("host_seat")]
     public int? HostSeat { get; set; }
     [JsonPropertyName("connected_seats")]
-    public List<int>? ConnectedSeats { get; set; }
+    public Dictionary<string, bool>? ConnectedSeats { get; set; }
 }
 
 public class LobbySlotItem
@@ -139,13 +178,49 @@ public class LobbySlotItem
     public Brush StatusColor => IsHost ? Brushes.Gold : (IsConnected ? Brushes.LightGreen : (IsAssigned ? Brushes.Gray : Brushes.DimGray));
 }
 
+public class LobbySlotState
+{
+    [JsonPropertyName("seat")]
+    public int Seat { get; set; }
+
+    [JsonPropertyName("name")]
+    public string? Name { get; set; }
+
+    [JsonPropertyName("status")]
+    public string? Status { get; set; }
+
+    [JsonPropertyName("is_empty")]
+    public bool IsEmpty { get; set; }
+
+    [JsonPropertyName("is_local")]
+    public bool IsLocal { get; set; }
+
+    [JsonPropertyName("is_host")]
+    public bool IsHost { get; set; }
+
+    [JsonPropertyName("is_connected")]
+    public bool IsConnected { get; set; }
+
+    [JsonPropertyName("is_occupied")]
+    public bool IsOccupied { get; set; }
+
+    [JsonPropertyName("is_provisional_cpu")]
+    public bool IsProvisionalCpu { get; set; }
+
+    [JsonPropertyName("can_vote_host")]
+    public bool CanVoteHost { get; set; }
+
+    [JsonPropertyName("can_request_replacement")]
+    public bool CanRequestReplacement { get; set; }
+}
+
 public class AppEvent
 {
     [JsonPropertyName("kind")]
     public string? Kind { get; set; }
-    [JsonPropertyName("seq")]
-    public int Seq { get; set; }
-    [JsonPropertyName("ts")]
+    [JsonPropertyName("sequence")]
+    public int Sequence { get; set; }
+    [JsonPropertyName("timestamp")]
     public string? Timestamp { get; set; }
     [JsonPropertyName("payload")]
     public System.Text.Json.JsonElement? Payload { get; set; }

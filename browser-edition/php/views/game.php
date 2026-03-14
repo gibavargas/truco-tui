@@ -13,6 +13,9 @@ $hand = $snap['CurrentHand'] ?? [];
 $mode = $bundle['mode'] ?? 'offline_match';
 $isOnline = strpos($mode, 'host_') === 0 || strpos($mode, 'client_') === 0;
 $lobby = $bundle['lobby'] ?? [];
+$ui = $bundle['ui'] ?? [];
+$slotStates = $ui['lobby_slots'] ?? [];
+$actions = $ui['actions'] ?? [];
 $myPlayer = null;
 foreach ($players as $p) {
     if (($p['ID'] ?? -1) === $myID) {
@@ -32,9 +35,9 @@ foreach ($players as $p) {
     }
 }
 $turnName = htmlspecialchars($turnPlayerObj['Name'] ?? '?');
-$canPlayCard = !$matchFinished && $turnPlayer === $myID && $pendingFor === -1;
-$canTruco = !$matchFinished && (($turnPlayer === $myID && $pendingFor === -1) || ($pendingFor !== -1 && $pendingFor === $myTeam));
-$canAccept = !$matchFinished && $pendingFor !== -1 && $pendingFor === $myTeam;
+$canPlayCard = (bool) ($actions['can_play_card'] ?? (!$matchFinished && $turnPlayer === $myID && $pendingFor === -1));
+$canTruco = (bool) ($actions['can_ask_or_raise'] ?? (!$matchFinished && (($turnPlayer === $myID && $pendingFor === -1) || ($pendingFor !== -1 && $pendingFor === $myTeam))));
+$canAccept = (bool) ($actions['can_accept'] ?? (!$matchFinished && $pendingFor !== -1 && $pendingFor === $myTeam));
 $locale = $_SESSION['locale'] ?? 'pt-BR';
 ?>
 <section class="panel game-panel">
@@ -204,14 +207,15 @@ $locale = $_SESSION['locale'] ?? 'pt-BR';
             <h3><?= tr('lobby_events_title') ?></h3>
             <div class="action-row" style="margin-bottom:8px;">
                 <?php foreach (($lobby['slots'] ?? []) as $idx => $slotName): ?>
-                    <?php if ($idx !== ($lobby['assigned_seat'] ?? -1) && trim((string) $slotName) !== ''): ?>
+                    <?php $slotState = $slotStates[$idx] ?? []; ?>
+                    <?php if (($slotState['can_vote_host'] ?? ($idx !== ($lobby['assigned_seat'] ?? -1) && trim((string) $slotName) !== ''))): ?>
                         <form method="post" action="index.php" style="display:inline" data-ajax="true">
                             <input type="hidden" name="action" value="voteHost">
                             <input type="hidden" name="slot" value="<?= $idx ?>">
                             <button type="submit" class="btn btn-neutral"><?= tr('action_vote_host') ?> <?= $idx + 1 ?></button>
                         </form>
                     <?php endif; ?>
-                    <?php if (strpos($mode, 'host_') === 0 && trim((string) $slotName) === ''): ?>
+                    <?php if (($slotState['can_request_replacement'] ?? false)): ?>
                         <form method="post" action="index.php" style="display:inline" data-ajax="true">
                             <input type="hidden" name="action" value="requestReplacementInvite">
                             <input type="hidden" name="slot" value="<?= $idx ?>">

@@ -8,6 +8,8 @@ $slots = $session['slots'] ?? [];
 $connectedSeats = $session['connected_seats'] ?? [];
 $assignedSeat = $session['assigned_seat'] ?? -1;
 $hostSeat = $session['host_seat'] ?? 0;
+$ui = $bundle['ui'] ?? [];
+$slotStates = $ui['lobby_slots'] ?? [];
 ?>
 <section class="panel lobby-panel">
     <h2><?= tr('lobby_title') ?></h2>
@@ -23,7 +25,13 @@ $hostSeat = $session['host_seat'] ?? 0;
             <div class="lobby-slots">
                 <?php foreach ($slots as $idx => $slotName): ?>
                     <?php
-                    $connected = !empty($connectedSeats[(string) $idx]) || !empty($connectedSeats[$idx]);
+                    $slotState = $slotStates[$idx] ?? [];
+                    $connected = (bool) ($slotState['is_connected'] ?? (!empty($connectedSeats[(string) $idx]) || !empty($connectedSeats[$idx])));
+                    $isHostSeat = (bool) ($slotState['is_host'] ?? ($idx === $hostSeat));
+                    $isLocalSeat = (bool) ($slotState['is_local'] ?? ($idx === $assignedSeat));
+                    $canVote = (bool) ($slotState['can_vote_host'] ?? (trim($slotName) !== '' && $idx !== $assignedSeat));
+                    $canReplace = (bool) ($slotState['can_request_replacement'] ?? false);
+                    $isProvisionalCPU = (bool) ($slotState['is_provisional_cpu'] ?? false);
                     $displayName = trim($slotName) !== '' ? $slotName : tr('lobby_slot_empty');
                     ?>
                     <div class="lobby-slot">
@@ -32,19 +40,20 @@ $hostSeat = $session['host_seat'] ?? 0;
                             <span><?= htmlspecialchars($displayName) ?></span>
                         </div>
                         <div class="roles">
-                            <?php if ($idx === $assignedSeat): ?><span>you</span><?php endif; ?>
-                            <?php if ($idx === $hostSeat): ?><span>host</span><?php endif; ?>
+                            <?php if ($isLocalSeat): ?><span>you</span><?php endif; ?>
+                            <?php if ($isHostSeat): ?><span>host</span><?php endif; ?>
                             <span><?= $connected ? 'online' : 'offline' ?></span>
+                            <?php if ($isProvisionalCPU): ?><span>cpu</span><?php endif; ?>
                         </div>
                         <div class="roles">
-                            <?php if (trim($slotName) !== '' && $idx !== $assignedSeat): ?>
+                            <?php if ($canVote): ?>
                                 <form method="post" action="index.php" data-ajax="true">
                                     <input type="hidden" name="action" value="voteHost">
                                     <input type="hidden" name="slot" value="<?= $idx ?>">
                                     <button type="submit" class="btn btn-neutral"><?= tr('action_vote_host') ?></button>
                                 </form>
                             <?php endif; ?>
-                            <?php if ($isHost && trim($slotName) === ''): ?>
+                            <?php if ($canReplace): ?>
                                 <form method="post" action="index.php" data-ajax="true">
                                     <input type="hidden" name="action" value="requestReplacementInvite">
                                     <input type="hidden" name="slot" value="<?= $idx ?>">

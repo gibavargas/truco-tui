@@ -122,19 +122,20 @@ func DecodeInviteKey(s string) (InviteKey, error) {
 // - partida: game_start, game_action, game_state, system
 // - erro: error
 type Message struct {
-	Type            string   `json:"type"`
-	ProtocolVersion int      `json:"protocol_version,omitempty"`
-	Token           string   `json:"token,omitempty"`
-	Name            string   `json:"name,omitempty"`
-	SessionID       string   `json:"session_id,omitempty"`
-	ReplaceToken    string   `json:"replace_token,omitempty"`
-	DesiredRole     string   `json:"desired_role,omitempty"` // partner|opponent|auto
-	AdvertiseHost   string   `json:"advertise_host,omitempty"`
-	Text            string   `json:"text,omitempty"`
-	Slots           []string `json:"slots,omitempty"`
-	Assigned        int      `json:"assigned"`
-	NumPlayers      int      `json:"num_players,omitempty"`
-	Error           string   `json:"error,omitempty"`
+	Type            string       `json:"type"`
+	ProtocolVersion int          `json:"protocol_version,omitempty"`
+	Token           string       `json:"token,omitempty"`
+	Name            string       `json:"name,omitempty"`
+	SessionID       string       `json:"session_id,omitempty"`
+	ReplaceToken    string       `json:"replace_token,omitempty"`
+	DesiredRole     string       `json:"desired_role,omitempty"` // partner|opponent|auto
+	AdvertiseHost   string       `json:"advertise_host,omitempty"`
+	Text            string       `json:"text,omitempty"`
+	Slots           []string     `json:"slots,omitempty"`
+	ConnectedSeats  map[int]bool `json:"connected_seats,omitempty"`
+	Assigned        int          `json:"assigned"`
+	NumPlayers      int          `json:"num_players,omitempty"`
+	Error           string       `json:"error,omitempty"`
 
 	// Campos de ação de partida (cliente -> host).
 	Action        string `json:"action,omitempty"` // play|truco|accept|refuse

@@ -408,7 +408,7 @@ struct LanguageSheet: View {
             
             VStack(spacing: 12) {
                 Button("🇧🇷 Português") {
-                    store.dispatchIntent(json: "{\"kind\":\"set_locale\",\"payload\":{\"locale\":\"pt\"}}")
+                    store.dispatchIntent(json: "{\"kind\":\"set_locale\",\"payload\":{\"locale\":\"pt-BR\"}}")
                     dismiss()
                 }
                 .buttonStyle(.borderedProminent)
@@ -416,7 +416,7 @@ struct LanguageSheet: View {
                 .controlSize(.large)
                 
                 Button("🇺🇸 English") {
-                    store.dispatchIntent(json: "{\"kind\":\"set_locale\",\"payload\":{\"locale\":\"en\"}}")
+                    store.dispatchIntent(json: "{\"kind\":\"set_locale\",\"payload\":{\"locale\":\"en-US\"}}")
                     dismiss()
                 }
                 .buttonStyle(.borderedProminent)

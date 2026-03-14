@@ -22,6 +22,7 @@ struct GameView: View {
     
     var body: some View {
         if let snap = snapshot {
+            let actions = store.bundle?.ui?.actions
             ZStack {
                 // Background wood panels
                 HStack(spacing: 0) {
@@ -120,7 +121,7 @@ struct GameView: View {
                     if let me = snap.Players?.first(where: { $0.playerID == snap.CurrentPlayerIdx }) {
                         VStack(spacing: 24) {
                             // Action Buttons (Truco, Accept, Refuse)
-                            if snap.PendingRaiseFor == me.Team {
+                            if actions?.must_respond == true {
                                 HStack(spacing: 20) {
                                     Button("ACEITAR") {
                                         store.dispatchGameAction(action: "accept")
@@ -139,7 +140,7 @@ struct GameView: View {
                                     .font(.headline.weight(.black))
                                 }
                                 .padding(.top, 10)
-                            } else if snap.TurnPlayer == snap.CurrentPlayerIdx && snap.CanAskTruco == true {
+                            } else if actions?.can_ask_or_raise == true {
                                 let label = snap.PendingRaiseTo != nil ? raiseLabel(for: snap.PendingRaiseTo!) : raiseLabel(for: snap.CurrentHand?.Stake ?? 1)
                                 Button(label) {
                                     store.dispatchGameAction(action: "truco")
@@ -152,7 +153,7 @@ struct GameView: View {
                                 .padding(.top, 10)
                             }
                             
-                            PlayerHandView(player: me, isMyTurn: snap.TurnPlayer == snap.CurrentPlayerIdx && snap.PendingRaiseFor != 0)
+                            PlayerHandView(player: me, isMyTurn: actions?.can_play_card == true)
                         }
                         .padding(.bottom, 60)
                     }
@@ -173,6 +174,40 @@ struct GameView: View {
                         }
                     }
                     .padding(.vertical, 220)
+                }
+
+                if store.mode == "host_match" || store.mode == "client_match" {
+                    VStack {
+                        HStack {
+                            Spacer()
+                            ScrollView {
+                                VStack(alignment: .leading, spacing: 6) {
+                                    ForEach(store.events.suffix(10)) { event in
+                                        if event.kind == "chat" {
+                                            Text("\(event.payload?.author ?? "?"): \(event.payload?.text ?? "")")
+                                                .font(.caption)
+                                        } else if event.kind == "system" {
+                                            Text(event.payload?.text ?? "")
+                                                .font(.caption)
+                                                .foregroundColor(.secondary)
+                                        } else if event.kind == "replacement_invite" {
+                                            Text("Link de subs: \(event.payload?.invite_key ?? "")")
+                                                .font(.caption)
+                                                .foregroundColor(.green)
+                                        }
+                                    }
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                            .frame(width: 250, height: 140)
+                            .padding(10)
+                            .background(Color.black.opacity(0.28))
+                            .cornerRadius(12)
+                            .padding(.trailing, 24)
+                        }
+                        .padding(.top, 120)
+                        Spacer()
+                    }
                 }
                 
                 // Match finished overlay
