@@ -97,6 +97,35 @@ struct GameView: View {
                     .padding(50)
                     Spacer()
                 }
+                .zIndex(50)
+                .overlay(
+                    VStack {
+                        HStack {
+                            Button(action: {
+                                store.closeSession()
+                            }) {
+                                HStack {
+                                    Image(systemName: "chevron.left")
+                                    Text("Sair da Partida")
+                                        .fontWeight(.bold)
+                                }
+                            }
+                            .buttonStyle(.plain)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 8)
+                            .background(Color.white.opacity(0.15))
+                            .foregroundColor(.white)
+                            .clipShape(Capsule())
+                            .overlay(Capsule().stroke(Color.white.opacity(0.3), lineWidth: 1))
+                            .shadow(radius: 4)
+                            .padding(.leading, 30)
+                            .padding(.top, 30)
+                            
+                            Spacer()
+                        }
+                        Spacer()
+                    }, alignment: .topLeading
+                )
                 
                 // Game Log (top-right)
                 VStack {
