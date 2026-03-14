@@ -63,6 +63,32 @@ function currentViewFromBundle(?array $bundle): string
     return 'setup';
 }
 
+function formatEventLine(array $ev): string
+{
+    $kind = (string) ($ev['kind'] ?? 'event');
+    $payload = is_array($ev['payload'] ?? null) ? $ev['payload'] : [];
+    $kindLabel = match ($kind) {
+        'chat' => tr('event_chat'),
+        'system' => tr('event_system'),
+        'replacement_invite' => tr('event_replacement_invite'),
+        'error' => tr('event_error'),
+        'lobby_updated' => tr('event_lobby_updated'),
+        'match_updated' => tr('event_match_updated'),
+        default => $kind,
+    };
+    $parts = [$kindLabel];
+    if (!empty($payload['author']) && !empty($payload['text'])) {
+        $parts[] = $payload['author'] . ': ' . $payload['text'];
+    } elseif (!empty($payload['text'])) {
+        $parts[] = (string) $payload['text'];
+    } elseif (!empty($payload['message'])) {
+        $parts[] = (string) $payload['message'];
+    } elseif (!empty($payload['invite_key'])) {
+        $parts[] = (string) $payload['invite_key'];
+    }
+    return implode(' · ', $parts);
+}
+
 $errorMsg = '';
 $ajaxRequest = !empty($_REQUEST['ajax']);
 
@@ -124,6 +150,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $res = $api->call('startOnlineHost', $sid, [
                 'name' => trim($_POST['name'] ?? 'Host'),
                 'numPlayers' => (int) ($_POST['numPlayers'] ?? 2),
+                'relay_url' => trim($_POST['relay_url'] ?? ''),
             ]);
             if (!empty($res['ok'])) {
                 storeBrowserState($res);

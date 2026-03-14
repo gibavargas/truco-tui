@@ -27,6 +27,7 @@ struct LobbySnapshot: Codable {
     let host_seat: Int?
     let connected_seats: [String: Bool]?
     let role: String?
+    let metadata: [String: String]?
 }
 
 struct UIStateSnapshot: Codable {
@@ -65,10 +66,18 @@ struct ConnectionSnapshot: Codable {
     let status: String?
     let is_online: Bool?
     let is_host: Bool?
+    let last_error: AppErrorSnapshot?
+    let last_event_sequence: Int64?
 }
 
 struct DiagnosticsSnapshot: Codable {
     let event_backlog: Int?
+    let event_log: [String]?
+}
+
+struct AppErrorSnapshot: Codable {
+    let code: String?
+    let message: String?
 }
 
 // MARK: - AppEvents definition
@@ -86,6 +95,8 @@ struct EventPayload: Codable {
     let author: String?
     let target_seat: Int?
     let invite_key: String?
+    let code: String?
+    let message: String?
 }
 
 // MARK: - Match Snapshot (matches Go truco.Snapshot)

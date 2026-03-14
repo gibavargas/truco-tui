@@ -29,6 +29,11 @@ struct GameView: View {
     var body: some View {
         if let snap = snapshot {
             let actions = store.bundle?.ui?.actions
+            let slotStates = store.bundle?.ui?.lobby_slots ?? []
+            let connection = store.bundle?.connection
+            let diagnostics = store.bundle?.diagnostics
+            let isOnline = store.mode == "host_match" || store.mode == "client_match"
+            let localTeam = actions?.local_team ?? snap.Players?.first(where: { $0.playerID == snap.CurrentPlayerIdx })?.Team ?? 0
             ZStack {
                 // Background wood panels
                 HStack(spacing: 0) {
@@ -211,33 +216,108 @@ struct GameView: View {
                     .padding(.vertical, 220)
                 }
 
-                if store.mode == "host_match" || store.mode == "client_match" {
+                if isOnline {
                     VStack {
-                        HStack {
+                        HStack(alignment: .top, spacing: 16) {
                             Spacer()
-                            ScrollView {
-                                VStack(alignment: .leading, spacing: 6) {
-                                    ForEach(store.events.suffix(10)) { event in
-                                        if event.kind == "chat" {
-                                            Text("\(event.payload?.author ?? "?"): \(event.payload?.text ?? "")")
-                                                .font(.caption)
-                                        } else if event.kind == "system" {
-                                            Text(event.payload?.text ?? "")
-                                                .font(.caption)
-                                                .foregroundColor(.secondary)
-                                        } else if event.kind == "replacement_invite" {
-                                            Text("Link de subs: \(event.payload?.invite_key ?? "")")
-                                                .font(.caption)
-                                                .foregroundColor(.green)
-                                        }
+                            VStack(alignment: .leading, spacing: 12) {
+                                VStack(alignment: .leading, spacing: 8) {
+                                    Text("Conexão")
+                                        .font(.caption.bold())
+                                        .foregroundColor(.white.opacity(0.6))
+                                    connectionLine("Status", connection?.status ?? store.mode)
+                                    connectionLine("Modo", connection?.is_online == true ? "online" : "offline")
+                                    connectionLine("Fila", "\(diagnostics?.event_backlog ?? 0)")
+                                    if let message = connection?.last_error?.message, !message.isEmpty {
+                                        connectionLine("Erro", message, tint: .red.opacity(0.9))
                                     }
                                 }
-                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(12)
+                                .background(Color.black.opacity(0.32))
+                                .cornerRadius(12)
+
+                                if !slotStates.isEmpty {
+                                    VStack(alignment: .leading, spacing: 8) {
+                                        Text("Mesa Online")
+                                            .font(.caption.bold())
+                                            .foregroundColor(.white.opacity(0.6))
+                                        ForEach(slotStates) { slot in
+                                            VStack(alignment: .leading, spacing: 6) {
+                                                HStack {
+                                                    Text("Slot \(slot.seat + 1)")
+                                                        .font(.caption.weight(.semibold))
+                                                        .foregroundColor(.white)
+                                                    Spacer()
+                                                    Text(slot.name?.isEmpty == false ? slot.name! : "Aguardando...")
+                                                        .font(.caption)
+                                                        .foregroundColor(slot.is_empty ? .gray : .white.opacity(0.85))
+                                                }
+                                                HStack(spacing: 6) {
+                                                    if slot.is_local { slotTag("você", color: .yellow) }
+                                                    if slot.is_host { slotTag("host", color: .blue) }
+                                                    slotTag(slot.is_connected ? "online" : "offline", color: slot.is_connected ? .green : .gray)
+                                                    if slot.is_provisional_cpu { slotTag("cpu", color: .orange) }
+                                                }
+                                                HStack(spacing: 8) {
+                                                    if slot.can_vote_host {
+                                                        Button("Votar Host") {
+                                                            store.voteHost(candidateSeat: slot.seat)
+                                                        }
+                                                        .font(.caption2)
+                                                        .buttonStyle(.bordered)
+                                                    }
+                                                    if slot.can_request_replacement {
+                                                        Button("Substituição") {
+                                                            store.requestReplacementInvite(targetSeat: slot.seat)
+                                                        }
+                                                        .font(.caption2)
+                                                        .buttonStyle(.borderedProminent)
+                                                        .tint(.orange)
+                                                    }
+                                                }
+                                            }
+                                            .padding(10)
+                                            .background(Color.white.opacity(0.04))
+                                            .cornerRadius(10)
+                                        }
+                                    }
+                                    .padding(12)
+                                    .background(Color.black.opacity(0.32))
+                                    .cornerRadius(12)
+                                }
+
+                                VStack(alignment: .leading, spacing: 10) {
+                                    Text("Chat e Eventos")
+                                        .font(.caption.bold())
+                                        .foregroundColor(.white.opacity(0.6))
+                                    ScrollView {
+                                        VStack(alignment: .leading, spacing: 6) {
+                                            ForEach(store.events.suffix(14)) { event in
+                                                eventRow(event)
+                                            }
+                                        }
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                    }
+                                    .frame(height: 140)
+
+                                    HStack {
+                                        TextField("Digite uma mensagem...", text: $chatMessage)
+                                            .textFieldStyle(.roundedBorder)
+                                            .onSubmit {
+                                                sendChatIfNeeded()
+                                            }
+                                        Button("Enviar") {
+                                            sendChatIfNeeded()
+                                        }
+                                        .buttonStyle(.borderedProminent)
+                                        .disabled(chatMessage.isEmpty)
+                                    }
+                                }
+                                .padding(12)
+                                .background(Color.black.opacity(0.32))
+                                .cornerRadius(12)
                             }
-                            .frame(width: 250, height: 140)
-                            .padding(10)
-                            .background(Color.black.opacity(0.28))
-                            .cornerRadius(12)
+                            .frame(width: 320)
                             .padding(.trailing, 24)
                         }
                         .padding(.top, 120)
@@ -260,18 +340,30 @@ struct GameView: View {
                             .font(.system(size: 36, weight: .bold, design: .rounded))
                             .foregroundColor(.white)
                         
-                        Text(snap.WinnerTeam == 0 ? "VOCÊ VENCEU! 🏆" : "VOCÊ PERDEU 😢")
+                        let didWinMatch = snap.WinnerTeam == localTeam
+                        Text(didWinMatch ? "VOCÊ VENCEU! 🏆" : "VOCÊ PERDEU 😢")
                             .font(.system(size: 28, weight: .bold, design: .rounded))
-                            .foregroundColor(snap.WinnerTeam == 0 ? .yellow : .red)
+                            .foregroundColor(didWinMatch ? .yellow : .red)
                         
-                        Button("NOVA PARTIDA") {
-                            store.startOfflineDemo()
+                        if isOnline {
+                            Button("SAIR DA SESSÃO") {
+                                store.closeSession()
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .tint(.yellow)
+                            .foregroundColor(.black)
+                            .controlSize(.large)
+                            .font(.headline.weight(.black))
+                        } else {
+                            Button("NOVA PARTIDA") {
+                                store.replayOfflineMatch()
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .tint(.yellow)
+                            .foregroundColor(.black)
+                            .controlSize(.large)
+                            .font(.headline.weight(.black))
                         }
-                        .buttonStyle(.borderedProminent)
-                        .tint(.yellow)
-                        .foregroundColor(.black)
-                        .controlSize(.large)
-                        .font(.headline.weight(.black))
                     }
                 }
                 
@@ -382,6 +474,68 @@ struct GameView: View {
                     showingTrickEndAnimation = false
                 }
             }
+        }
+    }
+
+    private func sendChatIfNeeded() {
+        let trimmed = chatMessage.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        store.sendChat(text: trimmed)
+        chatMessage = ""
+    }
+
+    private func slotTag(_ label: String, color: Color) -> some View {
+        Text(label)
+            .font(.caption2.weight(.semibold))
+            .foregroundColor(color)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(color.opacity(0.12))
+            .clipShape(Capsule())
+    }
+
+    private func connectionLine(_ label: String, _ value: String, tint: Color = .white) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(label.uppercased())
+                .font(.caption2)
+                .foregroundColor(.white.opacity(0.45))
+            Text(value)
+                .font(.caption)
+                .foregroundColor(tint)
+        }
+    }
+
+    @ViewBuilder
+    private func eventRow(_ event: AppEvent) -> some View {
+        switch event.kind {
+        case "chat":
+            Text("\(event.payload?.author ?? "?"): \(event.payload?.text ?? "")")
+                .font(.caption)
+                .foregroundColor(.white)
+        case "system":
+            Text(event.payload?.text ?? "")
+                .font(.caption)
+                .foregroundColor(.secondary)
+        case "replacement_invite":
+            Text("Link de subs: \(event.payload?.invite_key ?? "")")
+                .font(.caption)
+                .foregroundColor(.green)
+        case "error":
+            Text(event.payload?.message ?? event.payload?.text ?? "Erro")
+                .font(.caption)
+                .foregroundColor(.red.opacity(0.9))
+        case "lobby_updated":
+            Text("Lobby atualizado")
+                .font(.caption)
+                .foregroundColor(.white.opacity(0.65))
+        case "match_updated":
+            Text("Partida atualizada")
+                .font(.caption)
+                .foregroundColor(.white.opacity(0.65))
+        default:
+            Text(event.payload?.text ?? event.kind)
+                .font(.caption)
+                .foregroundColor(.white.opacity(0.7))
         }
     }
 }

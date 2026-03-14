@@ -10,13 +10,24 @@ $assignedSeat = $session['assigned_seat'] ?? -1;
 $hostSeat = $session['host_seat'] ?? 0;
 $ui = $bundle['ui'] ?? [];
 $slotStates = $ui['lobby_slots'] ?? [];
+$connection = $bundle['connection'] ?? [];
+$diagnostics = $bundle['diagnostics'] ?? [];
+$inviteKey = (string) ($session['invite_key'] ?? '');
+$connectionStatus = (string) ($connection['status'] ?? ($bundle['mode'] ?? 'idle'));
+$roleLabel = trim((string) ($session['role'] ?? ''));
 ?>
 <section class="panel lobby-panel">
     <h2><?= tr('lobby_title') ?></h2>
 
     <div class="lobby-meta">
         <div><strong><?= htmlspecialchars($mode) ?></strong></div>
-        <div><span><?= tr('lobby_invite') ?></span>: <code><?= htmlspecialchars($session['invite_key'] ?? '-') ?></code></div>
+        <div class="invite-row">
+            <span><?= tr('lobby_invite') ?></span>:
+            <code><?= htmlspecialchars($inviteKey !== '' ? $inviteKey : '-') ?></code>
+            <?php if ($inviteKey !== ''): ?>
+                <button type="button" class="btn btn-neutral btn-copy" data-copy-text="<?= htmlspecialchars($inviteKey) ?>"><?= tr('invite_copy') ?></button>
+            <?php endif; ?>
+        </div>
     </div>
 
     <div class="lobby-grid">
@@ -32,7 +43,8 @@ $slotStates = $ui['lobby_slots'] ?? [];
                     $canVote = (bool) ($slotState['can_vote_host'] ?? (trim($slotName) !== '' && $idx !== $assignedSeat));
                     $canReplace = (bool) ($slotState['can_request_replacement'] ?? false);
                     $isProvisionalCPU = (bool) ($slotState['is_provisional_cpu'] ?? false);
-                    $displayName = trim($slotName) !== '' ? $slotName : tr('lobby_slot_empty');
+                    $status = (string) ($slotState['status'] ?? ($connected ? 'occupied_online' : (trim($slotName) === '' ? 'empty' : 'occupied_offline')));
+                    $displayName = trim((string) ($slotState['name'] ?? $slotName)) !== '' ? (string) ($slotState['name'] ?? $slotName) : tr('lobby_slot_empty');
                     ?>
                     <div class="lobby-slot">
                         <div class="top">
@@ -40,10 +52,11 @@ $slotStates = $ui['lobby_slots'] ?? [];
                             <span><?= htmlspecialchars($displayName) ?></span>
                         </div>
                         <div class="roles">
-                            <?php if ($isLocalSeat): ?><span>you</span><?php endif; ?>
-                            <?php if ($isHostSeat): ?><span>host</span><?php endif; ?>
-                            <span><?= $connected ? 'online' : 'offline' ?></span>
-                            <?php if ($isProvisionalCPU): ?><span>cpu</span><?php endif; ?>
+                            <span><?= htmlspecialchars(tr('slot_status_' . $status)) ?></span>
+                            <?php if ($isLocalSeat): ?><span><?= tr('slot_you') ?></span><?php endif; ?>
+                            <?php if ($isHostSeat): ?><span><?= tr('slot_host') ?></span><?php endif; ?>
+                            <span><?= $connected ? tr('slot_online') : tr('slot_offline') ?></span>
+                            <?php if ($isProvisionalCPU): ?><span><?= tr('slot_cpu') ?></span><?php endif; ?>
                         </div>
                         <div class="roles">
                             <?php if ($canVote): ?>
@@ -66,6 +79,20 @@ $slotStates = $ui['lobby_slots'] ?? [];
             </div>
         </div>
         <div class="lobby-block">
+            <h3><?= tr('connection_title') ?></h3>
+            <div class="connection-grid">
+                <div><span><?= tr('connection_status') ?></span><strong><?= htmlspecialchars($connectionStatus) ?></strong></div>
+                <div><span><?= tr('connection_mode') ?></span><strong><?= !empty($connection['is_online']) ? tr('connection_online') : tr('connection_offline') ?></strong></div>
+                <?php if ($roleLabel !== ''): ?>
+                    <div><span><?= tr('connection_role') ?></span><strong><?= htmlspecialchars($roleLabel) ?></strong></div>
+                <?php endif; ?>
+                <div><span><?= tr('connection_backlog') ?></span><strong><?= (int) ($diagnostics['event_backlog'] ?? 0) ?></strong></div>
+                <?php if (!empty($connection['last_error']['message'])): ?>
+                    <div class="connection-error"><span><?= tr('connection_error') ?></span><strong><?= htmlspecialchars((string) $connection['last_error']['message']) ?></strong></div>
+                <?php endif; ?>
+            </div>
+        </div>
+        <div class="lobby-block">
             <h3><?= tr('lobby_events_title') ?></h3>
             <pre id="lobby-events"><?php
                 if (!$events) {
@@ -73,12 +100,7 @@ $slotStates = $ui['lobby_slots'] ?? [];
                 } else {
                     foreach ($events as $ev) {
                         $label = '[' . htmlspecialchars(substr((string) ($ev['timestamp'] ?? ''), 11, 8)) . '] ';
-                        $label .= htmlspecialchars((string) ($ev['kind'] ?? 'event'));
-                        if (!empty($ev['payload']['text'])) {
-                            $label .= ' · ' . htmlspecialchars((string) $ev['payload']['text']);
-                        } elseif (!empty($ev['payload']['invite_key'])) {
-                            $label .= ' · ' . htmlspecialchars((string) $ev['payload']['invite_key']);
-                        }
+                        $label .= htmlspecialchars(formatEventLine($ev));
                         echo $label . "\n";
                     }
                 }

@@ -24,6 +24,23 @@
     }
   });
 
+  viewRoot.addEventListener('click', async (event) => {
+    const button = event.target.closest('.btn-copy');
+    if (!button) return;
+    const text = button.dataset.copyText || '';
+    if (!text || !navigator.clipboard) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      const oldText = button.textContent;
+      button.textContent = 'OK';
+      setTimeout(() => {
+        button.textContent = oldText;
+      }, 1200);
+    } catch (error) {
+      console.error('Copy failed', error);
+    }
+  });
+
   async function submitAjaxForm(form) {
     const method = (form.method || 'POST').toUpperCase();
     const action = form.action || window.location.pathname;

@@ -189,6 +189,14 @@ label {
   gap: 10px;
 }
 
+.host-grid {
+  grid-template-columns: 160px minmax(0, 1fr);
+}
+
+.span-2 {
+  grid-column: 1 / -1;
+}
+
 .setup-actions {
   margin-top: 14px;
 }
@@ -228,9 +236,16 @@ label {
   color: var(--muted);
 }
 
+.invite-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .lobby-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
 }
 
@@ -299,6 +314,37 @@ label {
   font-family: "IBM Plex Mono", monospace;
   font-size: 0.72rem;
   color: #cde5f3;
+}
+
+.connection-grid {
+  display: grid;
+  gap: 8px;
+}
+
+.connection-grid div {
+  display: grid;
+  gap: 2px;
+}
+
+.connection-grid span {
+  font-size: 0.72rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.connection-grid strong {
+  font-size: 0.88rem;
+  color: var(--text);
+}
+
+.connection-error strong {
+  color: #ffd2d2;
+}
+
+.btn-copy {
+  padding: 5px 9px;
+  font-size: 0.74rem;
 }
 
 .game-panel {
@@ -1333,8 +1379,13 @@ select:focus-visible {
     align-items: stretch;
   }
 
-  .setup-grid {
+  .setup-grid,
+  .host-grid {
     grid-template-columns: 1fr;
+  }
+
+  .span-2 {
+    grid-column: auto;
   }
 
   .hud {

@@ -62,9 +62,19 @@ The shared runtime in `internal/appcore` is the source of truth for every non-TU
 ## Required surfaces
 
 - Setup: player name, player count, locale, offline start, online host, online join
+- Online setup parity:
+  - Host setup must expose player count and optional `relay_url`.
+  - Join setup must expose invite key and desired role (`auto`, `partner`, `opponent`).
+  - Invite presentation must allow easy copy/share for both direct and relay invites.
 - Lobby: invite key, slot list with badges, chat, start/leave, vote host, replacement invite
+- Lobby diagnostics: show runtime-backed connection status, online/offline state, role when present, and event backlog / last error when available from `bundle.connection` or `bundle.diagnostics`
 - Match: score, stake ladder, turn indicator, vira, manilha, played cards, own hand, action bar, persistent online chat/events, recent match log
-- End state: winner, final score, replay/new match, session close/leave path
+- Match online parity:
+  - Keep vote-host and replacement-invite actions reachable during online matches when runtime allows them.
+  - Keep chat input reachable during online matches.
+- End state:
+  - Offline match: replay/new match plus return path.
+  - Online match: session close/leave path instead of forcing offline replay.
 
 ## Event categories
 
