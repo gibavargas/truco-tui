@@ -1,20 +1,26 @@
 # Native Desktop Clients
 
-This folder contains the native desktop shells that consume the shared Go core
-from `cmd/truco-core-ffi`.
+This directory contains native desktop shells that integrate with the shared Go runtime exposed by `cmd/truco-core-ffi`.
 
-- `macos`: SwiftUI app scaffold for macOS.
-- `linux-gtk`: Rust + GTK4/libadwaita scaffold for Linux.
-- `windows-winui`: WinUI 3 + MVVM Toolkit scaffold for Windows.
+## Clients
 
-Each client is intentionally thin:
+- `macos`: primary macOS client built with SwiftUI and Xcode
+- `linux-gtk`: Linux desktop client built with Rust, GTK4, and libadwaita
+- `windows-winui`: primary Windows client built with WinUI 3 and .NET 8
+- `windows-wpf`: legacy Windows client kept for compatibility and experimentation
 
-- the Go runtime owns game rules, online orchestration, and failover behavior
-- the native shell owns rendering, accessibility, and platform UX
-- the C ABI is the only supported integration boundary
+## Architecture
 
-The expected FFI build artifacts are:
+Each shell is intentionally thin:
 
-- macOS: `libtruco_core.dylib` + generated header
-- Linux: `libtruco_core.so` + generated header
-- Windows: `truco_core.dll` + generated header/import library
+- the Go runtime owns rules, lobby flow, network orchestration, and snapshots
+- the native layer owns rendering, input, accessibility, and platform integration
+- the C ABI is the supported boundary between them
+
+## FFI Outputs
+
+- macOS: `bin/libtruco_core.dylib`
+- Linux: `bin/libtruco_core.so`
+- Windows: `bin/truco-core-ffi.dll`
+
+See the client-specific READMEs in each subdirectory for build steps and platform requirements.
