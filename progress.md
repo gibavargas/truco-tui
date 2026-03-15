@@ -17,6 +17,12 @@ This file tracks the latest documentation-aligned project status captured in the
 - Captured an additional full-page 4-player desktop screenshot with Playwright to verify the intended desktop composition.
 - Observed no console or page errors during the latest validation run.
 
+## Current Direction Shift
+
+- Reframed the browser match screen away from stacked dashboard panels and toward a single-table composition with a compact HUD, simplified center table, and a dedicated player dock.
+- Removed the in-match refresh action from the primary controls because it does not fit the game flow.
+- Prioritized immediate playability: the player hand is now the main dock, context actions only appear when relevant, and secondary narration was reduced to a compact footer line.
+
 ## Recent Browser Edition Validation
 
 - Visual validation completed for desktop and mobile layouts.
@@ -42,3 +48,11 @@ This file tracks the latest documentation-aligned project status captured in the
 
 - The lobby invite block now wraps cleanly without colliding with action buttons.
 - The mobile hand view now scrolls horizontally instead of wrapping cards onto two rows.
+
+## 2026-03-15 Current Codex Work
+
+- Implementing a second browser-edition pass focused on competitive desktop readability for 4-player Truco Paulista.
+- Scope is limited to the PHP browser UI layer: semantic match-state classes, wireframe/polished toggle, stronger table zoning, and a quieter treatment for social/online controls.
+- Planned validation loop: local Go API + PHP frontend + Playwright screenshot/state checks after the UI changes land.
+- Completed a real browser validation pass with Playwright against the local PHP frontend after the redesign and after a spacing fix on the top seat/callout area.
+- Latest desktop capture confirms the polished layout and the wireframe toggle both render without console errors.
