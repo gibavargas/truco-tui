@@ -152,8 +152,14 @@ func (t *TUI) hostLobbyFlow() error {
 	if err != nil {
 		return err
 	}
+	relayURL := strings.TrimSpace(t.ask("Relay URL (opcional, Enter para P2P direto): "))
 
-	host, key, err := netp2p.NewHostSession("0.0.0.0:0", hostName, n)
+	hostCfg := netp2p.HostConfig{}
+	if relayURL != "" {
+		hostCfg.RelayURL = relayURL
+		hostCfg.TransportMode = "relay_quic_v2"
+	}
+	host, key, err := netp2p.NewHostSessionWithConfig("0.0.0.0:0", hostName, n, hostCfg)
 	if err != nil {
 		return err
 	}

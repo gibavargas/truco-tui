@@ -1,38 +1,33 @@
-# Truco - macOS Native Client
+# macOS Xcode Project
 
-Este é o cliente nativo de macOS para o jogo Truco, construído com **SwiftUI** e utilizando um back-end compartilhado em **Go** via FFI (Foreign Function Interface).
+This directory contains the Xcode project for the macOS client.
 
-## Requisitos
-- **macOS** 13.0 (Ventura) ou superior.
-- **Xcode** 15 ou superior.
-- **Go** 1.22 ou superior (para compilar a engine compartilhada `appcore`).
+## Important Paths
 
-## Compilando o Core em Go
+- `Truco.xcodeproj`: project file
+- `Truco/`: Swift source, assets, bridge layer, and generated header
+- `TrucoTests/`: unit tests
+- `TrucoUITests/`: UI tests
 
-Antes de compilar o aplicativo macOS, você precisa compilar a engine compartilhada em um formato utilizável pelo Xcode (`XCFramework` ou arquivo `.a` estático com header de C). O script de build lidará com essa dependência gerando as bibliotecas no diretório correto.
+## Runtime Integration
 
-1. No terminal, vá até a pasta raiz do projeto.
-2. Compile a biblioteca compartilhada para macOS (em caso de ausência dos scripts automatizados):
-   ```bash
-   cd internal/appcore/ffi
-   go build -buildmode=c-archive -o ../../../native/macos/Truco/trucocore.a trucocore.go
-   ```
-*(Opcional: você também pode usar o `gomobile` se for integrar o projeto como xcframework no iOS).*
+The app talks to the shared runtime through `TrucoCoreBridge.swift`, which wraps the exported functions from `cmd/truco-core-ffi`.
 
-## Instalando e Rodando no Xcode
+The project expects:
 
-1. Abra o arquivo `Truco.xcodeproj` no **Xcode**.
-   ```bash
-   open native/macos/Truco/Truco.xcodeproj
-   ```
-2. No Xcode, selecione um simulador de Mac, ou "My Mac" como o `Run Destination`.
-3. Verifique se o arquivo `trucocore.a` e o header gerado (`trucocore.h`) estão vinculados ao projeto em *Frameworks, Libraries, and Embedded Content*.
-4. Clique em **Run** (`Cmd + R`) para compilar e iniciar o aplicativo.
+- `bin/libtruco_core.dylib`
+- `native/macos/Truco/Truco/truco_core.h`
 
-## Funcionalidades
-- Interface 100% Nativa em SwiftUI (com efeito Glassmorphism / Materiais Fluidos).
-- Modo Offline vs CPU.
-- Multiplayer Online: Sistema de Salas com códigos de convite.
-- Chat em tempo real embutido.
-- Votação de Troca de Host e Substituição por CPU.
-- Acompanhamento do placar, vira e manilha.
+Generate or refresh them from the repository root with:
+
+```bash
+make ffi-macos
+```
+
+## Open in Xcode
+
+```bash
+open native/macos/Truco/Truco.xcodeproj
+```
+
+Build and run with `My Mac` as the destination.

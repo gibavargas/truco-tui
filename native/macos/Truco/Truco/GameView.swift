@@ -4,6 +4,13 @@ struct GameView: View {
     let snapshot: MatchSnapshot?
     @EnvironmentObject var store: TrucoAppStore
 
+    @State private var lastTrickSeqViewed: Int = -1
+    @State private var showingTrickEndAnimation = false
+    @State private var trickAnimOffset: CGSize = .zero
+    @State private var trickWinnerTeam: Int = -1
+    @State private var trickTie: Bool = false
+    @State private var chatMessage = ""
+
     private func seatPlayer(_ snap: MatchSnapshot, offset: Int) -> Player? {
         guard let players = snap.Players, let localID = snap.CurrentPlayerIdx, let count = snap.NumPlayers else { return nil }
         let seatID = (localID + offset) % count
@@ -22,6 +29,12 @@ struct GameView: View {
     
     var body: some View {
         if let snap = snapshot {
+            let actions = store.bundle?.ui?.actions
+            let slotStates = store.bundle?.ui?.lobby_slots ?? []
+            let connection = store.bundle?.connection
+            let diagnostics = store.bundle?.diagnostics
+            let isOnline = store.mode == "host_match" || store.mode == "client_match"
+            let localTeam = actions?.local_team ?? snap.Players?.first(where: { $0.playerID == snap.CurrentPlayerIdx })?.Team ?? 0
             ZStack {
                 // Background wood panels
                 HStack(spacing: 0) {
@@ -87,9 +100,39 @@ struct GameView: View {
                         Spacer()
                         ScoreView(teamName: "Eles", points: snap.teamScore.them)
                     }
-                    .padding(50)
+                    .padding(.horizontal, 50)
+                    .padding(.top, 78)
                     Spacer()
                 }
+                .zIndex(50)
+                .overlay(
+                    VStack {
+                        HStack {
+                            Button(action: {
+                                store.closeSession()
+                            }) {
+                                HStack {
+                                    Image(systemName: "chevron.left")
+                                    Text("Sair da Partida")
+                                        .fontWeight(.bold)
+                                }
+                            }
+                            .buttonStyle(.plain)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 8)
+                            .background(Color.white.opacity(0.15))
+                            .foregroundColor(.white)
+                            .clipShape(Capsule())
+                            .overlay(Capsule().stroke(Color.white.opacity(0.3), lineWidth: 1))
+                            .shadow(radius: 4)
+                            .padding(.leading, 30)
+                            .padding(.top, 58)
+                            
+                            Spacer()
+                        }
+                        Spacer()
+                    }, alignment: .topLeading
+                )
                 
                 // Game Log (top-right)
                 VStack {
@@ -97,7 +140,7 @@ struct GameView: View {
                         Spacer()
                         LogView(logs: snap.Logs ?? [])
                     }
-                    .padding(.top, 120)
+                    .padding(.top, 148)
                     .padding(.trailing, 50)
                     Spacer()
                 }
@@ -106,13 +149,13 @@ struct GameView: View {
                 VStack(spacing: 0) {
                     if let opponent = seatPlayer(snap, offset: snap.NumPlayers == 4 ? 2 : 1) {
                         OpponentView(player: opponent)
-                            .padding(.top, 60)
+                            .padding(.top, 96)
                     }
                     
                     Spacer()
                     
                     if let center = snap.CurrentHand {
-                        CenterTableView(hand: center)
+                        CenterTableView(hand: center, players: snap.Players ?? [])
                     }
                     
                     Spacer()
@@ -120,7 +163,7 @@ struct GameView: View {
                     if let me = snap.Players?.first(where: { $0.playerID == snap.CurrentPlayerIdx }) {
                         VStack(spacing: 24) {
                             // Action Buttons (Truco, Accept, Refuse)
-                            if snap.PendingRaiseFor == me.Team {
+                            if actions?.must_respond == true {
                                 HStack(spacing: 20) {
                                     Button("ACEITAR") {
                                         store.dispatchGameAction(action: "accept")
@@ -139,7 +182,7 @@ struct GameView: View {
                                     .font(.headline.weight(.black))
                                 }
                                 .padding(.top, 10)
-                            } else if snap.TurnPlayer == snap.CurrentPlayerIdx && snap.CanAskTruco == true {
+                            } else if actions?.can_ask_or_raise == true {
                                 let label = snap.PendingRaiseTo != nil ? raiseLabel(for: snap.PendingRaiseTo!) : raiseLabel(for: snap.CurrentHand?.Stake ?? 1)
                                 Button(label) {
                                     store.dispatchGameAction(action: "truco")
@@ -152,7 +195,7 @@ struct GameView: View {
                                 .padding(.top, 10)
                             }
                             
-                            PlayerHandView(player: me, isMyTurn: snap.TurnPlayer == snap.CurrentPlayerIdx && snap.PendingRaiseFor != 0)
+                            PlayerHandView(player: me, isMyTurn: actions?.can_play_card == true)
                         }
                         .padding(.bottom, 60)
                     }
@@ -174,6 +217,116 @@ struct GameView: View {
                     }
                     .padding(.vertical, 220)
                 }
+
+                if isOnline {
+                    VStack {
+                        HStack(alignment: .top, spacing: 16) {
+                            Spacer()
+                            VStack(alignment: .leading, spacing: 12) {
+                                VStack(alignment: .leading, spacing: 8) {
+                                    Text("Conexão")
+                                        .font(.caption.bold())
+                                        .foregroundColor(.white.opacity(0.6))
+                                    connectionLine("Status", connection?.status ?? store.mode)
+                                    connectionLine("Modo", connection?.is_online == true ? "online" : "offline")
+                                    connectionLine("Fila", "\(diagnostics?.event_backlog ?? 0)")
+                                    if let message = connection?.last_error?.message, !message.isEmpty {
+                                        connectionLine("Erro", message, tint: .red.opacity(0.9))
+                                    }
+                                }
+                                .padding(12)
+                                .background(Color.black.opacity(0.32))
+                                .cornerRadius(12)
+
+                                if !slotStates.isEmpty {
+                                    VStack(alignment: .leading, spacing: 8) {
+                                        Text("Mesa Online")
+                                            .font(.caption.bold())
+                                            .foregroundColor(.white.opacity(0.6))
+                                        ForEach(slotStates) { slot in
+                                            VStack(alignment: .leading, spacing: 6) {
+                                                HStack {
+                                                    Text("Slot \(slot.seat + 1)")
+                                                        .font(.caption.weight(.semibold))
+                                                        .foregroundColor(.white)
+                                                    Spacer()
+                                                    Text(slot.name?.isEmpty == false ? slot.name! : "Aguardando...")
+                                                        .font(.caption)
+                                                        .foregroundColor(slot.is_empty ? .gray : .white.opacity(0.85))
+                                                }
+                                                HStack(spacing: 6) {
+                                                    if slot.is_local { slotTag("você", color: .yellow) }
+                                                    if slot.is_host { slotTag("host", color: .blue) }
+                                                    slotTag(slot.is_connected ? "online" : "offline", color: slot.is_connected ? .green : .gray)
+                                                    if slot.is_provisional_cpu { slotTag("cpu", color: .orange) }
+                                                }
+                                                HStack(spacing: 8) {
+                                                    if slot.can_vote_host {
+                                                        Button("Votar Host") {
+                                                            store.voteHost(candidateSeat: slot.seat)
+                                                        }
+                                                        .font(.caption2)
+                                                        .buttonStyle(.bordered)
+                                                    }
+                                                    if slot.can_request_replacement {
+                                                        Button("Substituição") {
+                                                            store.requestReplacementInvite(targetSeat: slot.seat)
+                                                        }
+                                                        .font(.caption2)
+                                                        .buttonStyle(.borderedProminent)
+                                                        .tint(.orange)
+                                                    }
+                                                }
+                                            }
+                                            .padding(10)
+                                            .background(Color.white.opacity(0.04))
+                                            .cornerRadius(10)
+                                        }
+                                    }
+                                    .padding(12)
+                                    .background(Color.black.opacity(0.32))
+                                    .cornerRadius(12)
+                                }
+
+                                VStack(alignment: .leading, spacing: 10) {
+                                    Text("Chat e Eventos")
+                                        .font(.caption.bold())
+                                        .foregroundColor(.white.opacity(0.6))
+                                    ScrollView {
+                                        VStack(alignment: .leading, spacing: 6) {
+                                            ForEach(store.events.suffix(14)) { event in
+                                                eventRow(event)
+                                            }
+                                        }
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                    }
+                                    .frame(height: 140)
+
+                                    HStack {
+                                        TextField("Digite uma mensagem...", text: $chatMessage)
+                                            .textFieldStyle(.roundedBorder)
+                                            .onSubmit {
+                                                sendChatIfNeeded()
+                                            }
+                                        Button("Enviar") {
+                                            sendChatIfNeeded()
+                                        }
+                                        .buttonStyle(.borderedProminent)
+                                        .disabled(chatMessage.isEmpty)
+                                    }
+                                }
+                                .padding(12)
+                                .background(Color.black.opacity(0.32))
+                                .cornerRadius(12)
+                            }
+                            .frame(width: 320)
+                            .padding(.trailing, 24)
+                        }
+                        .padding(.top, 120)
+                        .padding(.top, 26)
+                        Spacer()
+                    }
+                }
                 
                 // Match finished overlay
                 if snap.MatchFinished == true {
@@ -190,24 +343,202 @@ struct GameView: View {
                             .font(.system(size: 36, weight: .bold, design: .rounded))
                             .foregroundColor(.white)
                         
-                        Text(snap.WinnerTeam == 0 ? "VOCÊ VENCEU! 🏆" : "VOCÊ PERDEU 😢")
+                        let didWinMatch = snap.WinnerTeam == localTeam
+                        Text(didWinMatch ? "VOCÊ VENCEU! 🏆" : "VOCÊ PERDEU 😢")
                             .font(.system(size: 28, weight: .bold, design: .rounded))
-                            .foregroundColor(snap.WinnerTeam == 0 ? .yellow : .red)
+                            .foregroundColor(didWinMatch ? .yellow : .red)
                         
-                        Button("NOVA PARTIDA") {
-                            store.startOfflineDemo()
+                        if isOnline {
+                            Button("SAIR DA SESSÃO") {
+                                store.closeSession()
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .tint(.yellow)
+                            .foregroundColor(.black)
+                            .controlSize(.large)
+                            .font(.headline.weight(.black))
+                        } else {
+                            Button("NOVA PARTIDA") {
+                                store.replayOfflineMatch()
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .tint(.yellow)
+                            .foregroundColor(.black)
+                            .controlSize(.large)
+                            .font(.headline.weight(.black))
                         }
-                        .buttonStyle(.borderedProminent)
-                        .tint(.yellow)
-                        .foregroundColor(.black)
-                        .controlSize(.large)
-                        .font(.headline.weight(.black))
                     }
+                }
+                
+                // Trick end animation overlay
+                if showingTrickEndAnimation {
+                    ZStack {
+                        // Cards gathering and flying
+                        if !trickTie {
+                            ZStack {
+                                ForEach(0..<4, id: \.self) { i in
+                                    CardView(card: Card(Rank: "", Suit: ""), isFaceUp: false)
+                                        .rotationEffect(.degrees(Double(i * 12 - 18)))
+                                        .offset(x: CGFloat(i * 6 - 9), y: CGFloat(i * -4))
+                                }
+                            }
+                            .offset(trickAnimOffset)
+                            .opacity(trickAnimOffset == .zero ? 1 : 0)
+                            .scaleEffect(trickAnimOffset == .zero ? 1 : 0.4)
+                            .padding(.top, 100) // Start closer to the center table
+                            .zIndex(1)
+                        }
+                        
+                        // Emoji message in the center
+                        VStack {
+                            if trickTie {
+                                Text("😐").font(.system(size: 80))
+                                Text("EMPATE!").font(.title.weight(.heavy)).foregroundColor(.white)
+                            } else if let myPlayer = snap.Players?.first(where: { $0.playerID == snap.CurrentPlayerIdx }), trickWinnerTeam == myPlayer.Team {
+                                Text("🎉").font(.system(size: 80))
+                                Text("VOCÊ VENCEU A VAZA!").font(.title.weight(.heavy)).foregroundColor(.green)
+                            } else {
+                                Text("😢").font(.system(size: 80))
+                                Text("ELES VENCERAM").font(.title.weight(.heavy)).foregroundColor(.red)
+                            }
+                        }
+                        .padding(24)
+                        .background(Color.black.opacity(0.85))
+                        .cornerRadius(24)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 24)
+                                .stroke(Color.white.opacity(0.2), lineWidth: 2)
+                        )
+                        .shadow(radius: 20)
+                        .zIndex(10)
+                    }
+                    .zIndex(100)
+                    .allowsHitTesting(false)
+                    .transition(.opacity.animation(.easeInOut(duration: 0.2)))
+                }
+            }
+            .onChange(of: snap.LastTrickSeq) { newSeq in
+                guard let seq = newSeq, seq > 0 else { return }
+                if lastTrickSeqViewed == -1 {
+                    lastTrickSeqViewed = seq
+                    return
+                }
+                if seq > lastTrickSeqViewed {
+                    lastTrickSeqViewed = seq
+                    triggerTrickAnimation(snap: snap)
                 }
             }
         } else {
             ProgressView("Carregando snapshot...")
                 .scaleEffect(1.5)
+        }
+    }
+    
+    private func triggerTrickAnimation(snap: MatchSnapshot) {
+        let localId = snap.CurrentPlayerIdx ?? 0
+        let winnerId = snap.LastTrickWinner ?? -1
+        let numPlayers = snap.NumPlayers ?? 2
+        
+        trickWinnerTeam = snap.LastTrickTeam ?? -1
+        trickTie = snap.LastTrickTie ?? false
+        
+        var target: CGSize = .zero
+        if !trickTie && winnerId >= 0 {
+            let diff = (winnerId - localId + numPlayers) % numPlayers
+            if numPlayers == 2 {
+                target = (diff == 0) ? CGSize(width: 0, height: 400) : CGSize(width: 0, height: -400)
+            } else {
+                switch diff {
+                case 0: target = CGSize(width: 0, height: 500)
+                case 1: target = CGSize(width: 600, height: 0)
+                case 2: target = CGSize(width: 0, height: -500)
+                case 3: target = CGSize(width: -600, height: 0)
+                default: break
+                }
+            }
+        }
+        
+        trickAnimOffset = .zero
+        showingTrickEndAnimation = false
+        
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
+                showingTrickEndAnimation = true
+            }
+            
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+                withAnimation(.easeIn(duration: 0.4)) {
+                    trickAnimOffset = target
+                }
+            }
+            
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.8) {
+                withAnimation(.easeOut(duration: 0.2)) {
+                    showingTrickEndAnimation = false
+                }
+            }
+        }
+    }
+
+    private func sendChatIfNeeded() {
+        let trimmed = chatMessage.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        store.sendChat(text: trimmed)
+        chatMessage = ""
+    }
+
+    private func slotTag(_ label: String, color: Color) -> some View {
+        Text(label)
+            .font(.caption2.weight(.semibold))
+            .foregroundColor(color)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(color.opacity(0.12))
+            .clipShape(Capsule())
+    }
+
+    private func connectionLine(_ label: String, _ value: String, tint: Color = .white) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(label.uppercased())
+                .font(.caption2)
+                .foregroundColor(.white.opacity(0.45))
+            Text(value)
+                .font(.caption)
+                .foregroundColor(tint)
+        }
+    }
+
+    @ViewBuilder
+    private func eventRow(_ event: AppEvent) -> some View {
+        switch event.kind {
+        case "chat":
+            Text("\(event.payload?.author ?? "?"): \(event.payload?.text ?? "")")
+                .font(.caption)
+                .foregroundColor(.white)
+        case "system":
+            Text(event.payload?.text ?? "")
+                .font(.caption)
+                .foregroundColor(.secondary)
+        case "replacement_invite":
+            Text("Link de subs: \(event.payload?.invite_key ?? "")")
+                .font(.caption)
+                .foregroundColor(.green)
+        case "error":
+            Text(event.payload?.message ?? event.payload?.text ?? "Erro")
+                .font(.caption)
+                .foregroundColor(.red.opacity(0.9))
+        case "lobby_updated":
+            Text("Lobby atualizado")
+                .font(.caption)
+                .foregroundColor(.white.opacity(0.65))
+        case "match_updated":
+            Text("Partida atualizada")
+                .font(.caption)
+                .foregroundColor(.white.opacity(0.65))
+        default:
+            Text(event.payload?.text ?? event.kind)
+                .font(.caption)
+                .foregroundColor(.white.opacity(0.7))
         }
     }
 }
@@ -283,6 +614,7 @@ private struct LogView: View {
 
 private struct CenterTableView: View {
     let hand: HandState
+    let players: [Player]
     
     var body: some View {
         HStack(spacing: 60) {
@@ -307,11 +639,34 @@ private struct CenterTableView: View {
                     .frame(width: 160, height: 160)
                 
                 if let played = hand.RoundCards {
+                    let winId = hand.winningCardId
                     ForEach(Array(played.enumerated()), id: \.element.id) { index, pc in
-                        CardView(card: pc.Card)
-                            .rotationEffect(.degrees(Double(index * 15 - 10)))
-                            .offset(x: CGFloat(index * 15 - 5), y: CGFloat(index * -10))
-                            .transition(.move(edge: .bottom).combined(with: .opacity))
+                        let isWinning = (pc.id == winId)
+                        let playerName = players.first(where: { $0.playerID == pc.PlayerID })?.Name ?? "Jogador"
+                        
+                        ZStack {
+                            CardView(card: pc.Card)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 12)
+                                        .stroke(Color.yellow, lineWidth: isWinning ? 3 : 0)
+                                        .shadow(color: .yellow, radius: isWinning ? 8 : 0)
+                                )
+                                .rotationEffect(.degrees(Double(index * 15 - 10)))
+                            
+                            Text((isWinning ? "🏆 " : "") + playerName.uppercased())
+                                .font(.caption2.bold())
+                                .foregroundColor(isWinning ? .yellow : .white)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(Color.black.opacity(0.8))
+                                .clipShape(Capsule())
+                                .shadow(color: .black, radius: 2)
+                                .offset(y: -65) // Float slightly above the card
+                                .zIndex(20)
+                        }
+                        .offset(x: CGFloat(index * 15 - 5), y: CGFloat(index * -10))
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                        .zIndex(isWinning ? 10 : Double(index))
                     }
                 }
             }

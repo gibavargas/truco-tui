@@ -7,6 +7,7 @@ struct SnapshotBundle: Codable {
     let locale: String?
     let match: MatchSnapshot?
     let lobby: LobbySnapshot?
+    let ui: UIStateSnapshot?
     let connection: ConnectionSnapshot?
     let diagnostics: DiagnosticsSnapshot?
 }
@@ -26,16 +27,57 @@ struct LobbySnapshot: Codable {
     let host_seat: Int?
     let connected_seats: [String: Bool]?
     let role: String?
+    let metadata: [String: String]?
+}
+
+struct UIStateSnapshot: Codable {
+    let lobby_slots: [LobbySlotState]?
+    let actions: ActionSnapshot?
+}
+
+struct LobbySlotState: Codable, Identifiable {
+    let seat: Int
+    let name: String?
+    let status: String
+    let is_empty: Bool
+    let is_local: Bool
+    let is_host: Bool
+    let is_connected: Bool
+    let is_occupied: Bool
+    let is_provisional_cpu: Bool
+    let can_vote_host: Bool
+    let can_request_replacement: Bool
+
+    var id: Int { seat }
+}
+
+struct ActionSnapshot: Codable {
+    let local_player_id: Int
+    let local_team: Int
+    let can_play_card: Bool
+    let can_ask_or_raise: Bool
+    let must_respond: Bool
+    let can_accept: Bool
+    let can_refuse: Bool
+    let can_close_session: Bool
 }
 
 struct ConnectionSnapshot: Codable {
     let status: String?
     let is_online: Bool?
     let is_host: Bool?
+    let last_error: AppErrorSnapshot?
+    let last_event_sequence: Int64?
 }
 
 struct DiagnosticsSnapshot: Codable {
     let event_backlog: Int?
+    let event_log: [String]?
+}
+
+struct AppErrorSnapshot: Codable {
+    let code: String?
+    let message: String?
 }
 
 // MARK: - AppEvents definition
@@ -53,6 +95,8 @@ struct EventPayload: Codable {
     let author: String?
     let target_seat: Int?
     let invite_key: String?
+    let code: String?
+    let message: String?
 }
 
 // MARK: - Match Snapshot (matches Go truco.Snapshot)
@@ -71,6 +115,11 @@ struct MatchSnapshot: Codable {
     let PendingRaiseBy: Int?
     let PendingRaiseTo: Int?
     let CurrentPlayerIdx: Int?
+    let LastTrickSeq: Int?
+    let LastTrickTeam: Int?
+    let LastTrickWinner: Int?
+    let LastTrickTie: Bool?
+    let LastTrickRound: Int?
     
     /// Helper to get team scores
     var teamScore: (us: Int, them: Int) {
@@ -97,6 +146,27 @@ struct HandState: Codable {
     let WinnerTeam: Int?
     let Finished: Bool?
     let PendingRaiseFor: Int?
+    
+    // Derived property to calculate the highest card played so far
+    var winningCardId: String? {
+        guard let cards = RoundCards, !cards.isEmpty else { return nil }
+        var bestId: String? = nil
+        var bestPower = -1
+        var isTie = false
+        
+        for pc in cards {
+            let p = pc.Card.power(manilha: Manilha)
+            if p > bestPower {
+                bestPower = p
+                bestId = pc.id
+                isTie = false
+            } else if p == bestPower {
+                isTie = true
+            }
+        }
+        
+        return isTie ? nil : bestId
+    }
 }
 
 // MARK: - Player (matches Go truco.Player)
@@ -140,5 +210,19 @@ struct Card: Codable, Equatable, Hashable {
         case "Paus": return "♣"
         default: return ""
         }
+    }
+    
+    func power(manilha: String?) -> Int {
+        let normalPower: [String: Int] = [
+            "3": 10, "2": 9, "A": 8, "K": 7, "J": 6, "Q": 5, "7": 4, "6": 3, "5": 2, "4": 1
+        ]
+        let manilhaSuitPower: [String: Int] = [
+            "Paus": 4, "Copas": 3, "Espadas": 2, "Ouros": 1
+        ]
+        
+        if Rank == manilha {
+            return 100 + (manilhaSuitPower[Suit] ?? 0)
+        }
+        return normalPower[Rank] ?? 0
     }
 }

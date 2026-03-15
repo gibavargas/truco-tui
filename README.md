@@ -1,178 +1,166 @@
-# Truco Paulista TUI (Go)
+# Truco Paulista
 
-Projeto base de Truco Paulista em terminal (TUI ASCII), com:
+Monorepo for a Truco Paulista implementation centered on a shared Go runtime.
 
-- Modo offline (2 ou 4 jogadores) com suporte a CPU.
-- Modo multiplayer P2P por troca de chave (host/join) com lobby, chat e partida online completa sincronizada.
-- Renderização Bubble Tea + Lipgloss com abas (`mesa`, `chat`, `log`) e atalhos de teclado.
-- Reconexão automática de clientes em falhas transitórias de rede (com reentrada no mesmo slot durante a partida).
-- Handoff automático de host em queda de conexão do processo host (cliente eleito assume e demais reconectam).
-- Transporte P2P protegido com TLS efêmero e validação por fingerprint na chave de convite.
-- Em desconexão de jogador remoto durante partida, o slot passa a CPU provisório até reconexão/substituição.
-- Transferência democrática de host da mesa por votação (`/host`).
-- Estrutura preparada para build cruzado Windows.
-- Runtime compartilhado para clientes nativos via FFI em `internal/appcore` + `cmd/truco-core-ffi`.
-- Scaffolds nativos em `native/` para macOS SwiftUI, Linux GTK4/libadwaita (Rust) e Windows WinUI 3.
+The repository contains:
 
-## Requisitos
+- A terminal client built with Bubble Tea and Lip Gloss.
+- A browser client backed by a Go HTTP API.
+- Native desktop shells for macOS, Linux GTK, Windows WinUI, and a legacy Windows WPF client.
+- A relay service for restrictive NAT and firewall scenarios.
+
+The shared runtime in `internal/appcore` owns game rules, online session orchestration, snapshots, and event flow. Every non-TUI client integrates with that runtime directly or through a thin transport layer.
+
+## Repository Layout
+
+- `cmd/truco`: terminal client entrypoint.
+- `cmd/truco-core-ffi`: C ABI bridge used by native desktop clients.
+- `cmd/truco-relay`: HTTPS + QUIC relay service.
+- `browser-edition/`: browser UI, Go HTTP API, and packaging script.
+- `docs/`: parity and binary naming contracts.
+- `internal/appcore`: runtime API, snapshots, and events.
+- `internal/netp2p`: direct P2P transport and invite protocol.
+- `internal/netrelay`: relay control-plane client.
+- `internal/netquic`: QUIC helpers.
+- `internal/truco`: game rules, deck model, and CPU behavior.
+- `internal/ui`: Bubble Tea TUI implementation.
+- `native/`: native desktop clients.
+
+## Requirements
 
 - Go 1.24+
+- PHP 8.1+ for the browser edition frontend
+- Platform-specific toolchains only when building native clients
 
-## Rodar localmente
+## Main Commands
+
+Run the terminal client:
 
 ```bash
 go run ./cmd/truco
 ```
 
-### Relay QUIC (NAT restrito)
-
-Para redes com NAT/firewall restritivo, rode o relay:
+Build the terminal client for the current host:
 
 ```bash
-go run ./cmd/truco-relay
+make build
 ```
 
-Variáveis de ambiente:
-
-- `TRUCO_RELAY_HTTP_ADDR` (default: `127.0.0.1:9443`): endpoint HTTPS de controle.
-- `TRUCO_RELAY_QUIC_ADDR` (default: `127.0.0.1:9444`): endpoint QUIC de tunelamento fallback.
-- `TRUCO_RELAY_TLS_CERT_FILE` e `TRUCO_RELAY_TLS_KEY_FILE`: certificado/chave TLS gerenciados para produção.
-
-Observabilidade do relay:
-
-- `GET /healthz`: status + contadores agregados.
-- `GET /metrics`: métricas em texto (`truco_relay_*`).
-
-Em produção, exponha as portas públicas HTTPS+QUIC do relay e configure os hosts para criar sessão com `relay_url` no runtime (`create_host_session`).
-
-### Segurança de rede (v2)
-
-- Protocolo online atualizado para **v2** (`ProtocolVersion=2`), com rejeição explícita de chaves/protocolo v1.
-- Convites relay v2 usam `relay_join_ticket` (uso único, TTL curto) em vez de `relay_session_token`.
-- Cliente relay valida TLS 1.3 com PKI do sistema e pode aplicar pinning SPKI (`relay_spki_pin`) para reforço.
-- Relay aplica limites de taxa, limites de capacidade, e coleta de sessões/membros/tickets expirados.
-
-> Migração: convites v1 não são mais aceitos. Gere novos convites v2.
-
-## Build
-
-### Nomeação padrão
-
-Todos os binários seguem o padrão descrito em [docs/BINARY_NAMING.md](docs/BINARY_NAMING.md). O prefixo `truco-<type>-<client>-<platform>-<arch>[-<variant>]` mantém TUI em `bin/tui` e GUIs sob `bin/gui/<client>`, assim modelos podem detectar facilmente se um artefato já foi compilado.
-
-### Build do seu SO atual
-
-```bash
-go build -o bin/tui/truco-tui-core-$(go env GOOS)-$(go env GOARCH) ./cmd/truco
-```
-
-Ou rode `make build` para chegar ao mesmo binário.
-
-### Build da biblioteca compartilhada (macOS atual)
-
-```bash
-make ffi
-```
-
-### Build do cliente Linux GTK
-
-```bash
-make linux-gtk
-```
-
-- Gera `bin/libtruco_core.so`
-- Copia o core para `native/linux-gtk/lib/libtruco_core.so`
-- Compila o cliente Rust/libadwaita em `native/linux-gtk/target/release/truco-linux-gtk`
-
-### Build Flatpak do cliente Linux
-
-```bash
-make flatpak-linux
-```
-
-### Build para Windows (executável `.exe`)
-
-```bash
-GOOS=windows GOARCH=amd64 go build -o bin/tui/truco-tui-core-windows-amd64.exe ./cmd/truco
-```
-
-### Build para Windows ARM64 nativo
-
-```bash
-GOOS=windows GOARCH=arm64 go build -o bin/tui/truco-tui-core-windows-arm64-portable.exe ./cmd/truco
-```
-
-### Build portável do cliente WinUI
-
-```powershell
-.\build-portable.bat
-```
-
-- Em Windows x64 o script publica o cliente WinUI portátil em `bin\gui\winui\truco-gui-winui-windows-amd64-portable`.
-- Em Windows ARM64, o script gera o binário TUI fallback em `bin\tui\truco-tui-core-windows-arm64-portable.exe`, porque o toolchain Go não suporta `-buildmode=c-shared` nessa plataforma.
-
-## Fluxo Multiplayer P2P
-
-1. Um jogador entra em `Multiplayer P2P` e escolhe `Criar host`.
-2. O host recebe uma chave codificada e compartilha com os convidados.
-3. Quem entra em `Seguir partida` cola a chave e escolhe papel `partner`, `opponent` ou `auto`.
-4. O host aloca o slot automaticamente:
-   - Em 2 jogadores: slot restante.
-   - Em 4 jogadores: prioridade para o papel escolhido quando disponível.
-5. O lobby mostra slots em tempo real e possui chat integrado.
-6. O host usa `start` para iniciar a partida.
-7. Durante a partida online:
-   - Host é autoritativo (aplica jogadas e distribui snapshots para todos).
-   - Clientes enviam ações (`play`, `truco`, `accept`, `refuse`).
-   - Chat segue funcionando durante o jogo.
-   - Em perda de conexão, o cliente tenta reconectar automaticamente.
-   - Se o processo host cair e não voltar, ocorre failover automático para um novo host eleito.
-
-## Regras implementadas (Truco Paulista)
-
-- Baralho de Truco (40 cartas, sem 8/9/10).
-- Vira e manilha dinâmica (próxima carta da vira).
-- Hierarquia normal: `3 > 2 > A > K > J > Q > 7 > 6 > 5 > 4`.
-- Hierarquia de naipes para manilha: `Paus > Copas > Espadas > Ouros`.
-- Aposta da mão: `1 -> 3 -> 6 -> 9 -> 12`.
-- Pedido/aceite/corrida de truco.
-- Partida até 12 pontos.
-
-## Controles na partida
-
-- `1`, `2`, `3`: jogar carta
-- `t`: pedir truco
-- `a` / `r`: aceitar / recusar truco
-- `tab`: alternar aba `mesa` -> `chat` -> `log`
-- `enter` na aba `chat`: enviar mensagem
-- `q`: sair da partida
-
-Comandos especiais no chat online:
-- `/host <slot>`: votar para transferir o host da mesa (troca por maioria dos jogadores conectados)
-- `/invite <slot>`: (host atual da mesa) gerar convite de substituição para slot desconectado em CPU provisório
-
-## Testes
+Run tests:
 
 ```bash
 go test ./...
 ```
 
-Também há workflow de CI (`.github/workflows/ci.yml`) com:
-- `go mod verify`
-- `go vet ./...`
-- `go test ./...`
-- `staticcheck ./...`
+Start the relay service:
 
-## Estrutura
+```bash
+make relay
+```
 
-- `cmd/truco/main.go`: bootstrap da aplicação.
-- `cmd/truco-core-ffi`: exporta o runtime compartilhado em C ABI para clientes nativos.
-- `cmd/truco-relay`: serviço relay QUIC/HTTPS (rendezvous + fallback forwarding).
-- `internal/appcore`: runtime headless com intents/eventos JSON, snapshots e orquestração offline/online.
-- `internal/netrelay`: cliente do plano de controle do relay + túnel QUIC.
-- `internal/netquic`: adaptadores/utilitários QUIC.
-- `internal/truco`: regras/cartas/motor/CPU.
-- `internal/netp2p`: protocolo de chave + lobby/chat + sincronização da partida online.
-- `internal/ui`: frontend Bubble Tea/Lipgloss, animações e modelos offline/online.
-- `native/`: scaffolds dos clientes nativos desktop.
+Package the browser edition:
 
+```bash
+make browser
+```
+
+Build the shared macOS FFI library:
+
+```bash
+make ffi-macos
+```
+
+Build the shared Windows FFI library:
+
+```bash
+make ffi-windows
+```
+
+Build the Linux GTK client:
+
+```bash
+make linux-gtk
+```
+
+- Builds `bin/libtruco_core.so`
+- Copies the library to `native/linux-gtk/lib/libtruco_core.so`
+- Compiles the libadwaita client at `native/linux-gtk/target/release/truco-linux-gtk`
+
+Build the Linux Flatpak bundle:
+
+```bash
+make flatpak-linux
+```
+
+## Binary Naming
+
+All produced binaries follow [docs/BINARY_NAMING.md](docs/BINARY_NAMING.md).
+
+## Multiplayer Overview
+
+- Offline matches support 2 or 4 players with CPU seats.
+- Online play supports direct P2P and relay-backed sessions.
+- Lobby features include chat, host transfer voting, and replacement invites.
+- Clients reconnect automatically after transient network failures.
+- If the host process disappears, the session can elect a new host and continue.
+- Relay invites use transport version 2 and short-lived join tickets.
+
+## Relay Service
+
+The relay is intended for players behind restrictive NAT or firewall setups.
+
+Run locally:
+
+```bash
+go run ./cmd/truco-relay
+```
+
+Environment variables:
+
+- `TRUCO_RELAY_HTTP_ADDR`: control-plane HTTPS address. Default: `127.0.0.1:9443`
+- `TRUCO_RELAY_QUIC_ADDR`: QUIC tunnel address. Default: `127.0.0.1:9444`
+- `TRUCO_RELAY_TLS_CERT_FILE`: TLS certificate path for production
+- `TRUCO_RELAY_TLS_KEY_FILE`: TLS key path for production
+
+Relay protocol notes:
+
+- Online transport uses protocol version 2.
+- Relay invites use short-lived `relay_join_ticket` values.
+- Clients validate TLS 1.3 and may enforce SPKI pinning.
+- Expired relay sessions, members, and tickets are cleaned up automatically.
+
+Operational endpoints:
+
+- `GET /healthz`
+- `GET /metrics`
+
+## Rules Implemented
+
+- 40-card Truco deck without 8, 9, or 10
+- Dynamic manilha from the vira
+- Paulista ranking order
+- Suit order for manilha resolution
+- Stake ladder `1 -> 3 -> 6 -> 9 -> 12`
+- Match target of 12 points
+
+## Controls in the TUI Match
+
+- `1`, `2`, `3`: play a card
+- `t`: ask or raise truco
+- `a`: accept
+- `r`: refuse
+- `tab`: cycle `mesa`, `chat`, and `log`
+- `enter`: send chat while focused on the chat tab
+- `q`: leave the match
+
+Online chat commands:
+
+- `/host <slot>`: vote to transfer host ownership
+- `/invite <slot>`: mint a replacement invite for a disconnected provisional CPU seat
+
+## Documentation Index
+
+- `docs/PARITY.md`: behavior contract for browser and native clients
+- `docs/BINARY_NAMING.md`: artifact naming and output locations
+- `browser-edition/README.md`: browser client workflow
+- `native/README.md`: native client overview

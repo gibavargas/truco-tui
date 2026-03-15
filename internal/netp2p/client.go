@@ -27,6 +27,7 @@ type ClientSession struct {
 	assigned     int
 	numPlayers   int
 	slots        []string
+	connected    map[int]bool
 	events       chan string
 	states       chan truco.Snapshot
 	started      bool
@@ -103,19 +104,21 @@ func JoinSession(key, playerName, desiredRole string) (*ClientSession, error) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	c := &ClientSession{
-		ctx:         ctx,
-		cancel:      cancel,
-		conn:        conn,
-		reader:      reader,
-		invite:      inv,
-		sessionID:   first.SessionID,
-		desiredRole: desiredRole,
-		name:        name,
-		assigned:    first.Assigned,
-		numPlayers:  first.NumPlayers,
-		slots:       append([]string{}, first.Slots...),
-		events:      make(chan string, 128),
-		states:      make(chan truco.Snapshot, 128),
+		ctx:              ctx,
+		cancel:           cancel,
+		conn:             conn,
+		reader:           reader,
+		invite:           inv,
+		sessionID:        first.SessionID,
+		desiredRole:      desiredRole,
+		name:             name,
+		assigned:         first.Assigned,
+		numPlayers:       first.NumPlayers,
+		slots:            append([]string{}, first.Slots...),
+		connected:        cloneSeatBoolMap(first.ConnectedSeats),
+		failoverHostSeat: first.HostSeat,
+		events:           make(chan string, 128),
+		states:           make(chan truco.Snapshot, 128),
 	}
 	go c.readLoop()
 	go c.heartbeatLoop()
@@ -134,19 +137,21 @@ func RejoinSession(inv InviteKey, playerName, desiredRole, sessionID string, att
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	c := &ClientSession{
-		ctx:         ctx,
-		cancel:      cancel,
-		conn:        conn,
-		reader:      reader,
-		invite:      inv,
-		sessionID:   first.SessionID,
-		desiredRole: desiredRole,
-		name:        name,
-		assigned:    first.Assigned,
-		numPlayers:  first.NumPlayers,
-		slots:       append([]string{}, first.Slots...),
-		events:      make(chan string, 128),
-		states:      make(chan truco.Snapshot, 128),
+		ctx:              ctx,
+		cancel:           cancel,
+		conn:             conn,
+		reader:           reader,
+		invite:           inv,
+		sessionID:        first.SessionID,
+		desiredRole:      desiredRole,
+		name:             name,
+		assigned:         first.Assigned,
+		numPlayers:       first.NumPlayers,
+		slots:            append([]string{}, first.Slots...),
+		connected:        cloneSeatBoolMap(first.ConnectedSeats),
+		failoverHostSeat: first.HostSeat,
+		events:           make(chan string, 128),
+		states:           make(chan truco.Snapshot, 128),
 	}
 	go c.readLoop()
 	go c.heartbeatLoop()
@@ -234,6 +239,17 @@ func inviteDialAddrs(addr string) []string {
 	return out
 }
 
+func cloneSeatBoolMap(in map[int]bool) map[int]bool {
+	if in == nil {
+		return nil
+	}
+	out := make(map[int]bool, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
+}
+
 func attemptDialJoin(inv InviteKey, playerName, desiredRole, sessionID string) (net.Conn, *bufio.Reader, Message, error) {
 	conn, err := dialSessionConnWithRelay(inv, 2*time.Second, playerName, desiredRole, sessionID)
 	if err != nil {
@@ -294,6 +310,18 @@ func (c *ClientSession) Slots() []string {
 	out := make([]string, len(c.slots))
 	copy(out, c.slots)
 	return out
+}
+
+func (c *ClientSession) ConnectedSeats() map[int]bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return cloneSeatBoolMap(c.connected)
+}
+
+func (c *ClientSession) CurrentHostSeat() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.failoverHostSeat
 }
 
 func (c *ClientSession) GameStarted() bool {
@@ -556,6 +584,10 @@ func (c *ClientSession) readLoop() {
 		case "lobby_update":
 			c.mu.Lock()
 			c.slots = append([]string{}, msg.Slots...)
+			c.connected = cloneSeatBoolMap(msg.ConnectedSeats)
+			if msg.HostSeat >= 0 {
+				c.failoverHostSeat = msg.HostSeat
+			}
 			c.mu.Unlock()
 			c.safeEvent("Lobby atualizado.")
 		case "game_start":
@@ -563,6 +595,10 @@ func (c *ClientSession) readLoop() {
 			c.started = true
 			if len(msg.Slots) > 0 {
 				c.slots = append([]string{}, msg.Slots...)
+			}
+			c.connected = cloneSeatBoolMap(msg.ConnectedSeats)
+			if msg.HostSeat >= 0 {
+				c.failoverHostSeat = msg.HostSeat
 			}
 			c.mu.Unlock()
 			c.safeEvent("Partida iniciada pelo host.")

@@ -46,6 +46,36 @@ type LobbySnapshot struct {
 	Metadata       map[string]any `json:"metadata,omitempty"`
 }
 
+type LobbySlotState struct {
+	Seat                  int    `json:"seat"`
+	Name                  string `json:"name,omitempty"`
+	Status                string `json:"status"`
+	IsEmpty               bool   `json:"is_empty"`
+	IsLocal               bool   `json:"is_local"`
+	IsHost                bool   `json:"is_host"`
+	IsConnected           bool   `json:"is_connected"`
+	IsOccupied            bool   `json:"is_occupied"`
+	IsProvisionalCPU      bool   `json:"is_provisional_cpu"`
+	CanVoteHost           bool   `json:"can_vote_host"`
+	CanRequestReplacement bool   `json:"can_request_replacement"`
+}
+
+type ActionSnapshot struct {
+	LocalPlayerID   int  `json:"local_player_id"`
+	LocalTeam       int  `json:"local_team"`
+	CanPlayCard     bool `json:"can_play_card"`
+	CanAskOrRaise   bool `json:"can_ask_or_raise"`
+	MustRespond     bool `json:"must_respond"`
+	CanAccept       bool `json:"can_accept"`
+	CanRefuse       bool `json:"can_refuse"`
+	CanCloseSession bool `json:"can_close_session"`
+}
+
+type UIStateSnapshot struct {
+	LobbySlots []LobbySlotState `json:"lobby_slots,omitempty"`
+	Actions    ActionSnapshot   `json:"actions"`
+}
+
 type ConnectionSnapshot struct {
 	Status       string    `json:"status"`
 	IsOnline     bool      `json:"is_online"`
@@ -67,6 +97,7 @@ type SnapshotBundle struct {
 	Locale      string              `json:"locale"`
 	Match       *truco.Snapshot     `json:"match,omitempty"`
 	Lobby       *LobbySnapshot      `json:"lobby,omitempty"`
+	UI          UIStateSnapshot     `json:"ui"`
 	Connection  ConnectionSnapshot  `json:"connection"`
 	Diagnostics DiagnosticsSnapshot `json:"diagnostics"`
 }
