@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=Truco Paulista
+Comment=Native Linux client for Truco Paulista
+Exec=truco-linux-gtk
+Icon=dev.truco.Native
+Terminal=false
+Type=Application
+Categories=Game;CardGame;GTK;
+StartupNotify=true

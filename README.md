@@ -74,6 +74,22 @@ Ou rode `make build` para chegar ao mesmo binário.
 make ffi
 ```
 
+### Build do cliente Linux GTK
+
+```bash
+make linux-gtk
+```
+
+- Gera `bin/libtruco_core.so`
+- Copia o core para `native/linux-gtk/lib/libtruco_core.so`
+- Compila o cliente Rust/libadwaita em `native/linux-gtk/target/release/truco-linux-gtk`
+
+### Build Flatpak do cliente Linux
+
+```bash
+make flatpak-linux
+```
+
 ### Build para Windows (executável `.exe`)
 
 ```bash

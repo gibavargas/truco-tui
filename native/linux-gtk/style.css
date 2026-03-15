@@ -1,306 +1,246 @@
 window {
-  background-color: #081521;
-  color: white;
+  background: linear-gradient(180deg, #0b1116, #111b23);
+  color: #f5f1e8;
+}
+
+.header-title {
+  font-weight: 900;
+  letter-spacing: 0.18em;
+  font-size: 14px;
+}
+
+.status-chip {
+  background: rgba(198, 162, 92, 0.18);
+  color: #e9c57a;
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-weight: 700;
+}
+
+.hero-shell {
+  background: linear-gradient(135deg, rgba(17, 33, 26, 0.82), rgba(43, 25, 15, 0.88));
+  border-radius: 28px;
+  padding: 28px;
+  border: 1px solid rgba(233, 197, 122, 0.16);
+}
+
+.hero-copy {
+  padding: 10px 8px;
+}
+
+.setup-card {
+  background: rgba(11, 17, 22, 0.72);
+  border-radius: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.section-title {
+  font-size: 26px;
+  font-weight: 800;
+}
+
+.invite-label {
+  background: rgba(255, 255, 255, 0.06);
+  padding: 10px 14px;
+  border-radius: 12px;
+}
+
+.chat-list row {
+  padding-top: 4px;
+  padding-bottom: 4px;
 }
 
 .table-wood {
-  background-image: linear-gradient(145deg, #5b361f, #8f5a34 38%, #a06d41 52%, #6a4125 74%, #4f2f19);
+  background-image: linear-gradient(145deg, #53301d, #7a4b2d 45%, #a26c3d 58%, #5e3720 90%);
+  border-radius: 36px;
 }
 
 .table-felt {
-  background-image: radial-gradient(circle at 50% 50%, rgba(20, 66, 42, 0.95), rgba(14, 53, 34, 0.98));
-  border-radius: 120px;
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6);
-  border: 2px solid rgba(255, 255, 255, 0.1);
-  margin: 32px;
+  background-image: radial-gradient(circle at 50% 48%, rgba(17, 89, 56, 0.96), rgba(7, 39, 25, 0.99));
+  border-radius: 28px;
+  margin: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .card {
-  background-color: #ffffff;
-  border-radius: 12px;
-  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4);
-  color: #000000;
-  font-family: inherit;
-  font-size: 20px;
-  border: 1px solid rgba(0, 0, 0, 0.1);
-  transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
-}
-
-.card-clickable:hover {
-  transform: translateY(-20px);
-  box-shadow: 0 14px 28px rgba(0,0,0,0.5), 0 10px 10px rgba(0,0,0,0.4);
-  background-color: #fffffa;
-  cursor: pointer;
+  background: #fffaf1;
+  color: #171717;
+  border-radius: 14px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.24);
 }
 
 .card-red {
-  color: #d32f2f;
+  color: #bf3c34;
+}
+
+.card-clickable {
+  transition: 200ms ease;
 }
 
 .card-back {
-  background-color: #0f2738;
-  border-radius: 12px;
-  border: 2px dashed rgba(255, 255, 255, 0.2);
-  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4);
-  transition: all 0.3s ease;
+  background: linear-gradient(180deg, #0d2231, #16354c);
+  border-radius: 14px;
+  border: 1px dashed rgba(255, 255, 255, 0.18);
 }
 
 .score-hud {
-  background-color: rgba(0, 0, 0, 0.5);
-  border-radius: 16px;
-  padding: 16px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-.score-text {
-  font-size: 32px;
-  font-weight: 900;
-  color: white;
+  background: rgba(8, 10, 12, 0.62);
+  border-radius: 18px;
+  padding: 16px 22px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .stake-badge {
-  background-color: rgba(0, 0, 0, 0.6);
-  border-radius: 16px;
-  padding: 16px;
-  border: 2px solid rgba(255, 204, 0, 0.6);
-  box-shadow: 0 0 12px rgba(255, 204, 0, 0.4);
-  transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-}
-
-.stake-badge:hover {
-  transform: scale(1.05);
-}
-
-.stake-text {
-  font-size: 28px;
-  font-weight: 900;
-  color: #ffcc00;
+  background: rgba(8, 10, 12, 0.72);
+  border-radius: 18px;
+  padding: 16px 24px;
+  border: 2px solid rgba(233, 197, 122, 0.5);
 }
 
 .manilha-area {
-  background-color: rgba(255, 204, 0, 0.15);
-  border-radius: 12px;
-  border: 2px solid #ffcc00;
-  padding: 8px;
-  transition: all 0.2s ease-in-out;
+  background: rgba(233, 197, 122, 0.14);
+  border-radius: 16px;
+  border: 2px solid #e9c57a;
 }
 
 .manilha-glow {
-  color: #ffcc00;
-  font-size: 38px;
-  font-weight: 900;
-  text-shadow: 0 0 8px rgba(255, 204, 0, 0.8);
+  color: #e9c57a;
+}
+
+.turn-pill,
+.opponent-pill,
+.opponent-pill-active,
+.suggested-action,
+.pill-button,
+.danger-button,
+.btn-truco,
+.btn-accept,
+.btn-refuse {
+  border-radius: 999px;
+  font-weight: 800;
 }
 
 .turn-pill {
-  background-color: #ffcc00;
-  color: #4f2f19;
-  border-radius: 20px;
-  padding: 6px 16px;
-  font-weight: bold;
-  font-size: 12px;
-  letter-spacing: 1.5px;
-  box-shadow: 0 4px 12px rgba(255, 204, 0, 0.4);
+  background: #e9c57a;
+  color: #1d160d;
+  padding: 7px 16px;
 }
 
 .opponent-pill {
-  background-color: rgba(0, 0, 0, 0.5);
-  color: white;
-  border-radius: 20px;
-  padding: 6px 20px;
-  font-weight: bold;
-  letter-spacing: 1px;
+  background: rgba(6, 6, 6, 0.44);
+  color: #f8f4ea;
+  padding: 8px 18px;
+}
+
+.opponent-pill-active {
+  background: rgba(233, 197, 122, 0.25);
+  color: #fff8e2;
+  padding: 8px 18px;
+  border: 1px solid rgba(233, 197, 122, 0.45);
 }
 
 .lobby-title {
-  font-size: 64px;
-  font-weight: 900;
-  color: #ffcc00;
-  text-shadow: 0 4px 16px rgba(255, 204, 0, 0.3);
-  letter-spacing: 4px;
+  font-size: 58px;
+  font-weight: 950;
+  letter-spacing: 0.04em;
+  color: #f0d37d;
 }
 
 .lobby-subtitle {
   font-size: 20px;
-  color: rgba(255, 255, 255, 0.6);
-  margin-top: -16px;
+  color: rgba(245, 241, 232, 0.76);
+}
+
+.setup-label {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  color: rgba(245, 241, 232, 0.56);
 }
 
 .game-over-bg {
-  background-color: rgba(0, 0, 0, 0.85);
-  backdrop-filter: blur(8px);
+  background: rgba(6, 6, 6, 0.82);
 }
 
 .game-over-title {
   font-size: 48px;
-  font-weight: 900;
-  color: white;
-  text-shadow: 0 4px 16px rgba(0, 0, 0, 0.8);
+  font-weight: 950;
+  color: #f3d481;
 }
 
 .suggested-action {
-  background-color: #ffcc00;
-  color: #081521;
-  font-weight: 900;
-  font-size: 16px;
-  border-radius: 28px;
-  box-shadow: 0 6px 20px rgba(255, 204, 0, 0.3);
-  transition: all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  background: #e9c57a;
+  color: #161108;
+  padding: 12px 20px;
 }
 
-.suggested-action:hover {
-  transform: scale(1.05);
-  background-color: #ffd633;
-  box-shadow: 0 8px 25px rgba(255, 204, 0, 0.5);
+.pill-button {
+  background: rgba(255, 255, 255, 0.1);
+  color: #f5f1e8;
+  padding: 10px 18px;
 }
 
-/* Gameplay Buttons */
-button {
-  border-radius: 8px;
-  font-weight: bold;
-  padding: 8px 16px;
-  border: none;
-  color: white;
-  transition: all 0.2s ease;
+.danger-button {
+  background: rgba(152, 36, 36, 0.78);
+  color: #fff4f4;
+  padding: 10px 18px;
 }
 
 .btn-truco {
-  background-color: #d32f2f;
-}
-.btn-truco:hover {
-  background-color: #b71c1c;
-  transform: scale(1.05);
+  background: #b53e32;
+  color: #fff6ef;
+  padding: 10px 18px;
 }
 
 .btn-accept {
-  background-color: #2e7d32;
-}
-.btn-accept:hover {
-  background-color: #1b5e20;
-  transform: scale(1.05);
+  background: #2e7e50;
+  color: #eefbf4;
+  padding: 10px 18px;
 }
 
 .btn-refuse {
-  background-color: #424242;
-}
-.btn-refuse:hover {
-  background-color: #212121;
-  transform: scale(1.05);
+  background: #3d4249;
+  color: #f5f5f5;
+  padding: 10px 18px;
 }
 
-/* Phase 3: Role badges, team badges, ladder, log, truco flash */
-
-.opponent-pill-active {
-  background-color: rgba(255, 204, 0, 0.3);
-  color: white;
-  border-radius: 20px;
-  padding: 6px 20px;
-  font-weight: bold;
-  letter-spacing: 1px;
-  border: 1px solid rgba(255, 204, 0, 0.5);
-}
-
-.setup-label {
-  font-size: 10px;
-  font-weight: bold;
-  color: rgba(255, 255, 255, 0.5);
-  letter-spacing: 1px;
+.team-badge-us,
+.team-badge-them,
+.ladder-active,
+.ladder-dim {
+  border-radius: 999px;
+  padding: 3px 10px;
+  font-size: 11px;
+  font-weight: 700;
 }
 
 .team-badge-us {
-  background-color: rgba(66, 133, 244, 0.2);
-  color: #4285f4;
-  border-radius: 4px;
-  padding: 2px 8px;
-  font-size: 10px;
-  font-weight: bold;
+  background: rgba(74, 122, 230, 0.22);
+  color: #8eb4ff;
 }
 
 .team-badge-them {
-  background-color: rgba(255, 152, 0, 0.2);
-  color: #ff9800;
-  border-radius: 4px;
-  padding: 2px 8px;
-  font-size: 10px;
-  font-weight: bold;
+  background: rgba(230, 144, 65, 0.18);
+  color: #f6ba71;
 }
 
 .ladder-active {
-  color: #ffcc00;
-  background-color: rgba(255, 204, 0, 0.2);
-  border-radius: 3px;
-  padding: 2px 4px;
-  font-size: 9px;
-  font-weight: bold;
+  background: rgba(233, 197, 122, 0.18);
+  color: #e9c57a;
 }
 
 .ladder-dim {
-  color: rgba(255, 255, 255, 0.2);
-  padding: 2px 4px;
-  font-size: 9px;
-  font-weight: bold;
-}
-
-.truco-flash-overlay {
-  background-color: rgba(211, 47, 47, 0.35);
-}
-
-.truco-flash-label {
-  font-size: 64px;
-  font-weight: 900;
-  color: #ffcc00;
-  text-shadow: 0 0 20px rgba(255, 204, 0, 0.8), 0 0 40px rgba(255, 204, 0, 0.4);
-}
-
-.truco-flash-sub {
-  font-size: 16px;
-  color: rgba(255, 255, 255, 0.7);
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.42);
 }
 
 .log-panel {
-  background-color: rgba(0, 0, 0, 0.9);
-  color: white;
-  font-family: monospace;
-  font-size: 12px;
-}
-
-.log-header {
-  background-color: rgba(0, 0, 0, 0.4);
-  padding: 12px 16px;
-  font-weight: bold;
-  letter-spacing: 2px;
-  color: #ffcc00;
+  background: rgba(7, 10, 12, 0.46);
+  border-radius: 14px;
+  padding: 10px 12px;
 }
 
 .log-entry {
-  padding: 2px 16px;
-  font-family: monospace;
-  font-size: 12px;
-  color: rgba(255, 255, 255, 0.8);
-}
-
-.log-entry-error {
-  color: #ef5350;
-}
-
-.log-entry-truco {
-  color: #ffcc00;
-}
-
-.log-entry-win {
-  color: #66bb6a;
-}
-
-.role-badge {
-  font-size: 12px;
-  margin-right: 4px;
-}
-
-.cpu-spinner {
-  animation: spin 1s linear infinite;
-}
-
-@keyframes spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+  color: rgba(245, 241, 232, 0.72);
 }

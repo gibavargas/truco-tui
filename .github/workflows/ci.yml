@@ -38,6 +38,35 @@ jobs:
           go install honnef.co/go/tools/cmd/staticcheck@latest
           staticcheck ./...
 
+  linux-native:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install GTK dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-4-dev libadwaita-1-dev
+
+      - name: Build Linux core
+        run: make ffi-linux
+
+      - name: Run Linux GTK tests
+        run: cargo test --manifest-path native/linux-gtk/Cargo.toml
+
+      - name: Check Flatpak manifest
+        run: test -f native/linux-gtk/dev.truco.Native.yaml
+
   build:
     needs: test
     runs-on: ubuntu-latest
