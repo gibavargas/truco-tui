@@ -13,9 +13,8 @@ use gtk::glib;
 
 use i18n::{text, Locale};
 use intents::{
-    to_json, AppIntent, CreateHostPayload, GameActionPayload, HostVotePayload,
-    JoinSessionPayload, NewOfflineGamePayload, ReplacementInvitePayload, SendChatPayload,
-    SetLocalePayload,
+    to_json, AppIntent, CreateHostPayload, GameActionPayload, HostVotePayload, JoinSessionPayload,
+    NewOfflineGamePayload, ReplacementInvitePayload, SendChatPayload, SetLocalePayload,
 };
 use models::{AppEvent, GameSnapshot, SnapshotBundle};
 use truco_core::TrucoCore;
@@ -82,7 +81,7 @@ fn main() {
 
 fn connect_shell_actions(state: &Rc<RefCell<AppState>>) {
     let window = state.borrow().window.clone();
-    window.banner().connect_button_clicked(glib::clone!(
+    window.btn_banner_close().connect_clicked(glib::clone!(
         #[weak]
         window,
         move |_| {
@@ -172,11 +171,8 @@ fn connect_primary_actions(state: &Rc<RefCell<AppState>>) {
                 cpu_flags,
             },
         );
-        dispatch_serialized(
-            &mut state_ref,
-            &intent,
-            Some(text(state_ref.locale, "connection-error")),
-        );
+        let fallback_error = text(state_ref.locale, "connection-error").to_string();
+        dispatch_serialized(&mut state_ref, &intent, Some(fallback_error.as_str()));
     });
 
     let host_state = state.clone();
@@ -205,11 +201,8 @@ fn connect_primary_actions(state: &Rc<RefCell<AppState>>) {
                 relay_url,
             },
         );
-        dispatch_serialized(
-            &mut state_ref,
-            &intent,
-            Some(text(state_ref.locale, "connection-error")),
-        );
+        let fallback_error = text(state_ref.locale, "connection-error").to_string();
+        dispatch_serialized(&mut state_ref, &intent, Some(fallback_error.as_str()));
     });
 
     let join_state = state.clone();
@@ -237,22 +230,16 @@ fn connect_primary_actions(state: &Rc<RefCell<AppState>>) {
                 desired_role,
             },
         );
-        dispatch_serialized(
-            &mut state_ref,
-            &intent,
-            Some(text(state_ref.locale, "connection-error")),
-        );
+        let fallback_error = text(state_ref.locale, "connection-error").to_string();
+        dispatch_serialized(&mut state_ref, &intent, Some(fallback_error.as_str()));
     });
 
     let start_online_state = state.clone();
     window.btn_start_online_match().connect_clicked(move |_| {
         let mut state_ref = start_online_state.borrow_mut();
         let intent = AppIntent::without_payload("start_hosted_match");
-        dispatch_serialized(
-            &mut state_ref,
-            &intent,
-            Some(text(state_ref.locale, "connection-error")),
-        );
+        let fallback_error = text(state_ref.locale, "connection-error").to_string();
+        dispatch_serialized(&mut state_ref, &intent, Some(fallback_error.as_str()));
     });
 
     let leave_state = state.clone();
@@ -270,7 +257,10 @@ fn connect_primary_actions(state: &Rc<RefCell<AppState>>) {
         dispatch_serialized(&mut state_ref, &intent, None);
         state_ref.window.game_over_overlay().set_visible(false);
         state_ref.window.trick_end_overlay().set_visible(false);
-        state_ref.window.main_stack().set_visible_child_name("lobby");
+        state_ref
+            .window
+            .main_stack()
+            .set_visible_child_name("lobby");
         clear_listbox(&state_ref.window.list_chat());
     });
 
@@ -287,7 +277,10 @@ fn connect_primary_actions(state: &Rc<RefCell<AppState>>) {
     window.btn_back_lobby().connect_clicked(move |_| {
         let state_ref = back_state.borrow();
         state_ref.window.game_over_overlay().set_visible(false);
-        state_ref.window.main_stack().set_visible_child_name("lobby");
+        state_ref
+            .window
+            .main_stack()
+            .set_visible_child_name("lobby");
     });
 }
 
@@ -439,7 +432,9 @@ fn disable_session_actions(window: &window::TrucoWindow) {
 
 fn apply_locale(window: &window::TrucoWindow, locale: Locale) {
     window.set_title(Some(text(locale, "app-title")));
-    window.lbl_lobby_title().set_label(text(locale, "app-title"));
+    window
+        .lbl_lobby_title()
+        .set_label(text(locale, "app-title"));
     window
         .lbl_lobby_subtitle()
         .set_label(text(locale, "app-subtitle"));
@@ -463,12 +458,12 @@ fn apply_locale(window: &window::TrucoWindow, locale: Locale) {
 }
 
 fn show_banner(window: &window::TrucoWindow, message: &str) {
-    window.banner().set_title(message);
-    window.banner().set_revealed(true);
+    window.lbl_banner().set_label(message);
+    window.banner_revealer().set_reveal_child(true);
 }
 
 fn hide_banner(window: &window::TrucoWindow) {
-    window.banner().set_revealed(false);
+    window.banner_revealer().set_reveal_child(false);
 }
 
 fn push_toast(window: &window::TrucoWindow, message: &str) {
@@ -502,10 +497,7 @@ fn parse_runtime_message(response: &str) -> Option<String> {
 }
 
 fn dispatch_game_action(core: &TrucoCore, action: &'static str, card_index: Option<usize>) {
-    let intent = AppIntent::with_payload(
-        "game_action",
-        GameActionPayload { action, card_index },
-    );
+    let intent = AppIntent::with_payload("game_action", GameActionPayload { action, card_index });
     if let Some(json) = to_json(&intent) {
         let _ = core.dispatch(&json);
     }
@@ -523,7 +515,12 @@ fn clear_listbox(lb: &gtk::ListBox) {
     }
 }
 
-fn update_ui(window: &window::TrucoWindow, bundle: &SnapshotBundle, core: &TrucoCore, locale: Locale) {
+fn update_ui(
+    window: &window::TrucoWindow,
+    bundle: &SnapshotBundle,
+    core: &TrucoCore,
+    locale: Locale,
+) {
     let mode = bundle.mode.as_deref().unwrap_or("idle");
     let status_text = bundle
         .connection
@@ -533,7 +530,11 @@ fn update_ui(window: &window::TrucoWindow, bundle: &SnapshotBundle, core: &Truco
         .unwrap_or_else(|| mode.to_string());
     set_status(window, &status_text.replace('_', " "));
 
-    if mode == "offline_match" || mode == "host_match" || mode == "client_match" || mode == "match_over" {
+    if mode == "offline_match"
+        || mode == "host_match"
+        || mode == "client_match"
+        || mode == "match_over"
+    {
         window.main_stack().set_visible_child_name("game");
         if let Some(ref snap) = bundle.game {
             update_game_ui(window, snap, core, locale);
@@ -555,14 +556,22 @@ fn update_lobby_ui(
 ) {
     window
         .lbl_online_status()
-        .set_label(if mode == "host_lobby" { text(locale, "online-room") } else { "Connected" });
+        .set_label(if mode == "host_lobby" {
+            text(locale, "online-room")
+        } else {
+            "Connected"
+        });
 
     if let Some(lobby) = &bundle.lobby {
         if let Some(key) = &lobby.invite_key {
-            window.lbl_invite_key_display().set_label(&format!("Chave: {key}"));
+            window
+                .lbl_invite_key_display()
+                .set_label(&format!("Chave: {key}"));
             window.btn_copy_invite().set_sensitive(true);
         } else {
-            window.lbl_invite_key_display().set_label("Chave: (Convidado)");
+            window
+                .lbl_invite_key_display()
+                .set_label("Chave: (Convidado)");
             window.btn_copy_invite().set_sensitive(false);
         }
 
@@ -634,10 +643,17 @@ fn update_lobby_ui(
         }
     }
 
-    window.btn_start_online_match().set_visible(mode == "host_lobby");
+    window
+        .btn_start_online_match()
+        .set_visible(mode == "host_lobby");
 }
 
-fn update_game_ui(window: &window::TrucoWindow, snapshot: &GameSnapshot, core: &TrucoCore, locale: Locale) {
+fn update_game_ui(
+    window: &window::TrucoWindow,
+    snapshot: &GameSnapshot,
+    core: &TrucoCore,
+    locale: Locale,
+) {
     let local_idx = snapshot.current_player_idx.unwrap_or(0);
     let my_team = snapshot
         .players
@@ -650,9 +666,17 @@ fn update_game_ui(window: &window::TrucoWindow, snapshot: &GameSnapshot, core: &
     if snapshot.match_finished == Some(true) {
         window.game_over_overlay().set_visible(true);
         if snapshot.winner_team == Some(my_team) {
-            window.lbl_winner().set_label(if locale == Locale::EnUs { "VICTORY!" } else { "VITORIA!" });
+            window.lbl_winner().set_label(if locale == Locale::EnUs {
+                "VICTORY!"
+            } else {
+                "VITORIA!"
+            });
         } else {
-            window.lbl_winner().set_label(if locale == Locale::EnUs { "DEFEAT" } else { "DERROTA" });
+            window.lbl_winner().set_label(if locale == Locale::EnUs {
+                "DEFEAT"
+            } else {
+                "DERROTA"
+            });
         }
     } else {
         window.game_over_overlay().set_visible(false);
@@ -664,7 +688,11 @@ fn update_game_ui(window: &window::TrucoWindow, snapshot: &GameSnapshot, core: &
     let log_box = window.log_box();
     clear_box(&log_box);
     if let Some(logs) = &snapshot.logs {
-        let recent = if logs.len() > 8 { &logs[logs.len() - 8..] } else { logs.as_slice() };
+        let recent = if logs.len() > 8 {
+            &logs[logs.len() - 8..]
+        } else {
+            logs.as_slice()
+        };
         for entry in recent {
             let lbl = gtk::Label::new(Some(entry));
             lbl.add_css_class("log-entry");
@@ -673,10 +701,26 @@ fn update_game_ui(window: &window::TrucoWindow, snapshot: &GameSnapshot, core: &
         }
     }
 
-    let us = snapshot.match_points.as_ref().and_then(|p| p.get("0").copied()).unwrap_or(0);
-    let them = snapshot.match_points.as_ref().and_then(|p| p.get("1").copied()).unwrap_or(0);
-    let stake = snapshot.current_hand.as_ref().and_then(|h| h.stake).unwrap_or(1);
-    let round = snapshot.current_hand.as_ref().and_then(|h| h.round).unwrap_or(1);
+    let us = snapshot
+        .match_points
+        .as_ref()
+        .and_then(|p| p.get("0").copied())
+        .unwrap_or(0);
+    let them = snapshot
+        .match_points
+        .as_ref()
+        .and_then(|p| p.get("1").copied())
+        .unwrap_or(0);
+    let stake = snapshot
+        .current_hand
+        .as_ref()
+        .and_then(|h| h.stake)
+        .unwrap_or(1);
+    let round = snapshot
+        .current_hand
+        .as_ref()
+        .and_then(|h| h.round)
+        .unwrap_or(1);
 
     let score_us = gtk::Label::new(None);
     score_us.set_markup(&format!(
@@ -693,7 +737,11 @@ fn update_game_ui(window: &window::TrucoWindow, snapshot: &GameSnapshot, core: &
     let stake_lbl = gtk::Label::new(None);
     stake_lbl.set_markup(&format!(
         "<span size='large'><b>{}</b></span>\n<span size='28000' color='#ffcc00'><b>{}</b></span>",
-        if locale == Locale::EnUs { "STAKE" } else { "VALE" },
+        if locale == Locale::EnUs {
+            "STAKE"
+        } else {
+            "VALE"
+        },
         stake
     ));
     stake_lbl.set_justify(gtk::Justification::Center);
@@ -703,9 +751,19 @@ fn update_game_ui(window: &window::TrucoWindow, snapshot: &GameSnapshot, core: &
     let ladder = gtk::Box::new(gtk::Orientation::Horizontal, 4);
     ladder.set_halign(gtk::Align::Center);
     for &level in &[1, 3, 6, 9, 12] {
-        let label = match level { 1 => "1", 3 => "T", 6 => "6", 9 => "9", _ => "12" };
+        let label = match level {
+            1 => "1",
+            3 => "T",
+            6 => "6",
+            9 => "9",
+            _ => "12",
+        };
         let l = gtk::Label::new(Some(label));
-        l.add_css_class(if stake >= level { "ladder-active" } else { "ladder-dim" });
+        l.add_css_class(if stake >= level {
+            "ladder-active"
+        } else {
+            "ladder-dim"
+        });
         ladder.append(&l);
     }
     mid_box.append(&ladder);
@@ -719,7 +777,11 @@ fn update_game_ui(window: &window::TrucoWindow, snapshot: &GameSnapshot, core: &
             if let Some(turn_p) = players.iter().find(|p| p.id == tp) {
                 let turn_lbl = gtk::Label::new(Some(&format!(
                     "{} {}",
-                    if locale == Locale::EnUs { "Turn:" } else { "Vez:" },
+                    if locale == Locale::EnUs {
+                        "Turn:"
+                    } else {
+                        "Vez:"
+                    },
                     turn_p.name
                 )));
                 turn_lbl.add_css_class("turn-pill");
@@ -731,7 +793,11 @@ fn update_game_ui(window: &window::TrucoWindow, snapshot: &GameSnapshot, core: &
     let score_them = gtk::Label::new(None);
     score_them.set_markup(&format!(
         "<span size='large'><b>{}</b></span>\n<span size='28000'><b>{}</b></span>",
-        if locale == Locale::EnUs { "THEM" } else { "ELES" },
+        if locale == Locale::EnUs {
+            "THEM"
+        } else {
+            "ELES"
+        },
         them
     ));
     score_them.set_justify(gtk::Justification::Center);
@@ -752,17 +818,35 @@ fn update_game_ui(window: &window::TrucoWindow, snapshot: &GameSnapshot, core: &
         let top_offset = if n == 4 { 2 } else { 1 };
         let top_id = (local_idx + top_offset) % n as i32;
         if let Some(top) = players.iter().find(|p| p.id == top_id) {
-            render_opponent(&opp_box, top, snapshot.turn_player == Some(top.id), false, snapshot);
+            render_opponent(
+                &opp_box,
+                top,
+                snapshot.turn_player == Some(top.id),
+                false,
+                snapshot,
+            );
         }
 
         if n == 4 {
             let right_id = (local_idx + 1) % 4;
             if let Some(right) = players.iter().find(|p| p.id == right_id) {
-                render_opponent(&right_box, right, snapshot.turn_player == Some(right.id), true, snapshot);
+                render_opponent(
+                    &right_box,
+                    right,
+                    snapshot.turn_player == Some(right.id),
+                    true,
+                    snapshot,
+                );
             }
             let left_id = (local_idx + 3) % 4;
             if let Some(left) = players.iter().find(|p| p.id == left_id) {
-                render_opponent(&left_box, left, snapshot.turn_player == Some(left.id), true, snapshot);
+                render_opponent(
+                    &left_box,
+                    left,
+                    snapshot.turn_player == Some(left.id),
+                    true,
+                    snapshot,
+                );
             }
         }
     }
@@ -823,28 +907,45 @@ fn update_game_ui(window: &window::TrucoWindow, snapshot: &GameSnapshot, core: &
         action_box.set_halign(gtk::Align::Center);
 
         if pending_for == my_team {
-            let btn_accept = gtk::Button::with_label(if locale == Locale::EnUs { "ACCEPT" } else { "ACEITAR" });
+            let btn_accept = gtk::Button::with_label(if locale == Locale::EnUs {
+                "ACCEPT"
+            } else {
+                "ACEITAR"
+            });
             btn_accept.add_css_class("btn-accept");
             let core_a = core.clone();
             btn_accept.connect_clicked(move |_| dispatch_game_action(&core_a, "accept", None));
             action_box.append(&btn_accept);
 
-            let current_stake = snapshot.current_hand.as_ref().and_then(|h| h.stake).unwrap_or(1);
+            let current_stake = snapshot
+                .current_hand
+                .as_ref()
+                .and_then(|h| h.stake)
+                .unwrap_or(1);
             if current_stake < 9 {
-                let btn_raise = gtk::Button::with_label(&raise_label_for(next_stake(current_stake)));
+                let btn_raise =
+                    gtk::Button::with_label(&raise_label_for(next_stake(current_stake)));
                 btn_raise.add_css_class("btn-truco");
                 let core_r = core.clone();
                 btn_raise.connect_clicked(move |_| dispatch_game_action(&core_r, "truco", None));
                 action_box.append(&btn_raise);
             }
 
-            let btn_refuse = gtk::Button::with_label(if locale == Locale::EnUs { "FOLD" } else { "CORRER" });
+            let btn_refuse = gtk::Button::with_label(if locale == Locale::EnUs {
+                "FOLD"
+            } else {
+                "CORRER"
+            });
             btn_refuse.add_css_class("btn-refuse");
             let core_f = core.clone();
             btn_refuse.connect_clicked(move |_| dispatch_game_action(&core_f, "refuse", None));
             action_box.append(&btn_refuse);
         } else if is_my_turn && can_ask {
-            let current_stake = snapshot.current_hand.as_ref().and_then(|h| h.stake).unwrap_or(1);
+            let current_stake = snapshot
+                .current_hand
+                .as_ref()
+                .and_then(|h| h.stake)
+                .unwrap_or(1);
             let btn_truco = gtk::Button::with_label(&raise_label_for(next_stake(current_stake)));
             btn_truco.add_css_class("btn-truco");
             let core_t = core.clone();
@@ -856,7 +957,11 @@ fn update_game_ui(window: &window::TrucoWindow, snapshot: &GameSnapshot, core: &
     }
 
     if is_my_turn && !match_over {
-        let lbl = gtk::Label::new(Some(if locale == Locale::EnUs { "YOUR TURN" } else { "SUA VEZ" }));
+        let lbl = gtk::Label::new(Some(if locale == Locale::EnUs {
+            "YOUR TURN"
+        } else {
+            "SUA VEZ"
+        }));
         lbl.add_css_class("turn-pill");
         bottom_box.append(&lbl);
     }
@@ -867,7 +972,11 @@ fn update_game_ui(window: &window::TrucoWindow, snapshot: &GameSnapshot, core: &
             name_row.set_halign(gtk::Align::Center);
             name_row.append(&gtk::Label::new(Some(&me.name.to_uppercase())));
             let team_lbl = gtk::Label::new(Some(&format!("Team {}", me.team + 1)));
-            team_lbl.add_css_class(if me.team == 0 { "team-badge-us" } else { "team-badge-them" });
+            team_lbl.add_css_class(if me.team == 0 {
+                "team-badge-us"
+            } else {
+                "team-badge-them"
+            });
             name_row.append(&team_lbl);
             bottom_box.append(&name_row);
 
@@ -908,23 +1017,39 @@ fn render_opponent(
         if is_turn {
             name_text.push_str(" ⟳");
         } else {
-            name_text.push_str(if player.provisional_cpu == Some(true) { " 🤖*" } else { " 🤖" });
+            name_text.push_str(if player.provisional_cpu == Some(true) {
+                " 🤖*"
+            } else {
+                " 🤖"
+            });
         }
     }
     if is_turn && player.cpu != Some(true) {
         name_text.push_str(" ◀");
     }
     let name_lbl = gtk::Label::new(Some(&name_text));
-    name_lbl.add_css_class(if is_turn { "opponent-pill-active" } else { "opponent-pill" });
+    name_lbl.add_css_class(if is_turn {
+        "opponent-pill-active"
+    } else {
+        "opponent-pill"
+    });
     container.append(&name_lbl);
 
     let team_lbl = gtk::Label::new(Some(&format!("Team {}", player.team + 1)));
-    team_lbl.add_css_class(if player.team == 0 { "team-badge-us" } else { "team-badge-them" });
+    team_lbl.add_css_class(if player.team == 0 {
+        "team-badge-us"
+    } else {
+        "team-badge-them"
+    });
     container.append(&team_lbl);
 
     let count = player.hand.as_ref().map(|h| h.len()).unwrap_or(3);
     let hand_box = gtk::Box::new(
-        if vertical_cards { gtk::Orientation::Vertical } else { gtk::Orientation::Horizontal },
+        if vertical_cards {
+            gtk::Orientation::Vertical
+        } else {
+            gtk::Orientation::Horizontal
+        },
         if vertical_cards { -30 } else { -20 },
     );
     for _ in 0..count {
@@ -937,18 +1062,37 @@ fn role_badge_for(player_id: i32, snap: &GameSnapshot) -> Option<String> {
     let hand = snap.current_hand.as_ref()?;
     let n = snap.num_players.unwrap_or(2);
     let dealer = hand.dealer?;
-    if player_id == dealer { return Some("🃏".to_string()); }
-    if player_id == (dealer + 1) % n { return Some("✋".to_string()); }
-    if n == 4 && player_id == (dealer + n - 1) % n { return Some("🦶".to_string()); }
+    if player_id == dealer {
+        return Some("🃏".to_string());
+    }
+    if player_id == (dealer + 1) % n {
+        return Some("✋".to_string());
+    }
+    if n == 4 && player_id == (dealer + n - 1) % n {
+        return Some("🦶".to_string());
+    }
     None
 }
 
 fn next_stake(s: i32) -> i32 {
-    match s { 1 => 3, 3 => 6, 6 => 9, 9 => 12, _ => s }
+    match s {
+        1 => 3,
+        3 => 6,
+        6 => 9,
+        9 => 12,
+        _ => s,
+    }
 }
 
 fn raise_label_for(stake: i32) -> String {
-    match stake { 3 => "TRUCO!", 6 => "SEIS!", 9 => "NOVE!", 12 => "DOZE!", _ => "TRUCO!" }.to_string()
+    match stake {
+        3 => "TRUCO!",
+        6 => "SEIS!",
+        9 => "NOVE!",
+        12 => "DOZE!",
+        _ => "TRUCO!",
+    }
+    .to_string()
 }
 
 fn create_card_widget(card_opt: Option<&models::Card>) -> gtk::Box {
@@ -957,9 +1101,15 @@ fn create_card_widget(card_opt: Option<&models::Card>) -> gtk::Box {
 
     if let Some(card) = card_opt {
         container.add_css_class("card");
-        if card.is_red() { container.add_css_class("card-red"); }
+        if card.is_red() {
+            container.add_css_class("card-red");
+        }
 
-        let top_str = format!("<span size='large'><b>{}</b></span>\n{}", card.rank, card.suit_symbol());
+        let top_str = format!(
+            "<span size='large'><b>{}</b></span>\n{}",
+            card.rank,
+            card.suit_symbol()
+        );
         let top_lbl = gtk::Label::new(None);
         top_lbl.set_markup(&top_str);
         top_lbl.set_halign(gtk::Align::Start);
@@ -968,7 +1118,10 @@ fn create_card_widget(card_opt: Option<&models::Card>) -> gtk::Box {
         top_lbl.set_margin_start(8);
 
         let center_lbl = gtk::Label::new(None);
-        center_lbl.set_markup(&format!("<span size='32000'><b>{}</b></span>", card.suit_symbol()));
+        center_lbl.set_markup(&format!(
+            "<span size='32000'><b>{}</b></span>",
+            card.suit_symbol()
+        ));
         center_lbl.set_vexpand(true);
 
         let bottom_lbl = gtk::Label::new(None);
