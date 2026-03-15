@@ -238,7 +238,7 @@ $manilhaLabel = htmlspecialchars((string) ($hand['Manilha'] ?? '-'));
         </div>
     </div>
 
-    <div class="table-panel">
+    <div class="table-panel players-<?= $numPlayers ?>">
         <div class="table-rail table-rail-left">
             <div class="info-stack">
                 <div class="info-card info-card-vira">
@@ -370,8 +370,38 @@ $manilhaLabel = htmlspecialchars((string) ($hand['Manilha'] ?? '-'));
         </div>
     </div>
 
-    <div class="under-table">
-        <section class="action-dock <?= $canAccept ? 'response-mode' : (($turnPlayer === $myID && !$matchFinished) ? 'turn-mode' : 'wait-mode') ?>">
+    <div class="play-zone">
+        <section class="hand-salon">
+            <div class="hand-summary">
+                <div>
+                    <span class="section-kicker"><?= tr('hand_title') ?></span>
+                    <h3><?= tr('game_hand_heading') ?></h3>
+                </div>
+                <div class="hand-chips">
+                    <span class="hand-chip hand-chip-primary"><?= $canPlayCard ? tr('game_hand_ready') : tr('game_hand_wait') ?></span>
+                    <span class="hand-chip"><?= tr('game_hand_count', count($myCards)) ?></span>
+                    <span class="hand-chip"><?= tr('vira') . ' ' . htmlspecialchars($viraLabel) ?></span>
+                    <span class="hand-chip"><?= tr('manilha') . ' ' . $manilhaLabel ?></span>
+                </div>
+            </div>
+
+            <div class="my-hand premium-hand" role="list">
+                <?php foreach ($myCards as $idx => $card): ?>
+                    <?php if ($canPlayCard): ?>
+                        <form method="post" action="index.php" class="card-form" data-ajax="true">
+                            <input type="hidden" name="action" value="play">
+                            <input type="hidden" name="cardIndex" value="<?= $idx ?>">
+                            <button type="submit" class="card-btn" role="listitem"><?= renderCard($card, false, (string) ($idx + 1)) ?></button>
+                        </form>
+                    <?php else: ?>
+                        <div class="card-btn disabled-card" role="listitem"><?= renderCard($card, false, (string) ($idx + 1)) ?></div>
+                    <?php endif; ?>
+                <?php endforeach; ?>
+            </div>
+        </section>
+
+        <div class="under-table">
+            <section class="action-dock <?= $canAccept ? 'response-mode' : (($turnPlayer === $myID && !$matchFinished) ? 'turn-mode' : 'wait-mode') ?>">
             <div class="action-copy">
                 <span class="section-kicker"><?= $canAccept ? tr('game_action_answer_tag') : tr('status_title') ?></span>
                 <h3><?= htmlspecialchars($actionTitle) ?></h3>
@@ -426,80 +456,53 @@ $manilhaLabel = htmlspecialchars((string) ($hand['Manilha'] ?? '-'));
                     </form>
                 <?php endif; ?>
             </div>
-        </section>
+            </section>
 
-        <aside class="table-notes">
-            <div class="notes-head">
-                <div>
-                    <span class="section-kicker"><?= tr('game_notes_title') ?></span>
-                    <h3><?= tr('log_title') ?></h3>
+            <aside class="table-notes">
+                <div class="notes-head">
+                    <div>
+                        <span class="section-kicker"><?= tr('game_notes_title') ?></span>
+                        <h3><?= tr('log_title') ?></h3>
+                    </div>
+                    <?php if ($isOnline): ?>
+                        <span class="notes-connection <?= !empty($connection['is_online']) ? 'online' : '' ?>">
+                            <?= !empty($connection['is_online']) ? tr('connection_online') : tr('connection_offline') ?>
+                        </span>
+                    <?php endif; ?>
                 </div>
-                <?php if ($isOnline): ?>
-                    <span class="notes-connection <?= !empty($connection['is_online']) ? 'online' : '' ?>">
-                        <?= !empty($connection['is_online']) ? tr('connection_online') : tr('connection_offline') ?>
-                    </span>
-                <?php endif; ?>
-            </div>
 
-            <div class="table-feed">
-                <?php if (empty($recentLogs)): ?>
-                    <div class="feed-line muted"><?= tr('game_notes_empty') ?></div>
-                <?php else: ?>
-                    <?php foreach ($recentLogs as $line): ?>
-                        <div class="feed-line"><?= htmlspecialchars((string) $line) ?></div>
-                    <?php endforeach; ?>
-                <?php endif; ?>
-            </div>
-
-            <?php if ($isOnline): ?>
-                <div class="online-notes">
-                    <span class="info-kicker"><?= tr('game_online_notes_title') ?></span>
-                    <?php if (empty($recentEvents)): ?>
-                        <div class="feed-line muted"><?= tr('lobby_events_empty') ?></div>
+                <div class="table-feed">
+                    <?php if (empty($recentLogs)): ?>
+                        <div class="feed-line muted"><?= tr('game_notes_empty') ?></div>
                     <?php else: ?>
-                        <?php foreach ($recentEvents as $line): ?>
-                            <div class="feed-line compact"><?= htmlspecialchars($line) ?></div>
+                        <?php foreach ($recentLogs as $line): ?>
+                            <div class="feed-line"><?= htmlspecialchars((string) $line) ?></div>
                         <?php endforeach; ?>
                     <?php endif; ?>
-                    <div class="notes-meta">
-                        <span><?= tr('connection_backlog') ?></span>
-                        <strong><?= (int) ($diagnostics['event_backlog'] ?? 0) ?></strong>
-                    </div>
-                    <?php if (!empty($connection['last_error']['message'])): ?>
-                        <div class="notes-error"><?= htmlspecialchars((string) $connection['last_error']['message']) ?></div>
-                    <?php endif; ?>
                 </div>
-            <?php endif; ?>
-        </aside>
-    </div>
 
-    <section class="hand-salon">
-        <div class="hand-summary">
-            <div>
-                <span class="section-kicker"><?= tr('hand_title') ?></span>
-                <h3><?= tr('game_hand_heading') ?></h3>
-            </div>
-            <div class="hand-chips">
-                <span class="hand-chip"><?= tr('game_hand_count', count($myCards)) ?></span>
-                <span class="hand-chip"><?= tr('vira') . ' ' . htmlspecialchars($viraLabel) ?></span>
-                <span class="hand-chip"><?= tr('manilha') . ' ' . $manilhaLabel ?></span>
-            </div>
-        </div>
-
-        <div class="my-hand premium-hand" role="list">
-            <?php foreach ($myCards as $idx => $card): ?>
-                <?php if ($canPlayCard): ?>
-                    <form method="post" action="index.php" class="card-form" data-ajax="true">
-                        <input type="hidden" name="action" value="play">
-                        <input type="hidden" name="cardIndex" value="<?= $idx ?>">
-                        <button type="submit" class="card-btn" role="listitem"><?= renderCard($card, false, (string) ($idx + 1)) ?></button>
-                    </form>
-                <?php else: ?>
-                    <div class="card-btn disabled-card" role="listitem"><?= renderCard($card, false, (string) ($idx + 1)) ?></div>
+                <?php if ($isOnline): ?>
+                    <div class="online-notes">
+                        <span class="info-kicker"><?= tr('game_online_notes_title') ?></span>
+                        <?php if (empty($recentEvents)): ?>
+                            <div class="feed-line muted"><?= tr('lobby_events_empty') ?></div>
+                        <?php else: ?>
+                            <?php foreach ($recentEvents as $line): ?>
+                                <div class="feed-line compact"><?= htmlspecialchars($line) ?></div>
+                            <?php endforeach; ?>
+                        <?php endif; ?>
+                        <div class="notes-meta">
+                            <span><?= tr('connection_backlog') ?></span>
+                            <strong><?= (int) ($diagnostics['event_backlog'] ?? 0) ?></strong>
+                        </div>
+                        <?php if (!empty($connection['last_error']['message'])): ?>
+                            <div class="notes-error"><?= htmlspecialchars((string) $connection['last_error']['message']) ?></div>
+                        <?php endif; ?>
+                    </div>
                 <?php endif; ?>
-            <?php endforeach; ?>
+            </aside>
         </div>
-    </section>
+    </div>
 
     <?php if ($isOnline): ?>
         <div class="table-ops">

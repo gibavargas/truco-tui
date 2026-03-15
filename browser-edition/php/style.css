@@ -25,10 +25,17 @@
   --font-display: "Cormorant Garamond", serif;
   --font-body: "Barlow", sans-serif;
   --font-mono: "IBM Plex Mono", monospace;
+  accent-color: #d2a66f;
 }
 
 * {
   box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+*::selection {
+  background: rgba(210, 166, 111, 0.28);
+  color: var(--ink);
 }
 
 html {
@@ -96,6 +103,19 @@ button,
 input,
 select {
   font: inherit;
+}
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+.btn:focus-visible,
+.action-btn:focus-visible,
+.card-btn:focus-visible {
+  outline: 2px solid rgba(244, 198, 127, 0.72);
+  outline-offset: 3px;
+  box-shadow:
+    0 0 0 4px rgba(210, 166, 111, 0.18),
+    0 18px 34px rgba(0, 0, 0, 0.22);
 }
 
 .app-shell {
@@ -1917,7 +1937,7 @@ label {
 
 .table-panel {
   position: relative;
-  min-height: 760px;
+  min-height: 620px;
   margin-bottom: 22px;
   padding: 34px;
   border: 1px solid rgba(244, 198, 127, 0.18);
@@ -1962,7 +1982,7 @@ label {
 .table-rail-left {
   position: absolute;
   left: 46px;
-  bottom: 44px;
+  top: 44px;
   width: 134px;
 }
 
@@ -2016,13 +2036,13 @@ label {
 }
 
 .seat-top {
-  top: 34px;
+  top: 24px;
   left: 50%;
   transform: translateX(-50%);
 }
 
 .seat-bottom {
-  bottom: 34px;
+  bottom: 24px;
   left: 50%;
   transform: translateX(-50%);
 }
@@ -2153,7 +2173,7 @@ label {
 
 .table-center {
   width: min(100%, 620px);
-  min-height: 410px;
+  min-height: 320px;
 }
 
 .center-callout {
@@ -2313,12 +2333,20 @@ label {
   letter-spacing: 0.14em;
 }
 
+.play-zone {
+  position: sticky;
+  bottom: 10px;
+  z-index: 12;
+  display: grid;
+  gap: 14px;
+  margin-bottom: 22px;
+}
+
 .under-table {
   display: grid;
   grid-template-columns: minmax(0, 1.38fr) minmax(300px, 0.62fr);
   gap: 18px;
   align-items: start;
-  margin-bottom: 22px;
 }
 
 .action-dock,
@@ -2331,6 +2359,7 @@ label {
   display: grid;
   grid-template-columns: minmax(220px, 0.72fr) minmax(0, 1.28fr);
   gap: 22px;
+  padding-top: 20px;
   background:
     radial-gradient(circle at top left, rgba(255, 200, 122, 0.12), transparent 32%),
     linear-gradient(145deg, rgba(45, 31, 23, 0.96), rgba(20, 18, 16, 0.98));
@@ -2423,6 +2452,10 @@ label {
 .action-btn:hover:not(:disabled) {
   transform: translateY(-4px);
   box-shadow: 0 28px 44px rgba(0, 0, 0, 0.28);
+}
+
+.action-btn:focus-visible {
+  border-color: rgba(244, 198, 127, 0.6);
 }
 
 .action-btn:disabled {
@@ -2528,14 +2561,19 @@ label {
 }
 
 .hand-salon {
+  padding: 18px 22px 16px;
   background:
     radial-gradient(circle at top, rgba(255, 206, 141, 0.11), transparent 32%),
     linear-gradient(180deg, rgba(50, 35, 25, 0.92), rgba(22, 17, 14, 0.98));
+  box-shadow:
+    0 24px 48px rgba(0, 0, 0, 0.24),
+    0 0 0 1px rgba(244, 198, 127, 0.1);
+  backdrop-filter: blur(12px);
 }
 
 .hand-summary {
   align-items: end;
-  margin-bottom: 22px;
+  margin-bottom: 14px;
 }
 
 .hand-summary h3 {
@@ -2545,7 +2583,7 @@ label {
 .premium-hand {
   justify-content: center;
   gap: 0;
-  padding: 18px 16px 12px;
+  padding: 10px 12px 6px;
   overflow: visible;
 }
 
@@ -2588,17 +2626,23 @@ label {
 }
 
 .hand-salon .card {
-  width: 132px;
-  height: 192px;
-  padding: 16px 14px;
-  border-radius: 22px;
+  width: 120px;
+  height: 174px;
+  padding: 14px 12px;
+  border-radius: 20px;
   box-shadow:
     0 24px 40px rgba(0, 0, 0, 0.28),
     inset 0 1px 0 rgba(255, 255, 255, 0.9);
 }
 
 .hand-salon .card .suit {
-  font-size: 3.7rem;
+  font-size: 3.1rem;
+}
+
+.hand-chip-primary {
+  color: #3f220b;
+  background: linear-gradient(180deg, #ffd68f, #d89045);
+  border-color: transparent;
 }
 
 .card {
@@ -2648,12 +2692,12 @@ label {
 
 @media (max-width: 1100px) {
   .table-panel {
-    min-height: 820px;
+    min-height: 680px;
   }
 
   .table-rail-left {
     left: 32px;
-    bottom: 32px;
+    top: 32px;
   }
 
   .seat {
@@ -2691,7 +2735,7 @@ label {
   }
 
   .table-panel {
-    min-height: 910px;
+    min-height: 740px;
     padding: 24px 20px;
     border-radius: 34px;
   }
@@ -2708,7 +2752,7 @@ label {
 
   .table-rail-left {
     left: 26px;
-    bottom: 26px;
+    top: 26px;
     width: 124px;
   }
 
@@ -2746,8 +2790,8 @@ label {
   }
 
   .hand-salon .card {
-    width: 118px;
-    height: 174px;
+    width: 108px;
+    height: 158px;
   }
 }
 
@@ -2766,7 +2810,7 @@ label {
   }
 
   .table-panel {
-    min-height: 980px;
+    min-height: 820px;
   }
 
   .seat {
@@ -2805,6 +2849,10 @@ label {
     position: static;
     width: 100%;
     margin-bottom: 20px;
+  }
+
+  .play-zone {
+    position: static;
   }
 
   .info-stack {
