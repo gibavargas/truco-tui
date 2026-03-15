@@ -17,8 +17,6 @@ $lobby = $bundle['lobby'] ?? [];
 $ui = $bundle['ui'] ?? [];
 $slotStates = $ui['lobby_slots'] ?? [];
 $actions = $ui['actions'] ?? [];
-$connection = $bundle['connection'] ?? [];
-$diagnostics = $bundle['diagnostics'] ?? [];
 $locale = $_SESSION['locale'] ?? 'pt-BR';
 
 $playersByID = [];
@@ -34,7 +32,7 @@ foreach ($players as $p) {
 
 $myPlayer = $playersByID[$myID] ?? null;
 $myCards = $myPlayer['Hand'] ?? [];
-$myTeam = $myPlayer['Team'] ?? 0;
+$myTeam = (int) ($myPlayer['Team'] ?? 0);
 $stake = (int) ($hand['Stake'] ?? 1);
 $pendingTo = (int) ($snap['PendingRaiseTo'] ?? 0);
 $turnPlayerObj = $playersByID[$turnPlayer] ?? null;
@@ -46,38 +44,19 @@ $trickWins = $hand['TrickWins'] ?? [];
 $team1Tricks = (int) ($trickWins[0] ?? $trickWins['0'] ?? 0);
 $team2Tricks = (int) ($trickWins[1] ?? $trickWins['1'] ?? 0);
 $roundNumber = max(1, min(3, (int) ($hand['Round'] ?? 1)));
-$roundStartID = (int) ($hand['RoundStart'] ?? -1);
-$roundStartName = (string) (($playersByID[$roundStartID]['Name'] ?? '') ?: '?');
 $lastTrickRound = (int) ($snap['LastTrickRound'] ?? 0);
 $lastTrickTie = (bool) ($snap['LastTrickTie'] ?? false);
 $lastTrickWinnerID = (int) ($snap['LastTrickWinner'] ?? -1);
 $lastTrickWinnerName = (string) (($playersByID[$lastTrickWinnerID]['Name'] ?? '') ?: '?');
 $latestLog = trim((string) (count($logs) > 0 ? $logs[count($logs) - 1] : tr('status_ready')));
-$lastActorName = $turnPlayerName;
-foreach ($players as $candidate) {
-    $candidateName = (string) ($candidate['Name'] ?? '');
-    if ($candidateName !== '' && str_starts_with($latestLog, $candidateName . ' ')) {
-        $lastActorName = $candidateName;
-        break;
-    }
-}
-if (str_starts_with($latestLog, 'Nova mão')) {
-    $lastActorName = $locale === 'en-US' ? 'Table' : 'Mesa';
-}
-$recentLogs = array_reverse(array_slice($logs, -4));
+$recentLogs = array_reverse(array_slice($logs, -3));
 $recentEvents = [];
-foreach (array_reverse(array_slice($events, -3)) as $ev) {
+foreach (array_reverse(array_slice($events, -2)) as $ev) {
     $recentEvents[] = formatEventLine($ev);
 }
 $matchPoints = $snap['MatchPoints'] ?? [];
 $team1Score = (int) ($matchPoints[0] ?? $matchPoints['0'] ?? 0);
 $team2Score = (int) ($matchPoints[1] ?? $matchPoints['1'] ?? 0);
-$team1Tone = $myTeam === 0 ? 'friendly' : 'rival';
-$team2Tone = $myTeam === 1 ? 'friendly' : 'rival';
-$team1SideLabel = $myTeam === 0 ? tr('game_team_you') : tr('game_team_rival');
-$team2SideLabel = $myTeam === 1 ? tr('game_team_you') : tr('game_team_rival');
-$team1PillLabel = $myTeam === 0 ? tr('game_you_label') : tr('game_opponent_label');
-$team2PillLabel = $myTeam === 1 ? tr('game_you_label') : tr('game_opponent_label');
 $lastPlayedPlayerID = -1;
 if (!empty($roundCards)) {
     $lastPlayed = $roundCards[count($roundCards) - 1];
@@ -114,28 +93,17 @@ if ($matchFinished) {
 }
 
 if ($pendingFor !== -1 && $pendingFor === $myTeam) {
-    $centerTitle = strtoupper(raiseLabel($pendingTo ?: 3, $locale));
-    $centerNote = tr('game_center_pending_you', raiseLabel($pendingTo ?: 3, $locale));
+    $heroText = strtoupper(raiseLabel($pendingTo ?: 3, $locale));
+    $heroSubtext = tr('game_center_pending_you', raiseLabel($pendingTo ?: 3, $locale));
 } elseif ($pendingFor !== -1) {
-    $centerTitle = strtoupper(raiseLabel($pendingTo ?: 3, $locale));
-    $centerNote = tr('game_center_pending_other', $raiseRequesterName, raiseLabel($pendingTo ?: 3, $locale));
+    $heroText = strtoupper(raiseLabel($pendingTo ?: 3, $locale));
+    $heroSubtext = tr('game_center_pending_other', $raiseRequesterName, raiseLabel($pendingTo ?: 3, $locale));
 } elseif ($turnPlayer === $myID) {
-    $centerTitle = 'VALE ' . $stake;
-    $centerNote = tr('game_center_turn_you');
+    $heroText = tr('game_hand_ready');
+    $heroSubtext = tr('game_center_turn_you');
 } else {
-    $centerTitle = 'VALE ' . $stake;
-    $centerNote = tr('game_center_turn_other', $turnPlayerName);
-}
-
-if ($canAccept) {
-    $actionTitle = tr('game_action_title_response');
-    $actionCopy = tr('game_action_response_copy');
-} elseif ($turnPlayer === $myID && !$matchFinished) {
-    $actionTitle = tr('game_action_title_turn');
-    $actionCopy = tr('game_action_turn_copy');
-} else {
-    $actionTitle = tr('game_action_title_wait');
-    $actionCopy = tr('game_action_wait_copy');
+    $heroText = tr('game_hand_wait');
+    $heroSubtext = tr('game_center_turn_other', $turnPlayerName);
 }
 
 $lastTrickText = '';
@@ -149,205 +117,173 @@ $viraLabel = '-';
 if (!empty($hand['Vira'])) {
     $viraLabel = (string) ($hand['Vira']['Rank'] ?? '?') . suitSymbol((string) ($hand['Vira']['Suit'] ?? ''));
 }
-
 $manilhaLabel = htmlspecialchars((string) ($hand['Manilha'] ?? '-'));
+
+$showTurnActions = !$matchFinished && $turnPlayer === $myID && !$canAccept;
+$showResponseActions = !$matchFinished && $canAccept;
+$boardState = 'waiting-turn';
+if ($matchFinished) {
+    $boardState = 'round-end';
+} elseif ($showResponseActions) {
+    $boardState = 'truco-pending';
+} elseif ($showTurnActions) {
+    $boardState = 'player-turn';
+} elseif ($lastTrickRound > 0 && empty($roundCards)) {
+    $boardState = 'trick-resolved';
+}
+
+$hierarchyText = $locale === 'en-US'
+    ? '1. Your hand. 2. Current trick. 3. Turn and truco pressure. 4. Team score.'
+    : '1. Sua mão. 2. Vaza atual. 3. Turno e pressão do truco. 4. Placar da dupla.';
 ?>
-<section class="panel game-panel">
-    <div class="section-head game-head">
-        <div>
+<section class="panel game-panel game-panel-board game-shell state-<?= htmlspecialchars($boardState) ?>">
+    <div class="game-topline">
+        <div class="game-head-copy">
             <span class="section-kicker"><?= $isOnline ? tr('game_kicker_online') : tr('game_kicker_offline') ?></span>
             <h2><?= $isOnline ? tr('game_title_online') : tr('game_title_offline') ?></h2>
+            <p class="game-head-note"><?= htmlspecialchars($hierarchyText) ?></p>
         </div>
-        <strong class="mode-pill"><?= htmlspecialchars($mode) ?></strong>
-    </div>
 
-    <div class="game-scoreboard">
-        <article class="team-score team-score-<?= $team1Tone ?>">
-            <span class="score-side-label"><?= $team1SideLabel ?></span>
-            <div class="score-team-row">
-                <span class="score-label"><?= tr('team1') ?></span>
-                <span class="team-pill team-pill-<?= $team1Tone ?>"><?= $team1PillLabel ?></span>
+        <div class="game-topline-actions">
+            <div class="ui-mode-toggle" role="group" aria-label="UI mode">
+                <button type="button" class="btn btn-neutral btn-mini ui-mode-btn" data-ui-mode="wireframe">Esquema</button>
+                <button type="button" class="btn btn-neutral btn-mini ui-mode-btn" data-ui-mode="polished">Mesa</button>
             </div>
-            <strong class="score-value"><?= $team1Score ?></strong>
-            <div class="score-tricks"><?= tr('tricks_title') ?> <span><?= $team1Tricks ?></span></div>
-        </article>
-
-        <article class="status-marquee <?= $pendingFor !== -1 ? 'hot' : '' ?>">
-            <div class="status-marquee-top">
-                <span class="marquee-tag"><?= tr('game_round_label', $roundNumber) ?></span>
-                <span class="marquee-tag"><?= tr('game_turn_chip', $turnPlayerName) ?></span>
-                <span class="marquee-tag"><?= tr('game_opening_chip', $roundStartName) ?></span>
-                <?php if ($lastTrickText !== ''): ?>
-                    <span class="marquee-tag muted"><?= htmlspecialchars($lastTrickText) ?></span>
-                <?php endif; ?>
-            </div>
-
-            <div class="stake-card <?= $pendingFor !== -1 ? 'hot' : '' ?>">
-                <div class="stake-main">
-                    <span><?= tr('stake') ?></span>
-                    <strong><?= $stake ?></strong>
-                </div>
-                <div class="stake-ladder">
-                    <?php foreach ($stakeSteps as $step): ?>
-                        <span class="stake-step <?= $step === $stake ? 'current' : ($step < $stake ? 'done' : ($pendingTo === $step ? 'pending' : 'future')) ?>">
-                            <span class="stake-dot"></span>
-                            <span class="stake-label"><?= $step ?></span>
-                        </span>
-                    <?php endforeach; ?>
-                </div>
-            </div>
-
-            <div class="status-marquee-copy">
-                <div class="turn-line <?= $turnPlayer === $myID ? 'my-turn' : '' ?>">
-                    <?= tr('turn_of', $turnPlayerName) ?>
-                </div>
-                <div class="match-ribbon">
-                    <span class="ribbon-chip"><?= 'Vale ' . $stake ?></span>
-                    <?php if ($pendingFor !== -1): ?>
-                        <span class="ribbon-chip hot"><?= strtoupper(raiseLabel($pendingTo ?: 3, $locale)) ?></span>
-                    <?php endif; ?>
-                    <span class="ribbon-note"><?= htmlspecialchars($statusText) ?></span>
-                    <?php if ($isOnline): ?>
-                        <span class="ribbon-chip muted"><?= !empty($connection['is_online']) ? tr('connection_online') : tr('connection_offline') ?></span>
-                    <?php endif; ?>
-                </div>
-            </div>
-        </article>
-
-        <article class="team-score team-score-<?= $team2Tone ?>">
-            <span class="score-side-label"><?= $team2SideLabel ?></span>
-            <div class="score-team-row">
-                <span class="score-label"><?= tr('team2') ?></span>
-                <span class="team-pill team-pill-<?= $team2Tone ?>"><?= $team2PillLabel ?></span>
-            </div>
-            <strong class="score-value"><?= $team2Score ?></strong>
-            <div class="score-tricks"><?= tr('tricks_title') ?> <span><?= $team2Tricks ?></span></div>
-        </article>
-    </div>
-
-    <div class="table-pulse">
-        <div class="pulse-leading">
-            <span class="pulse-kicker"><?= tr('status_title') ?></span>
-            <strong><?= htmlspecialchars($latestLog) ?></strong>
-        </div>
-        <div class="pulse-tags">
-            <span class="pulse-tag"><?= tr('game_last_speaker_chip', $lastActorName) ?></span>
-            <?php if ($lastTrickText !== ''): ?>
-                <span class="pulse-tag muted"><?= htmlspecialchars($lastTrickText) ?></span>
+            <?php if ($isOnline): ?>
+                <form method="post" action="index.php" data-ajax="true">
+                    <input type="hidden" name="action" value="leaveLobby">
+                    <button type="submit" class="btn btn-neutral btn-mini"><?= tr('lobby_leave') ?></button>
+                </form>
             <?php endif; ?>
         </div>
     </div>
 
-    <div class="table-panel players-<?= $numPlayers ?>">
-        <div class="table-rail table-rail-left">
-            <div class="info-stack">
-                <div class="info-card info-card-vira">
+    <div class="board-hud board-zone board-zone-hud">
+        <section class="hud-team <?= $myTeam === 0 ? 'friendly' : 'enemy' ?>">
+            <div class="hud-team-top">
+                <span class="hud-label"><?= tr('team1') ?></span>
+                <span class="team-link <?= $myTeam === 0 ? 'ally' : 'enemy' ?>"><?= $myTeam === 0 ? tr('game_you_label') . ' + ' . tr('game_partner_label') : tr('game_opponent_label') ?></span>
+            </div>
+            <strong class="hud-score"><?= $team1Score ?></strong>
+            <div class="hud-tricks">
+                <?php for ($i = 0; $i < 3; $i++): ?>
+                    <span class="hud-trick <?= $i < $team1Tricks ? 'won' : '' ?>"></span>
+                <?php endfor; ?>
+            </div>
+        </section>
+
+        <section class="hud-center">
+            <div class="hud-round-row">
+                <span class="hud-chip"><?= tr('game_round_label', $roundNumber) ?></span>
+                <span class="hud-chip stake-chip">Vale <?= $stake ?></span>
+                <?php if ($pendingFor !== -1): ?>
+                    <span class="hud-chip hot"><?= strtoupper(raiseLabel($pendingTo ?: 3, $locale)) ?></span>
+                <?php endif; ?>
+            </div>
+
+            <div class="hud-stake-track" aria-label="Truco escalation">
+                <?php foreach ($stakeSteps as $step): ?>
+                    <span class="track-step <?= $step === $stake ? 'current' : ($step < $stake ? 'past' : ($step === $pendingTo ? 'pending' : '')) ?>">
+                        <span class="track-dot"></span>
+                        <small><?= $step ?></small>
+                    </span>
+                <?php endforeach; ?>
+            </div>
+
+            <div class="hud-status-block">
+                <strong class="hud-status-title"><?= htmlspecialchars($heroText) ?></strong>
+                <span class="hud-status"><?= htmlspecialchars($statusText) ?></span>
+            </div>
+        </section>
+
+        <section class="hud-team <?= $myTeam === 1 ? 'friendly' : 'enemy' ?>">
+            <div class="hud-team-top">
+                <span class="hud-label"><?= tr('team2') ?></span>
+                <span class="team-link <?= $myTeam === 1 ? 'ally' : 'enemy' ?>"><?= $myTeam === 1 ? tr('game_you_label') . ' + ' . tr('game_partner_label') : tr('game_opponent_label') ?></span>
+            </div>
+            <strong class="hud-score"><?= $team2Score ?></strong>
+            <div class="hud-tricks">
+                <?php for ($i = 0; $i < 3; $i++): ?>
+                    <span class="hud-trick <?= $i < $team2Tricks ? 'won' : '' ?>"></span>
+                <?php endfor; ?>
+            </div>
+        </section>
+    </div>
+
+    <div class="board-stage players-<?= $numPlayers ?> board-zone board-zone-table">
+        <aside class="table-legend">
+            <div class="legend-chip legend-chip-primary"><?= htmlspecialchars($hierarchyText) ?></div>
+            <div class="legend-grid">
+                <div class="legend-card">
                     <span class="info-kicker"><?= tr('vira') ?></span>
                     <div class="meta-card"><?= !empty($hand['Vira']) ? renderCard($hand['Vira'], true) : '' ?></div>
                     <strong><?= htmlspecialchars($viraLabel) ?></strong>
                 </div>
-                <div class="info-card info-card-manilha">
+                <div class="legend-card">
                     <span class="info-kicker"><?= tr('manilha') ?></span>
-                    <div class="manilha-pill <?= !empty($hand['Manilha']) && $hand['Manilha'] !== '-' ? 'hot' : '' ?>">
-                        <?= $manilhaLabel ?>
-                    </div>
-                    <small><?= tr('game_table_note') ?></small>
+                    <strong class="meta-rank"><?= $manilhaLabel ?></strong>
                 </div>
             </div>
+        </aside>
+
+        <div class="table-callout <?= $showResponseActions ? 'hot' : '' ?>">
+            <span class="section-kicker"><?= tr('status_title') ?></span>
+            <strong><?= htmlspecialchars($heroText) ?></strong>
+            <span><?= htmlspecialchars($heroSubtext) ?></span>
         </div>
 
         <?php foreach ($players as $p): ?>
             <?php
             $playerID = (int) ($p['ID'] ?? -1);
             $pos = $seatByID[$playerID] ?? 'top';
-            $teamNum = (int) (($p['Team'] ?? 0) + 1);
             $team = (int) ($p['Team'] ?? 0);
+            $teamNum = $team + 1;
             $cardCount = count($p['Hand'] ?? []);
             $isSelf = $playerID === $myID;
             $isTurn = $playerID === $turnPlayer;
-            $isFriendly = $team === $myTeam;
-            $seatRole = $isSelf ? tr('game_you_label') : ($isFriendly ? tr('game_partner_label') : tr('game_opponent_label'));
-            $seatClasses = [
-                'seat',
-                'seat-' . $pos,
-                $isFriendly ? 'seat-friendly' : 'seat-rival',
-                $isSelf ? 'seat-self' : '',
-                $isTurn ? 'is-active' : '',
-                $playerID === $lastPlayedPlayerID ? 'just-played' : '',
-                $playerID === $lastTrickWinnerID ? 'won-last-trick' : '',
-                ($pendingFor !== -1 && $team === $pendingFor) ? 'awaiting-answer' : '',
-            ];
+            $isPartner = !$isSelf && $team === $myTeam;
+            $seatRole = $isSelf ? tr('game_you_label') : ($isPartner ? tr('game_partner_label') : tr('game_opponent_label'));
             ?>
-            <div class="<?= trim(implode(' ', array_filter($seatClasses))) ?>">
-                <div class="seat-head">
-                    <div class="seat-avatar team-<?= $teamNum ?>"><?= htmlspecialchars(strtoupper(substr((string) ($p['Name'] ?? '?'), 0, 1))) ?></div>
-                    <div class="seat-pill team-<?= $teamNum ?>">
-                        <div class="seat-topline">
-                            <span class="seat-name"><?= htmlspecialchars((string) ($p['Name'] ?? '?')) ?></span>
-                            <?php if ($isTurn): ?>
-                                <span class="seat-tag turn"><?= tr('game_turn_badge') ?></span>
-                            <?php elseif ($isSelf): ?>
-                                <span class="seat-tag self"><?= tr('game_you_label') ?></span>
-                            <?php endif; ?>
-                        </div>
-                        <span class="seat-role"><?= $seatRole ?> · T<?= $teamNum ?><?= !empty($p['CPU']) ? ' · ' . tr('cpu_tag') : '' ?></span>
-                        <div class="seat-tags">
-                            <?php if ($roundStartID === $playerID): ?>
-                                <span class="seat-tag subtle"><?= tr('game_opening_badge') ?></span>
-                            <?php endif; ?>
-                            <?php if ($lastTrickWinnerID === $playerID): ?>
-                                <span class="seat-tag subtle"><?= tr('game_last_trick_badge') ?></span>
-                            <?php endif; ?>
-                            <?php if ($pendingFor !== -1 && $team === $pendingFor): ?>
-                                <span class="seat-tag pressure"><?= tr('game_pending_badge') ?></span>
-                            <?php endif; ?>
-                        </div>
+            <div class="board-seat board-seat-<?= $pos ?> <?= $isTurn ? 'is-turn' : '' ?> <?= $isSelf ? 'is-self' : ($isPartner ? 'is-partner' : 'is-opponent') ?>">
+                <div class="board-seat-badge team-<?= $teamNum ?>"><?= htmlspecialchars(strtoupper(substr((string) ($p['Name'] ?? '?'), 0, 1))) ?></div>
+                <div class="board-seat-info">
+                    <div class="seat-headline">
+                        <strong><?= htmlspecialchars((string) ($p['Name'] ?? '?')) ?></strong>
+                        <?php if ($isTurn): ?>
+                            <span class="seat-turn-pill">VEZ</span>
+                        <?php endif; ?>
                     </div>
+                    <span><?= $seatRole ?><?= !empty($p['CPU']) ? ' · ' . tr('cpu_tag') : '' ?></span>
+                    <?php if (!$isSelf): ?>
+                        <div class="board-seat-cards" aria-hidden="true">
+                            <?php for ($i = 0; $i < $cardCount; $i++): ?>
+                                <span class="tiny-back"></span>
+                            <?php endfor; ?>
+                        </div>
+                    <?php endif; ?>
                 </div>
-
-                <?php if (!$isSelf): ?>
-                    <div class="seat-meta seat-card-stack" aria-hidden="true">
-                        <?php for ($i = 0; $i < $cardCount; $i++): ?>
-                            <span class="tiny-back"></span>
-                        <?php endfor; ?>
-                    </div>
-                <?php else: ?>
-                    <div class="seat-meta seat-footnote"><?= tr('game_hand_count', count($myCards)) ?></div>
-                <?php endif; ?>
             </div>
         <?php endforeach; ?>
 
-        <div class="table-center">
-            <div class="center-callout <?= $pendingFor !== -1 ? 'hot' : '' ?>">
-                <span class="center-kicker"><?= tr('game_round_title') ?></span>
-                <strong><?= htmlspecialchars($centerTitle) ?></strong>
-                <span class="center-note"><?= htmlspecialchars($centerNote) ?></span>
-            </div>
-
-            <div class="trick-badges" aria-label="<?= tr('tricks_title') ?>">
+        <div class="board-center">
+            <div class="board-tricks">
                 <?php for ($i = 0; $i < 3; $i++): ?>
                     <?php
                     $trickResult = $hand['TrickResults'][$i] ?? null;
-                    $badgeClass = 'pending';
-                    $badgeText = '...';
+                    $trickClass = '';
                     if ($trickResult === -1) {
-                        $badgeClass = 'tie';
-                        $badgeText = tr('trick_tie');
+                        $trickClass = 'tie';
                     } elseif ($trickResult === 0 || $trickResult === 1) {
-                        $badgeClass = ((int) $trickResult === $myTeam) ? 'win' : 'loss';
-                        $badgeText = 'T' . (((int) $trickResult) + 1);
+                        $trickClass = ((int) $trickResult === $myTeam) ? 'ally' : 'enemy';
                     }
                     ?>
-                    <span class="trick-badge <?= $badgeClass ?>">
-                        <small><?= tr('trick_short') . ($i + 1) ?></small>
-                        <strong><?= htmlspecialchars($badgeText) ?></strong>
-                    </span>
+                    <span class="board-trick <?= $trickClass ?>"><?= tr('trick_short') . ($i + 1) ?></span>
                 <?php endfor; ?>
             </div>
 
-            <div class="played-layer <?= empty($roundCards) ? 'is-empty' : '' ?>">
+            <div class="board-cards <?= empty($roundCards) ? 'empty' : '' ?>">
                 <?php if (empty($roundCards)): ?>
-                    <div class="table-silence"><?= htmlspecialchars($statusText) ?></div>
+                    <div class="board-center-note"><?= htmlspecialchars($statusText) ?></div>
                 <?php endif; ?>
 
                 <?php foreach ($roundCards as $index => $pc): ?>
@@ -355,37 +291,44 @@ $manilhaLabel = htmlspecialchars((string) ($hand['Manilha'] ?? '-'));
                     $ownerID = (int) ($pc['PlayerID'] ?? -1);
                     $ownerName = (string) (($playersByID[$ownerID]['Name'] ?? '') ?: ('P' . ($ownerID + 1)));
                     $cardPos = $seatByID[$ownerID] ?? 'top';
-                    $cardClasses = [
-                        'played-card',
-                        'played-' . $cardPos,
-                        $index === count($roundCards) - 1 ? 'last-played' : '',
-                    ];
+                    $ownerTeam = (int) (($playersByID[$ownerID]['Team'] ?? 0));
+                    $ownerClass = $ownerTeam === $myTeam ? 'ally' : 'enemy';
+                    if ($ownerID === $myID) {
+                        $ownerClass = 'self';
+                    }
                     ?>
-                    <div class="<?= trim(implode(' ', array_filter($cardClasses))) ?>">
-                        <div class="owner"><?= htmlspecialchars($ownerName) ?></div>
-                        <?= renderCard($pc['Card'], true) ?>
+                    <div class="board-played board-played-<?= $cardPos ?> <?= $index === count($roundCards) - 1 ? 'is-last' : '' ?> <?= $lastPlayedPlayerID === $ownerID ? 'is-current' : '' ?> <?= $ownerClass ?>">
+                        <span class="board-played-owner"><?= htmlspecialchars($ownerName) ?></span>
+                        <?= renderCard($pc['Card']) ?>
                     </div>
                 <?php endforeach; ?>
             </div>
+
+            <?php if ($lastTrickText !== ''): ?>
+                <div class="board-resolution <?= $lastTrickTie ? 'tie' : '' ?>">
+                    <span class="section-kicker"><?= tr('log_title') ?></span>
+                    <strong><?= htmlspecialchars($lastTrickText) ?></strong>
+                </div>
+            <?php endif; ?>
         </div>
     </div>
 
-    <div class="play-zone">
-        <section class="hand-salon">
-            <div class="hand-summary">
+    <div class="player-dock board-zone board-zone-hand">
+        <section class="player-hand">
+            <div class="player-dock-head">
                 <div>
                     <span class="section-kicker"><?= tr('hand_title') ?></span>
                     <h3><?= tr('game_hand_heading') ?></h3>
                 </div>
-                <div class="hand-chips">
-                    <span class="hand-chip hand-chip-primary"><?= $canPlayCard ? tr('game_hand_ready') : tr('game_hand_wait') ?></span>
-                    <span class="hand-chip"><?= tr('game_hand_count', count($myCards)) ?></span>
-                    <span class="hand-chip"><?= tr('vira') . ' ' . htmlspecialchars($viraLabel) ?></span>
-                    <span class="hand-chip"><?= tr('manilha') . ' ' . $manilhaLabel ?></span>
+                <div class="player-hand-meta">
+                    <span class="player-dock-status <?= $canPlayCard ? 'ready' : '' ?>">
+                        <?= $canPlayCard ? tr('game_hand_ready') : tr('game_hand_wait') ?>
+                    </span>
+                    <span class="hand-count"><?= htmlspecialchars(tr('game_hand_count', count($myCards))) ?></span>
                 </div>
             </div>
 
-            <div class="my-hand premium-hand" role="list">
+            <div class="my-hand board-hand" role="list">
                 <?php foreach ($myCards as $idx => $card): ?>
                     <?php if ($canPlayCard): ?>
                         <form method="post" action="index.php" class="card-form" data-ajax="true">
@@ -400,144 +343,122 @@ $manilhaLabel = htmlspecialchars((string) ($hand['Manilha'] ?? '-'));
             </div>
         </section>
 
-        <div class="under-table">
-            <section class="action-dock <?= $canAccept ? 'response-mode' : (($turnPlayer === $myID && !$matchFinished) ? 'turn-mode' : 'wait-mode') ?>">
-            <div class="action-copy">
-                <span class="section-kicker"><?= $canAccept ? tr('game_action_answer_tag') : tr('status_title') ?></span>
-                <h3><?= htmlspecialchars($actionTitle) ?></h3>
-                <p><?= htmlspecialchars($actionCopy) ?></p>
-            </div>
-
-            <div class="action-grid">
-                <form method="post" action="index.php" data-ajax="true" class="action-form action-form-truco">
-                    <input type="hidden" name="action" value="truco">
-                    <button type="submit" class="action-btn action-btn-truco <?= $canTruco ? 'armed' : '' ?>" <?= $canTruco ? '' : 'disabled' ?>>
-                        <span class="action-eyebrow"><?= $canAccept ? tr('game_action_raise_tag') : tr('game_action_call_tag') ?></span>
-                        <strong><?= strtoupper($canAccept ? tr('btn_raise') : tr('btn_truco')) ?></strong>
-                        <span class="action-sub"><?= htmlspecialchars($canAccept ? tr('game_action_raise_sub', raiseLabel($nextRaisePreview, $locale)) : tr('game_action_call_sub', raiseLabel($nextStake, $locale))) ?></span>
-                    </button>
-                </form>
-
-                <form method="post" action="index.php" data-ajax="true" class="action-form">
-                    <input type="hidden" name="action" value="accept">
-                    <button type="submit" class="action-btn action-btn-accept" <?= $canAccept ? '' : 'disabled' ?>>
-                        <span class="action-eyebrow"><?= tr('game_action_answer_tag') ?></span>
-                        <strong><?= strtoupper(tr('btn_accept')) ?></strong>
-                        <span class="action-sub"><?= htmlspecialchars(tr('game_action_accept_sub', $pendingTo ?: 3)) ?></span>
-                    </button>
-                </form>
-
-                <form method="post" action="index.php" data-ajax="true" class="action-form">
-                    <input type="hidden" name="action" value="refuse">
-                    <button type="submit" class="action-btn action-btn-refuse" <?= $canRefuse ? '' : 'disabled' ?>>
-                        <span class="action-eyebrow"><?= tr('game_action_answer_tag') ?></span>
-                        <strong><?= strtoupper(tr('btn_refuse')) ?></strong>
-                        <span class="action-sub"><?= tr('game_action_refuse_sub') ?></span>
-                    </button>
-                </form>
-
-                <form method="post" action="index.php" data-ajax="true" class="action-form action-form-utility">
-                    <input type="hidden" name="action" value="refreshGame">
-                    <button type="submit" class="action-btn action-btn-utility">
-                        <span class="action-eyebrow"><?= tr('game_action_refresh_tag') ?></span>
-                        <strong><?= tr('refresh') ?></strong>
-                        <span class="action-sub"><?= tr('game_action_refresh_sub') ?></span>
-                    </button>
-                </form>
-
-                <?php if ($isOnline): ?>
-                    <form method="post" action="index.php" data-ajax="true" class="action-form action-form-utility">
-                        <input type="hidden" name="action" value="leaveLobby">
-                        <button type="submit" class="action-btn action-btn-leave">
-                            <span class="action-eyebrow"><?= tr('game_action_leave_tag') ?></span>
-                            <strong><?= tr('lobby_leave') ?></strong>
-                            <span class="action-sub"><?= tr('game_action_leave_sub') ?></span>
+        <section class="player-actions">
+            <?php if ($showResponseActions): ?>
+                <div class="player-actions-row response-row">
+                    <div class="player-actions-copy">
+                        <span class="section-kicker"><?= tr('game_action_title_response') ?></span>
+                        <strong><?= htmlspecialchars($statusText) ?></strong>
+                    </div>
+                    <form method="post" action="index.php" data-ajax="true" class="action-form action-form-truco">
+                        <input type="hidden" name="action" value="truco">
+                        <button type="submit" class="action-btn action-btn-truco" <?= $canTruco ? '' : 'disabled' ?>>
+                            <strong><?= strtoupper(tr('btn_raise')) ?></strong>
+                            <span class="action-sub"><?= htmlspecialchars(tr('game_action_raise_sub', raiseLabel($nextRaisePreview, $locale))) ?></span>
                         </button>
                     </form>
-                <?php endif; ?>
-            </div>
-            </section>
-
-            <aside class="table-notes">
-                <div class="notes-head">
-                    <div>
-                        <span class="section-kicker"><?= tr('game_notes_title') ?></span>
-                        <h3><?= tr('log_title') ?></h3>
-                    </div>
-                    <?php if ($isOnline): ?>
-                        <span class="notes-connection <?= !empty($connection['is_online']) ? 'online' : '' ?>">
-                            <?= !empty($connection['is_online']) ? tr('connection_online') : tr('connection_offline') ?>
-                        </span>
-                    <?php endif; ?>
+                    <form method="post" action="index.php" data-ajax="true" class="action-form">
+                        <input type="hidden" name="action" value="accept">
+                        <button type="submit" class="action-btn action-btn-accept" <?= $canAccept ? '' : 'disabled' ?>>
+                            <strong><?= strtoupper(tr('btn_accept')) ?></strong>
+                            <span class="action-sub"><?= htmlspecialchars(tr('game_action_accept_sub', $pendingTo ?: 3)) ?></span>
+                        </button>
+                    </form>
+                    <form method="post" action="index.php" data-ajax="true" class="action-form">
+                        <input type="hidden" name="action" value="refuse">
+                        <button type="submit" class="action-btn action-btn-refuse" <?= $canRefuse ? '' : 'disabled' ?>>
+                            <strong><?= strtoupper(tr('btn_refuse')) ?></strong>
+                            <span class="action-sub"><?= tr('game_action_refuse_sub') ?></span>
+                        </button>
+                    </form>
                 </div>
-
-                <div class="table-feed">
-                    <?php if (empty($recentLogs)): ?>
-                        <div class="feed-line muted"><?= tr('game_notes_empty') ?></div>
-                    <?php else: ?>
-                        <?php foreach ($recentLogs as $line): ?>
-                            <div class="feed-line"><?= htmlspecialchars((string) $line) ?></div>
-                        <?php endforeach; ?>
-                    <?php endif; ?>
-                </div>
-
-                <?php if ($isOnline): ?>
-                    <div class="online-notes">
-                        <span class="info-kicker"><?= tr('game_online_notes_title') ?></span>
-                        <?php if (empty($recentEvents)): ?>
-                            <div class="feed-line muted"><?= tr('lobby_events_empty') ?></div>
-                        <?php else: ?>
-                            <?php foreach ($recentEvents as $line): ?>
-                                <div class="feed-line compact"><?= htmlspecialchars($line) ?></div>
-                            <?php endforeach; ?>
-                        <?php endif; ?>
-                        <div class="notes-meta">
-                            <span><?= tr('connection_backlog') ?></span>
-                            <strong><?= (int) ($diagnostics['event_backlog'] ?? 0) ?></strong>
-                        </div>
-                        <?php if (!empty($connection['last_error']['message'])): ?>
-                            <div class="notes-error"><?= htmlspecialchars((string) $connection['last_error']['message']) ?></div>
-                        <?php endif; ?>
+            <?php elseif ($showTurnActions): ?>
+                <div class="player-actions-row turn-row">
+                    <div class="player-actions-copy">
+                        <span class="section-kicker"><?= tr('game_action_title_turn') ?></span>
+                        <strong><?= htmlspecialchars($statusText) ?></strong>
+                        <span><?= tr('game_action_turn_copy') ?></span>
                     </div>
-                <?php endif; ?>
-            </aside>
+                    <form method="post" action="index.php" data-ajax="true" class="action-form action-form-truco">
+                        <input type="hidden" name="action" value="truco">
+                        <button type="submit" class="action-btn action-btn-truco" <?= $canTruco ? '' : 'disabled' ?>>
+                            <strong><?= strtoupper(tr('btn_truco')) ?></strong>
+                            <span class="action-sub"><?= htmlspecialchars(tr('game_action_call_sub', raiseLabel($nextStake, $locale))) ?></span>
+                        </button>
+                    </form>
+                </div>
+            <?php else: ?>
+                <div class="player-actions-row waiting-row">
+                    <div class="player-actions-copy">
+                        <span class="section-kicker"><?= tr('game_action_title_wait') ?></span>
+                        <strong><?= htmlspecialchars($statusText) ?></strong>
+                        <span><?= tr('game_action_wait_copy') ?></span>
+                    </div>
+                </div>
+            <?php endif; ?>
+        </section>
+    </div>
+
+    <div class="board-footer board-zone board-zone-footer">
+        <div class="board-logline">
+            <span class="section-kicker"><?= tr('log_title') ?></span>
+            <strong><?= htmlspecialchars($latestLog) ?></strong>
+            <?php if (!empty($recentLogs)): ?>
+                <div class="board-log-tape">
+                    <?php foreach ($recentLogs as $line): ?>
+                        <span class="hud-chip muted"><?= htmlspecialchars((string) $line) ?></span>
+                    <?php endforeach; ?>
+                </div>
+            <?php endif; ?>
         </div>
+
+        <?php if (!empty($recentEvents)): ?>
+            <div class="board-events">
+                <?php foreach ($recentEvents as $line): ?>
+                    <span class="hud-chip muted"><?= htmlspecialchars($line) ?></span>
+                <?php endforeach; ?>
+            </div>
+        <?php endif; ?>
     </div>
 
     <?php if ($isOnline): ?>
-        <div class="table-ops">
-            <section class="side-block">
-                <h3><?= tr('lobby_events_title') ?></h3>
-                <div class="action-row compact-row">
-                    <?php foreach (($lobby['slots'] ?? []) as $idx => $slotName): ?>
-                        <?php $slotState = $slotStates[$idx] ?? []; ?>
-                        <?php if (($slotState['can_vote_host'] ?? ($idx !== ($lobby['assigned_seat'] ?? -1) && trim((string) $slotName) !== ''))): ?>
-                            <form method="post" action="index.php" data-ajax="true">
-                                <input type="hidden" name="action" value="voteHost">
-                                <input type="hidden" name="slot" value="<?= $idx ?>">
-                                <button type="submit" class="btn btn-neutral"><?= tr('action_vote_host') ?> <?= $idx + 1 ?></button>
-                            </form>
-                        <?php endif; ?>
-                        <?php if (($slotState['can_request_replacement'] ?? false)): ?>
-                            <form method="post" action="index.php" data-ajax="true">
-                                <input type="hidden" name="action" value="requestReplacementInvite">
-                                <input type="hidden" name="slot" value="<?= $idx ?>">
-                                <button type="submit" class="btn btn-truco"><?= tr('action_replacement_invite') ?> <?= $idx + 1 ?></button>
-                            </form>
-                        <?php endif; ?>
-                    <?php endforeach; ?>
-                </div>
-            </section>
+        <details class="table-sidecar">
+            <summary>Online mesa</summary>
 
-            <section class="side-block chat-block">
-                <h3><?= tr('lobby_chat_send') ?></h3>
-                <form method="post" action="index.php" class="lobby-chat-row" data-ajax="true">
-                    <input type="hidden" name="action" value="sendChat">
-                    <input name="message" class="field" type="text" autocomplete="off" placeholder="<?= tr('chat_placeholder') ?>">
-                    <button type="submit" class="btn btn-neutral">💬 <?= tr('lobby_chat_send') ?></button>
-                </form>
-            </section>
-        </div>
+            <div class="table-ops sidecar-grid">
+                <section class="side-block">
+                    <h3><?= tr('lobby_events_title') ?></h3>
+                    <div class="action-row compact-row">
+                        <?php foreach (($lobby['slots'] ?? []) as $idx => $slotName): ?>
+                            <?php $slotState = $slotStates[$idx] ?? []; ?>
+                            <?php if (($slotState['can_vote_host'] ?? ($idx !== ($lobby['assigned_seat'] ?? -1) && trim((string) $slotName) !== ''))): ?>
+                                <form method="post" action="index.php" data-ajax="true">
+                                    <input type="hidden" name="action" value="voteHost">
+                                    <input type="hidden" name="slot" value="<?= $idx ?>">
+                                    <button type="submit" class="btn btn-neutral"><?= tr('action_vote_host') ?> <?= $idx + 1 ?></button>
+                                </form>
+                            <?php endif; ?>
+                            <?php if (($slotState['can_request_replacement'] ?? false)): ?>
+                                <form method="post" action="index.php" data-ajax="true">
+                                    <input type="hidden" name="action" value="requestReplacementInvite">
+                                    <input type="hidden" name="slot" value="<?= $idx ?>">
+                                    <button type="submit" class="btn btn-truco"><?= tr('action_replacement_invite') ?> <?= $idx + 1 ?></button>
+                                </form>
+                            <?php endif; ?>
+                        <?php endforeach; ?>
+                    </div>
+                </section>
+
+                <section class="side-block chat-block">
+                    <h3><?= tr('lobby_chat_send') ?></h3>
+                    <form method="post" action="index.php" class="lobby-chat-row" data-ajax="true">
+                        <input type="hidden" name="action" value="sendChat">
+                        <input name="message" class="field" type="text" autocomplete="off" placeholder="<?= tr('chat_placeholder') ?>">
+                        <button type="submit" class="btn btn-neutral"><?= tr('lobby_chat_send') ?></button>
+                    </form>
+                </section>
+            </div>
+        </details>
     <?php endif; ?>
 
     <?php if ($matchFinished): ?>
@@ -547,7 +468,7 @@ $manilhaLabel = htmlspecialchars((string) ($hand['Manilha'] ?? '-'));
                 <p><?= tr('overlay_match_detail', $team1Score, $team2Score) ?></p>
                 <form method="post" action="index.php" data-ajax="true">
                     <input type="hidden" name="action" value="reset">
-                    <button type="submit" class="btn btn-primary">🔄 <?= tr('btn_play_again') ?></button>
+                    <button type="submit" class="btn btn-primary"><?= tr('btn_play_again') ?></button>
                 </form>
             </div>
         </div>
