@@ -1,73 +1,88 @@
-# Truco - Linux GTK Native Client
+# Linux GTK Client
 
-Cliente nativo Linux em **Rust + GTK4 + libadwaita**, usando o runtime compartilhado em **Go** via FFI (`libtruco_core.so`).
+The Linux desktop client uses Rust with GTK4 and libadwaita, while game logic and online behavior come from the shared Go runtime loaded dynamically at startup through `libtruco_core.so`.
 
-## Requisitos
-- Linux moderno
+## Requirements
+
+- A modern Linux distribution
 - Go 1.24+
-- Rust/Cargo
-- GTK4 + libadwaita
+- Rust toolchain with Cargo
+- GTK4 and libadwaita development packages
 
-### Ubuntu / Debian
+Ubuntu or Debian:
+
 ```bash
 sudo apt update
 sudo apt install libgtk-4-dev libadwaita-1-dev
 ```
 
-### Fedora
+Fedora:
+
 ```bash
 sudo dnf install gtk4-devel libadwaita-devel
 ```
 
-### Arch
+Arch Linux:
+
 ```bash
 sudo pacman -S gtk4 libadwaita
 ```
 
-## Build local
-Do repositório raiz:
+## Build the Shared Library
+
+From the repository root:
+
+```bash
+make ffi-linux
+```
+
+This produces `bin/libtruco_core.so`.
+
+## Build the GTK App
 
 ```bash
 make linux-gtk
 ```
 
-Isso faz:
-- build do core FFI em `bin/libtruco_core.so`
-- cópia do `.so` para `native/linux-gtk/lib/libtruco_core.so`
-- build release do app Rust
+That will:
 
-## Rodar em desenvolvimento
+- build `bin/libtruco_core.so`
+- copy it to `native/linux-gtk/lib/libtruco_core.so`
+- compile the GTK client in release mode
+
+For development:
+
 ```bash
-make ffi-linux
 mkdir -p native/linux-gtk/lib
 cp bin/libtruco_core.so native/linux-gtk/lib/libtruco_core.so
 cargo run --manifest-path native/linux-gtk/Cargo.toml
 ```
 
-O app procura a biblioteca nesta ordem:
+The Linux loader searches for the runtime in this order:
+
 - `TRUCO_CORE_LIB`
 - `bin/libtruco_core.so`
 - `native/linux-gtk/lib/libtruco_core.so`
 - `lib/libtruco_core.so`
 - `libtruco_core.so`
-- ao lado do executável empacotado
+- next to the packaged executable
 
 ## Flatpak
-Manifest principal:
+
+Manifest:
 
 ```bash
 native/linux-gtk/dev.truco.Native.yaml
 ```
 
-Build local:
+Build locally:
 
 ```bash
 make flatpak-linux
 ```
 
-## Estado atual
-- Offline 2p / 4p
-- Host / join online
-- Chat, voto de host e convite de substituição
-- Banner/toast para erros e eventos
-- Verificação de compatibilidade do core via `TrucoCoreVersionsJSON`
+## Notes
+
+- The UI entrypoint is `src/main.rs`.
+- The layout definition lives in `window.ui`.
+- Runtime parity expectations are defined in `docs/PARITY.md`.

@@ -53,6 +53,9 @@ func newAPIServer() *apiServer {
 
 func (srv *apiServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("X-Frame-Options", "DENY")
+	w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
 
 	if r.Method != http.MethodPost {
 		writeJSON(w, http.StatusMethodNotAllowed, errResult("only POST is allowed"))
@@ -158,6 +161,7 @@ func (srv *apiServer) dispatch(action, sessionID string, body map[string]interfa
 		if err := dispatchIntent(bs.rt, "create_host_session", appcore.CreateHostPayload{
 			HostName:   strings.TrimSpace(strVal(body, "name", "Host")),
 			NumPlayers: sanitizeNumPlayers(intVal(body, "numPlayers", 2)),
+			RelayURL:   strings.TrimSpace(strVal(body, "relay_url", "")),
 		}); err != nil {
 			return errResult(err.Error())
 		}

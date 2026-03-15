@@ -10,6 +10,7 @@ pub struct SnapshotBundle {
     #[serde(rename = "match")]
     pub game: Option<GameSnapshot>,
     pub lobby: Option<LobbySnapshot>,
+    pub ui: Option<UIStateSnapshot>,
     pub connection: Option<ConnectionSnapshot>,
     pub diagnostics: Option<DiagnosticsSnapshot>,
 }
@@ -53,6 +54,60 @@ pub struct DiagnosticsSnapshot {
 pub struct AppError {
     pub code: Option<String>,
     pub message: Option<String>,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+pub struct UIStateSnapshot {
+    #[serde(rename = "lobby_slots")]
+    pub lobby_slots: Option<Vec<LobbySlotState>>,
+    #[serde(rename = "actions")]
+    pub actions: Option<ActionSnapshot>,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+pub struct LobbySlotState {
+    #[serde(rename = "seat")]
+    pub seat: i32,
+    #[serde(rename = "name")]
+    pub name: Option<String>,
+    #[serde(rename = "status")]
+    pub status: Option<String>,
+    #[serde(rename = "is_empty")]
+    pub is_empty: bool,
+    #[serde(rename = "is_local")]
+    pub is_local: bool,
+    #[serde(rename = "is_host")]
+    pub is_host: bool,
+    #[serde(rename = "is_connected")]
+    pub is_connected: bool,
+    #[serde(rename = "is_occupied")]
+    pub is_occupied: bool,
+    #[serde(rename = "is_provisional_cpu")]
+    pub is_provisional_cpu: bool,
+    #[serde(rename = "can_vote_host")]
+    pub can_vote_host: bool,
+    #[serde(rename = "can_request_replacement")]
+    pub can_request_replacement: bool,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+pub struct ActionSnapshot {
+    #[serde(rename = "local_player_id")]
+    pub local_player_id: i32,
+    #[serde(rename = "local_team")]
+    pub local_team: i32,
+    #[serde(rename = "can_play_card")]
+    pub can_play_card: bool,
+    #[serde(rename = "can_ask_or_raise")]
+    pub can_ask_or_raise: bool,
+    #[serde(rename = "must_respond")]
+    pub must_respond: bool,
+    #[serde(rename = "can_accept")]
+    pub can_accept: bool,
+    #[serde(rename = "can_refuse")]
+    pub can_refuse: bool,
+    #[serde(rename = "can_close_session")]
+    pub can_close_session: bool,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -149,6 +204,12 @@ pub struct GameSnapshot {
     pub last_trick_seq: Option<i32>,
     #[serde(rename = "LastTrickWinner")]
     pub last_trick_winner: Option<i32>,
+    #[serde(rename = "LastTrickTeam")]
+    pub last_trick_team: Option<i32>,
+    #[serde(rename = "LastTrickTie")]
+    pub last_trick_tie: Option<bool>,
+    #[serde(rename = "LastTrickRound")]
+    pub last_trick_round: Option<i32>,
 }
 
 #[derive(Deserialize, Debug, Clone, Default)]
@@ -181,7 +242,38 @@ pub struct HandState {
     pub trick_results: Option<Vec<i32>>,
 }
 
-#[derive(Deserialize, Debug, Clone, Default)]
+impl HandState {
+    pub fn winning_card_id(&self) -> Option<String> {
+        let cards = self.round_cards.as_ref()?;
+        if cards.is_empty() {
+            return None;
+        }
+
+        let mut best_id: Option<String> = None;
+        let mut best_power = -1;
+        let mut is_tie = false;
+        let manilha_ref = self.manilha.as_deref();
+
+        for pc in cards {
+            let power = pc.card.power(manilha_ref);
+            if power > best_power {
+                best_power = power;
+                best_id = Some(format!("{}-{}-{}", pc.player_id, pc.card.rank, pc.card.suit));
+                is_tie = false;
+            } else if power == best_power {
+                is_tie = true;
+            }
+        }
+
+        if is_tie {
+            None
+        } else {
+            best_id
+        }
+    }
+}
+
+#[derive(Deserialize, Debug, Clone)]
 pub struct Player {
     #[serde(rename = "ID")]
     pub id: i32,
@@ -226,6 +318,37 @@ impl Card {
 
     pub fn is_red(&self) -> bool {
         self.suit == "Copas" || self.suit == "Ouros"
+    }
+
+    pub fn power(&self, manilha: Option<&str>) -> i32 {
+        let normal_power = match self.rank.as_str() {
+            "3" => 10,
+            "2" => 9,
+            "A" => 8,
+            "K" => 7,
+            "J" => 6,
+            "Q" => 5,
+            "7" => 4,
+            "6" => 3,
+            "5" => 2,
+            "4" => 1,
+            _ => 0,
+        };
+
+        if let Some(target) = manilha {
+            if self.rank == target {
+                let suit_power = match self.suit.as_str() {
+                    "Paus" => 4,
+                    "Copas" => 3,
+                    "Espadas" => 2,
+                    "Ouros" => 1,
+                    _ => 0,
+                };
+                return 100 + suit_power;
+            }
+        }
+
+        normal_power
     }
 }
 

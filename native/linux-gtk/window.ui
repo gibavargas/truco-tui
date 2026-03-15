@@ -22,8 +22,6 @@
               <object class="AdwToolbarView">
                 <child type="top">
                   <object class="AdwHeaderBar">
-                    <property name="show-start-title-buttons">true</property>
-                    <property name="show-end-title-buttons">true</property>
                     <child type="title">
                       <object class="GtkBox">
                         <property name="orientation">horizontal</property>
@@ -60,7 +58,6 @@
                             <child>
                               <object class="AdwClamp">
                                 <property name="maximum-size">1280</property>
-                                <property name="tightening-threshold">820</property>
                                 <property name="child">
                                   <object class="GtkBox" id="lobby_page">
                                     <property name="orientation">vertical</property>
@@ -202,6 +199,59 @@
                                                 </child>
 
                                                 <child>
+                                                  <object class="GtkBox">
+                                                    <property name="orientation">horizontal</property>
+                                                    <property name="spacing">12</property>
+                                                    <child>
+                                                      <object class="GtkBox">
+                                                        <property name="orientation">vertical</property>
+                                                        <property name="spacing">6</property>
+                                                        <property name="hexpand">true</property>
+                                                        <child>
+                                                          <object class="GtkLabel">
+                                                            <property name="label">RELAY URL (OPCIONAL)</property>
+                                                            <property name="css-classes">setup-label</property>
+                                                            <property name="halign">start</property>
+                                                          </object>
+                                                        </child>
+                                                        <child>
+                                                          <object class="GtkEntry" id="entry_relay_url">
+                                                            <property name="placeholder-text">https://relay.example.com</property>
+                                                          </object>
+                                                        </child>
+                                                      </object>
+                                                    </child>
+                                                    <child>
+                                                      <object class="GtkBox">
+                                                        <property name="orientation">vertical</property>
+                                                        <property name="spacing">6</property>
+                                                        <property name="hexpand">true</property>
+                                                        <child>
+                                                          <object class="GtkLabel">
+                                                            <property name="label">PAPEL AO ENTRAR</property>
+                                                            <property name="css-classes">setup-label</property>
+                                                            <property name="halign">start</property>
+                                                          </object>
+                                                        </child>
+                                                        <child>
+                                                          <object class="GtkDropDown" id="dd_desired_role">
+                                                            <property name="model">
+                                                              <object class="GtkStringList">
+                                                                <items>
+                                                                  <item>Auto</item>
+                                                                  <item>Parceiro</item>
+                                                                  <item>Adversário</item>
+                                                                </items>
+                                                              </object>
+                                                            </property>
+                                                          </object>
+                                                        </child>
+                                                      </object>
+                                                    </child>
+                                                  </object>
+                                                </child>
+
+                                                <child>
                                                   <object class="GtkButton" id="btn_start_demo">
                                                     <property name="label">Jogar Offline</property>
                                                     <property name="css-classes">suggested-action</property>
@@ -259,7 +309,6 @@
                             <child>
                               <object class="AdwClamp">
                                 <property name="maximum-size">1320</property>
-                                <property name="tightening-threshold">880</property>
                                 <property name="child">
                                   <object class="GtkBox">
                                     <property name="orientation">vertical</property>
@@ -415,8 +464,6 @@
                         <property name="child">
                           <object class="GtkScrolledWindow">
                             <property name="vexpand">true</property>
-                            <property name="hscrollbar-policy">automatic</property>
-                            <property name="vscrollbar-policy">automatic</property>
                             <child>
                               <object class="GtkOverlay" id="game_page">
                                 <property name="hexpand">true</property>
@@ -511,6 +558,50 @@
                                     <property name="margin-top">28</property>
                                     <property name="margin-end">28</property>
                                     <property name="css-classes">log-panel</property>
+                                  </object>
+                                </child>
+
+                                <child type="overlay">
+                                  <object class="GtkButton" id="btn_leave_match">
+                                    <property name="label">Sair da partida</property>
+                                    <property name="css-classes">danger-button</property>
+                                    <property name="halign">end</property>
+                                    <property name="valign">end</property>
+                                    <property name="margin-end">28</property>
+                                    <property name="margin-bottom">28</property>
+                                  </object>
+                                </child>
+
+                                <child type="overlay">
+                                  <object class="GtkOverlay" id="trick_end_overlay">
+                                    <property name="visible">false</property>
+                                    <child>
+                                      <object class="GtkBox">
+                                        <property name="css-classes">game-over-bg</property>
+                                        <property name="hexpand">true</property>
+                                        <property name="vexpand">true</property>
+                                      </object>
+                                    </child>
+                                    <child type="overlay">
+                                      <object class="GtkBox">
+                                        <property name="orientation">vertical</property>
+                                        <property name="halign">center</property>
+                                        <property name="valign">center</property>
+                                        <property name="spacing">12</property>
+                                        <child>
+                                          <object class="GtkLabel" id="lbl_trick_emoji">
+                                            <property name="label">♠</property>
+                                            <property name="css-classes">game-over-title</property>
+                                          </object>
+                                        </child>
+                                        <child>
+                                          <object class="GtkLabel" id="lbl_trick_text">
+                                            <property name="label">Rodada encerrada</property>
+                                            <property name="css-classes">lobby-subtitle</property>
+                                          </object>
+                                        </child>
+                                      </object>
+                                    </child>
                                   </object>
                                 </child>
 

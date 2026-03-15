@@ -192,6 +192,7 @@ func (r *Runtime) snapshotBundleLocked() SnapshotBundle {
 		Locale:   ui.LocaleCode(),
 		Match:    match,
 		Lobby:    lobby,
+		UI:       r.uiStateLocked(match, lobby),
 		Connection: ConnectionSnapshot{
 			Status:       r.mode,
 			IsOnline:     strings.Contains(r.mode, "host") || strings.Contains(r.mode, "client"),
@@ -471,11 +472,13 @@ func (r *Runtime) updateClientLobbyLocked() {
 		return
 	}
 	r.lobby = &LobbySnapshot{
-		Slots:        r.client.Slots(),
-		AssignedSeat: r.client.AssignedSeat(),
-		NumPlayers:   len(r.client.Slots()),
-		Started:      r.client.GameStarted(),
-		Role:         "",
+		Slots:          r.client.Slots(),
+		AssignedSeat:   r.client.AssignedSeat(),
+		NumPlayers:     len(r.client.Slots()),
+		Started:        r.client.GameStarted(),
+		HostSeat:       r.client.CurrentHostSeat(),
+		ConnectedSeats: r.client.ConnectedSeats(),
+		Role:           "",
 	}
 	r.queueEventLocked("lobby_updated", r.lobby)
 }
@@ -772,6 +775,81 @@ func (r *Runtime) stepCPUIfNeededLocked() (bool, error) {
 	}
 	r.setMatchLocked(r.game.Snapshot(r.localSeat))
 	return true, nil
+}
+
+func (r *Runtime) uiStateLocked(match *truco.Snapshot, lobby *LobbySnapshot) UIStateSnapshot {
+	state := UIStateSnapshot{
+		Actions: ActionSnapshot{
+			LocalPlayerID:   -1,
+			LocalTeam:       -1,
+			CanCloseSession: r.mode != "idle",
+		},
+	}
+	if match != nil {
+		localID := match.CurrentPlayerIdx
+		localTeam := -1
+		for _, p := range match.Players {
+			if p.ID == localID {
+				localTeam = p.Team
+				break
+			}
+		}
+		mustRespond := !match.MatchFinished && match.PendingRaiseFor == localTeam && localTeam >= 0
+		state.Actions = ActionSnapshot{
+			LocalPlayerID:   localID,
+			LocalTeam:       localTeam,
+			CanPlayCard:     !match.MatchFinished && match.TurnPlayer == localID && match.PendingRaiseFor == -1,
+			CanAskOrRaise:   !match.MatchFinished && ((match.TurnPlayer == localID && match.PendingRaiseFor == -1 && match.CanAskTruco) || mustRespond),
+			MustRespond:     mustRespond,
+			CanAccept:       mustRespond,
+			CanRefuse:       mustRespond,
+			CanCloseSession: r.mode != "idle",
+		}
+	}
+	if lobby == nil {
+		return state
+	}
+	state.LobbySlots = make([]LobbySlotState, 0, len(lobby.Slots))
+	localIsTableHost := lobby.AssignedSeat == lobby.HostSeat
+	for seat, name := range lobby.Slots {
+		slot := LobbySlotState{
+			Seat:        seat,
+			Name:        name,
+			IsEmpty:     strings.TrimSpace(name) == "",
+			IsLocal:     lobby.AssignedSeat == seat,
+			IsHost:      lobby.HostSeat == seat,
+			IsConnected: lobby.ConnectedSeats[seat],
+		}
+		slot.IsOccupied = !slot.IsEmpty
+		slot.IsProvisionalCPU = r.isSeatProvisionalCPULocked(seat)
+		slot.CanVoteHost = slot.IsOccupied && !slot.IsLocal
+		slot.CanRequestReplacement = (r.mode == "host_lobby" || r.mode == "host_match" || ((r.mode == "client_lobby" || r.mode == "client_match") && localIsTableHost)) &&
+			lobby.Started && slot.IsOccupied && !slot.IsLocal && !slot.IsConnected
+		switch {
+		case slot.IsEmpty:
+			slot.Status = "empty"
+		case slot.IsProvisionalCPU:
+			slot.Status = "provisional_cpu"
+		case slot.IsConnected:
+			slot.Status = "occupied_online"
+		default:
+			slot.Status = "occupied_offline"
+		}
+		state.LobbySlots = append(state.LobbySlots, slot)
+	}
+	return state
+}
+
+func (r *Runtime) isSeatProvisionalCPULocked(seat int) bool {
+	if r.game == nil || seat < 0 {
+		return false
+	}
+	snap := r.game.Snapshot(r.localSeat)
+	if seat >= len(snap.Players) {
+		return false
+	}
+	_, provisional := r.game.PlayerCPU(snap.Players[seat].ID)
+	return provisional
 }
 
 func decodeIntentPayload[T any](raw json.RawMessage, dest *T) error {

@@ -31,6 +31,10 @@ mod imp {
         #[template_child]
         pub dd_locale: TemplateChild<gtk::DropDown>,
         #[template_child]
+        pub entry_relay_url: TemplateChild<gtk::Entry>,
+        #[template_child]
+        pub dd_desired_role: TemplateChild<gtk::DropDown>,
+        #[template_child]
         pub btn_host_online: TemplateChild<gtk::Button>,
         #[template_child]
         pub entry_invite_key: TemplateChild<gtk::Entry>,
@@ -77,6 +81,14 @@ mod imp {
         pub btn_back_lobby: TemplateChild<gtk::Button>,
         #[template_child]
         pub log_box: TemplateChild<gtk::Box>,
+        #[template_child]
+        pub btn_leave_match: TemplateChild<gtk::Button>,
+        #[template_child]
+        pub trick_end_overlay: TemplateChild<gtk::Overlay>,
+        #[template_child]
+        pub lbl_trick_emoji: TemplateChild<gtk::Label>,
+        #[template_child]
+        pub lbl_trick_text: TemplateChild<gtk::Label>,
     }
 
     #[glib::object_subclass]
@@ -112,107 +124,45 @@ impl TrucoWindow {
         glib::Object::builder().property("application", app).build()
     }
 
-    pub fn toast_overlay(&self) -> adw::ToastOverlay {
-        self.imp().toast_overlay.get()
-    }
-    pub fn banner(&self) -> adw::Banner {
-        self.imp().banner.get()
-    }
-    pub fn main_stack(&self) -> gtk::Stack {
-        self.imp().main_stack.get()
-    }
-    pub fn lbl_status_chip(&self) -> gtk::Label {
-        self.imp().lbl_status_chip.get()
-    }
-    pub fn lobby_page(&self) -> gtk::Box {
-        self.imp().lobby_page.get()
-    }
-    pub fn lbl_lobby_title(&self) -> gtk::Label {
-        self.imp().lbl_lobby_title.get()
-    }
-    pub fn lbl_lobby_subtitle(&self) -> gtk::Label {
-        self.imp().lbl_lobby_subtitle.get()
-    }
-    pub fn btn_start_demo(&self) -> gtk::Button {
-        self.imp().btn_start_demo.get()
-    }
-    pub fn entry_player_name(&self) -> gtk::Entry {
-        self.imp().entry_player_name.get()
-    }
-    pub fn dd_num_players(&self) -> gtk::DropDown {
-        self.imp().dd_num_players.get()
-    }
-    pub fn dd_locale(&self) -> gtk::DropDown {
-        self.imp().dd_locale.get()
-    }
-    pub fn btn_host_online(&self) -> gtk::Button {
-        self.imp().btn_host_online.get()
-    }
-    pub fn entry_invite_key(&self) -> gtk::Entry {
-        self.imp().entry_invite_key.get()
-    }
-    pub fn btn_join_online(&self) -> gtk::Button {
-        self.imp().btn_join_online.get()
-    }
-    pub fn lbl_online_status(&self) -> gtk::Label {
-        self.imp().lbl_online_status.get()
-    }
-    pub fn lbl_invite_key_display(&self) -> gtk::Label {
-        self.imp().lbl_invite_key_display.get()
-    }
-    pub fn btn_copy_invite(&self) -> gtk::Button {
-        self.imp().btn_copy_invite.get()
-    }
-    pub fn list_slots(&self) -> gtk::ListBox {
-        self.imp().list_slots.get()
-    }
-    pub fn btn_start_online_match(&self) -> gtk::Button {
-        self.imp().btn_start_online_match.get()
-    }
-    pub fn list_chat(&self) -> gtk::ListBox {
-        self.imp().list_chat.get()
-    }
-    pub fn entry_chat(&self) -> gtk::Entry {
-        self.imp().entry_chat.get()
-    }
-    pub fn btn_send_chat(&self) -> gtk::Button {
-        self.imp().btn_send_chat.get()
-    }
-    pub fn btn_leave_online(&self) -> gtk::Button {
-        self.imp().btn_leave_online.get()
-    }
+    pub fn toast_overlay(&self) -> adw::ToastOverlay { self.imp().toast_overlay.get() }
+    pub fn banner(&self) -> adw::Banner { self.imp().banner.get() }
+    pub fn main_stack(&self) -> gtk::Stack { self.imp().main_stack.get() }
+    pub fn lbl_status_chip(&self) -> gtk::Label { self.imp().lbl_status_chip.get() }
+    pub fn lobby_page(&self) -> gtk::Box { self.imp().lobby_page.get() }
+    pub fn lbl_lobby_title(&self) -> gtk::Label { self.imp().lbl_lobby_title.get() }
+    pub fn lbl_lobby_subtitle(&self) -> gtk::Label { self.imp().lbl_lobby_subtitle.get() }
+    pub fn btn_start_demo(&self) -> gtk::Button { self.imp().btn_start_demo.get() }
+    pub fn entry_player_name(&self) -> gtk::Entry { self.imp().entry_player_name.get() }
+    pub fn dd_num_players(&self) -> gtk::DropDown { self.imp().dd_num_players.get() }
+    pub fn dd_locale(&self) -> gtk::DropDown { self.imp().dd_locale.get() }
+    pub fn entry_relay_url(&self) -> gtk::Entry { self.imp().entry_relay_url.get() }
+    pub fn dd_desired_role(&self) -> gtk::DropDown { self.imp().dd_desired_role.get() }
+    pub fn btn_host_online(&self) -> gtk::Button { self.imp().btn_host_online.get() }
+    pub fn entry_invite_key(&self) -> gtk::Entry { self.imp().entry_invite_key.get() }
+    pub fn btn_join_online(&self) -> gtk::Button { self.imp().btn_join_online.get() }
+    pub fn lbl_online_status(&self) -> gtk::Label { self.imp().lbl_online_status.get() }
+    pub fn lbl_invite_key_display(&self) -> gtk::Label { self.imp().lbl_invite_key_display.get() }
+    pub fn btn_copy_invite(&self) -> gtk::Button { self.imp().btn_copy_invite.get() }
+    pub fn list_slots(&self) -> gtk::ListBox { self.imp().list_slots.get() }
+    pub fn btn_start_online_match(&self) -> gtk::Button { self.imp().btn_start_online_match.get() }
+    pub fn list_chat(&self) -> gtk::ListBox { self.imp().list_chat.get() }
+    pub fn entry_chat(&self) -> gtk::Entry { self.imp().entry_chat.get() }
+    pub fn btn_send_chat(&self) -> gtk::Button { self.imp().btn_send_chat.get() }
+    pub fn btn_leave_online(&self) -> gtk::Button { self.imp().btn_leave_online.get() }
 
-    pub fn game_page(&self) -> gtk::Overlay {
-        self.imp().game_page.get()
-    }
-    pub fn hud_box(&self) -> gtk::Box {
-        self.imp().hud_box.get()
-    }
-    pub fn opponent_box(&self) -> gtk::Box {
-        self.imp().opponent_box.get()
-    }
-    pub fn left_player_box(&self) -> gtk::Box {
-        self.imp().left_player_box.get()
-    }
-    pub fn right_player_box(&self) -> gtk::Box {
-        self.imp().right_player_box.get()
-    }
-    pub fn center_box(&self) -> gtk::Box {
-        self.imp().center_box.get()
-    }
-    pub fn bottom_box(&self) -> gtk::Box {
-        self.imp().bottom_box.get()
-    }
-    pub fn game_over_overlay(&self) -> gtk::Overlay {
-        self.imp().game_over_overlay.get()
-    }
-    pub fn lbl_winner(&self) -> gtk::Label {
-        self.imp().lbl_winner.get()
-    }
-    pub fn btn_back_lobby(&self) -> gtk::Button {
-        self.imp().btn_back_lobby.get()
-    }
-    pub fn log_box(&self) -> gtk::Box {
-        self.imp().log_box.get()
-    }
+    pub fn game_page(&self) -> gtk::Overlay { self.imp().game_page.get() }
+    pub fn hud_box(&self) -> gtk::Box { self.imp().hud_box.get() }
+    pub fn opponent_box(&self) -> gtk::Box { self.imp().opponent_box.get() }
+    pub fn left_player_box(&self) -> gtk::Box { self.imp().left_player_box.get() }
+    pub fn right_player_box(&self) -> gtk::Box { self.imp().right_player_box.get() }
+    pub fn center_box(&self) -> gtk::Box { self.imp().center_box.get() }
+    pub fn bottom_box(&self) -> gtk::Box { self.imp().bottom_box.get() }
+    pub fn game_over_overlay(&self) -> gtk::Overlay { self.imp().game_over_overlay.get() }
+    pub fn lbl_winner(&self) -> gtk::Label { self.imp().lbl_winner.get() }
+    pub fn btn_back_lobby(&self) -> gtk::Button { self.imp().btn_back_lobby.get() }
+    pub fn log_box(&self) -> gtk::Box { self.imp().log_box.get() }
+    pub fn btn_leave_match(&self) -> gtk::Button { self.imp().btn_leave_match.get() }
+    pub fn trick_end_overlay(&self) -> gtk::Overlay { self.imp().trick_end_overlay.get() }
+    pub fn lbl_trick_emoji(&self) -> gtk::Label { self.imp().lbl_trick_emoji.get() }
+    pub fn lbl_trick_text(&self) -> gtk::Label { self.imp().lbl_trick_text.get() }
 }

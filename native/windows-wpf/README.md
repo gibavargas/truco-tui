@@ -1,48 +1,41 @@
-# Truco - WPF Native Windows
+# Windows WPF Client
 
-This is a WPF (Windows Presentation Foundation) GUI version of the Truco card game.
+This is a legacy Windows GUI client built with WPF and .NET 8. It also integrates with the shared Go runtime through `truco-core-ffi.dll`.
+
+## Status
+
+The WinUI client in `native/windows-winui` is the primary Windows shell. Keep this WPF client documented as a secondary or compatibility-oriented option unless the project explicitly promotes it again.
 
 ## Requirements
 
-- Windows 10/11
-- .NET 8.0 Runtime (included in self-contained build)
-- `truco-core-ffi.dll` (native Go library)
+- Windows 10 or Windows 11
+- .NET 8 SDK
+- Go 1.24+
 
-## Building
+## Build
 
-### Prerequisites
-
-1. Install Go (to build the native DLL)
-2. Install .NET 8.0 SDK
-
-### Build Steps
+Build the shared DLL from the repository root:
 
 ```bash
-# 1. Build the native DLL
-GOOS=windows GOARCH=amd64 go build -buildmode=c-shared -o bin/truco-core-ffi.dll ./cmd/truco-core-ffi
-
-# 2. Build the WPF app
-cd native/windows-wpf
-dotnet publish -c Release -o ../../bin/wpf
+make ffi-windows
 ```
 
-## Portable Build
-
-For a fully portable single-file executable:
+Publish the WPF application:
 
 ```bash
-# Build with embedded DLL
-cd native/windows-wpf
-dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o ../../bin/portable-wpf
+dotnet publish native/windows-wpf/TrucoWPF.csproj -c Release -o bin/gui/wpf/truco-gui-wpf-windows-amd64
 ```
 
-The resulting `TrucoWPF.exe` can be distributed as a single file.
+Portable single-file build:
 
-## Project Structure
+```bash
+dotnet publish native/windows-wpf/TrucoWPF.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o bin/gui/wpf/truco-gui-wpf-windows-amd64-portable
+```
 
-- `Models.cs` - Data models for game state
-- `Services/TrucoCoreService.cs` - P/Invoke wrapper for native library
-- `Services/StringProvider.cs` - Localization (pt-BR, en-US)
-- `ViewModels/MainViewModel.cs` - MVVM view model
-- `MainWindow.xaml` - UI layout
-- `MainWindow.xaml.cs` - Code-behind
+## Project Layout
+
+- `Models.cs`: snapshot and view models
+- `Services/TrucoCoreService.cs`: native bridge and DLL extraction
+- `Services/StringProvider.cs`: localization resources
+- `ViewModels/MainViewModel.cs`: application state and commands
+- `MainWindow.xaml`: main layout

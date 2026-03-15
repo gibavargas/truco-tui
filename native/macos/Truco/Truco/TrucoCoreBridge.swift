@@ -11,14 +11,18 @@ final class TrucoAppStore: ObservableObject {
 
     private let bridge = TrucoCoreBridge()
     private var isPolling = false
+    private var lastOfflineNames: [String] = ["Voce", "CPU-2"]
+    private var lastOfflineCPUFlags: [Bool] = [false, true]
 
     // MARK: - Offline
 
     func startOffline(names: [String], cpuFlags: [Bool]) {
-        let namesJSON = names.map { "\"\($0)\"" }.joined(separator: ",")
-        let cpuJSON = cpuFlags.map { $0 ? "true" : "false" }.joined(separator: ",")
-        let intent = "{\"kind\":\"new_offline_game\",\"payload\":{\"player_names\":[\(namesJSON)],\"cpu_flags\":[\(cpuJSON)]}}"
-        
+        lastOfflineNames = names
+        lastOfflineCPUFlags = cpuFlags
+        let intent = makeIntentJSON(kind: "new_offline_game", payload: [
+            "player_names": names,
+            "cpu_flags": cpuFlags,
+        ])
         dispatchAndPoll(intent: intent, successStatus: "Partida offline")
     }
 
@@ -29,65 +33,77 @@ final class TrucoAppStore: ObservableObject {
     // MARK: - Online Host
 
     func createHost(name: String, numPlayers: Int, relayURL: String?) {
-        var payload = "\"host_name\":\"\(name)\",\"num_players\":\(numPlayers)"
+        var payload: [String: Any] = [
+            "host_name": name,
+            "num_players": numPlayers,
+        ]
         if let relay = relayURL {
-            payload += ",\"relay_url\":\"\(relay)\""
+            payload["relay_url"] = relay
         }
-        let intent = "{\"kind\":\"create_host_session\",\"payload\":{\(payload)}}"
+        let intent = makeIntentJSON(kind: "create_host_session", payload: payload)
         dispatchAndPoll(intent: intent, successStatus: "Sala criada")
     }
 
     // MARK: - Online Join
 
-    func joinSession(name: String, key: String) {
-        let intent = "{\"kind\":\"join_session\",\"payload\":{\"key\":\"\(key)\",\"player_name\":\"\(name)\"}}"
+    func joinSession(name: String, key: String, desiredRole: String) {
+        let intent = makeIntentJSON(kind: "join_session", payload: [
+            "key": key,
+            "player_name": name,
+            "desired_role": desiredRole,
+        ])
         dispatchAndPoll(intent: intent, successStatus: "Conectado à sala")
     }
 
     // MARK: - Game Actions
 
     func dispatchGameAction(action: String, cardIndex: Int = 0) {
-        let json: String
+        var payload: [String: Any] = ["action": action]
         if action == "play" {
-            json = "{\"kind\":\"game_action\",\"payload\":{\"action\":\"play\",\"card_index\":\(cardIndex)}}"
-        } else {
-            json = "{\"kind\":\"game_action\",\"payload\":{\"action\":\"\(action)\"}}"
+            payload["card_index"] = cardIndex
         }
         Task {
-            _ = bridge.dispatch(intentJSON: json)
+            if let result = bridge.dispatch(intentJSON: makeIntentJSON(kind: "game_action", payload: payload)) {
+                await MainActor.run {
+                    self.status = "Erro: \(result)"
+                }
+            }
             refreshSnapshot()
         }
     }
     
     func sendChat(text: String) {
-        let json = "{\"kind\":\"send_chat\",\"payload\":{\"text\":\"\(text.replacingOccurrences(of: "\"", with: "\\\""))\"}}"
-        dispatchIntent(json: json)
+        dispatchIntent(json: makeIntentJSON(kind: "send_chat", payload: ["text": text]))
     }
     
     func voteHost(candidateSeat: Int) {
-        let json = "{\"kind\":\"vote_host\",\"payload\":{\"candidate_seat\":\(candidateSeat)}}"
-        dispatchIntent(json: json)
+        dispatchIntent(json: makeIntentJSON(kind: "vote_host", payload: ["candidate_seat": candidateSeat]))
     }
     
     func requestReplacementInvite(targetSeat: Int) {
-        let json = "{\"kind\":\"request_replacement_invite\",\"payload\":{\"target_seat\":\(targetSeat)}}"
-        dispatchIntent(json: json)
+        dispatchIntent(json: makeIntentJSON(kind: "request_replacement_invite", payload: ["target_seat": targetSeat]))
     }
     
     func startHostedMatch() {
-        dispatchIntent(json: "{\"kind\":\"start_hosted_match\"}")
+        dispatchIntent(json: makeIntentJSON(kind: "start_hosted_match"))
     }
     
     func closeSession() {
-        dispatchIntent(json: "{\"kind\":\"close_session\"}")
+        dispatchIntent(json: makeIntentJSON(kind: "close_session"))
         DispatchQueue.main.async { [weak self] in
             self?.events.removeAll()
         }
     }
 
+    func replayOfflineMatch() {
+        startOffline(names: lastOfflineNames, cpuFlags: lastOfflineCPUFlags)
+    }
+
     func dispatchIntent(json: String) {
         Task {
-            _ = bridge.dispatch(intentJSON: json)
+            if let result = bridge.dispatch(intentJSON: json) {
+                status = "Erro: \(result)"
+            }
             refreshSnapshot()
             // If mode changed to idle, stop polling
             if mode == "idle" {
@@ -150,6 +166,18 @@ final class TrucoAppStore: ObservableObject {
                 try? await Task.sleep(nanoseconds: 50_000_000) // 50ms
             }
         }
+    }
+
+    private func makeIntentJSON(kind: String, payload: [String: Any]? = nil) -> String {
+        var object: [String: Any] = ["kind": kind]
+        if let payload {
+            object["payload"] = payload
+        }
+        guard let data = try? JSONSerialization.data(withJSONObject: object),
+              let json = String(data: data, encoding: .utf8) else {
+            return "{\"kind\":\"\(kind)\"}"
+        }
+        return json
     }
 }
 

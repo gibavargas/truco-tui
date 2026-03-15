@@ -318,6 +318,21 @@ func TestStartOnlineHost(t *testing.T) {
 	}
 }
 
+func TestStartOnlineHostRelayURLForwarded(t *testing.T) {
+	srv := newAPIServer()
+	res := postAction(t, srv, "createSession", "", nil)
+	sid := res["sessionId"].(string)
+
+	res = postAction(t, srv, "startOnlineHost", sid, map[string]interface{}{
+		"name":       "HostPlayer",
+		"numPlayers": 2,
+		"relay_url":  "://bad relay url",
+	})
+	if res["ok"].(bool) {
+		t.Fatalf("expected invalid relay URL to fail when forwarded to runtime")
+	}
+}
+
 func TestJoinOnline(t *testing.T) {
 	srv := newAPIServer()
 	hostRes := postAction(t, srv, "createSession", "", nil)
@@ -344,6 +359,40 @@ func TestJoinOnline(t *testing.T) {
 	}
 	if res["mode"] != "client_lobby" {
 		t.Fatalf("expected client_lobby, got %v", res["mode"])
+	}
+}
+
+func TestJoinOnlineRoleForwarded(t *testing.T) {
+	srv := newAPIServer()
+	hostRes := postAction(t, srv, "createSession", "", nil)
+	hostSID := hostRes["sessionId"].(string)
+	joinRes := postAction(t, srv, "createSession", "", nil)
+	joinSID := joinRes["sessionId"].(string)
+
+	res := postAction(t, srv, "startOnlineHost", hostSID, map[string]interface{}{
+		"name":       "HostPlayer",
+		"numPlayers": 4,
+	})
+	key := res["session"].(map[string]interface{})["inviteKey"].(string)
+
+	res = postAction(t, srv, "joinOnline", joinSID, map[string]interface{}{
+		"name": "Joiner",
+		"key":  key,
+		"role": "partner",
+	})
+	if !res["ok"].(bool) {
+		t.Fatalf("joinOnline failed: %v", res["error"])
+	}
+	bundle, ok := res["bundle"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected bundle")
+	}
+	lobby, ok := bundle["lobby"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected lobby in bundle")
+	}
+	if lobby["role"] != "partner" {
+		t.Fatalf("expected role partner, got %v", lobby["role"])
 	}
 }
 

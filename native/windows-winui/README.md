@@ -1,45 +1,36 @@
-# Truco - Microsoft Windows WinUI 3 Native Client
+# Windows WinUI Client
 
-Este é o cliente nativo do Windows para o jogo Truco, implementado com **C#** e **WinUI 3 (Windows App SDK)**. A lógica do jogo vem de um core em **Go**, carregado via FFI.
+This is the primary Windows GUI client. It uses WinUI 3 on .NET 8 and consumes the shared Go runtime through `truco-core-ffi.dll`.
 
-## Requisitos
-- **Windows 10** (1809 ou superior) ou **Windows 11**.
-- **.NET 8 SDK**.
-- **Visual Studio 2022** com toolchain C++ quando for necessário gerar a DLL FFI.
-- **Go** instalado no PATH.
+## Requirements
 
-## Como compilar
+- Windows 11 or Windows 10 with a compatible Windows App SDK environment
+- .NET 8 SDK
+- Go 1.24+
+- Visual Studio 2022 or equivalent Windows build tools
 
-### Gerando a DLL FFI
-A DLL consumida pelo cliente WinUI é gerada a partir de `cmd/truco-core-ffi`:
+## Build the FFI DLL
+
+From the repository root:
 
 ```bash
-go build -buildmode=c-shared -o bin/truco-core-ffi.dll ./cmd/truco-core-ffi
+make ffi-windows
 ```
 
-### Publicando o cliente WinUI portátil (Windows x64)
-Com a DLL pronta, publique o cliente e envie a saída final para a pasta de binários guirias:
+This produces `bin/truco-core-ffi.dll`, which the project embeds when present.
+
+## Publish the Portable App
 
 ```bash
 dotnet publish native/windows-winui/TrucoWinUI.csproj -c Release -r win-x64 --self-contained true -o bin/gui/winui/truco-gui-winui-windows-amd64-portable
 ```
 
-O diretório em `bin/gui/winui` segue a política descrita em `docs/BINARY_NAMING.md` e já está pronto para distribuição portátil.
+## ARM64 Note
 
-## Limitação atual em Windows ARM64
-No toolchain Go atual, `-buildmode=c-shared` não é suportado para Windows ARM64. Por isso, o cliente WinUI não pode ser compilado de forma nativa em uma máquina Windows ARM64 usando este bridge FFI.
+The current Go toolchain does not support `-buildmode=c-shared` for Windows ARM64 in this setup. The repository’s Windows packaging flow therefore falls back to the TUI binary on ARM64 instead of building the WinUI client natively.
 
-Nessa plataforma, o script raiz `build-portable.bat` faz fallback para o executável TUI nativo:
+## Notes
 
-```powershell
-.\build-portable.bat
-```
-
-Saída em ARM64:
-- `bin\tui\truco-tui-core-windows-arm64-portable.exe`
-
-## Funcionalidades
-- UI nativa WinUI 3 com Fluent Design.
-- Jogo offline.
-- Multiplayer online.
-- Chat e convites integrados.
+- The main application state lives in `ViewModels/AppShellViewModel.cs`.
+- The project file is configured for self-contained single-file publication.
+- Binary naming follows `docs/BINARY_NAMING.md`.

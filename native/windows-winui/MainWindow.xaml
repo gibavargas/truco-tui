@@ -64,6 +64,26 @@
                         <ThemeShadow />
                     </TextBlock.Shadow>
                 </TextBlock>
+
+                <Border Background="#AA3B0D0D" BorderBrush="#FFB3B3" BorderThickness="1" CornerRadius="10" Padding="12,10" Width="280" Visibility="{Binding VisibilityIfLastActionError}">
+                    <TextBlock Text="{Binding CombinedErrorText}" Foreground="#FFFFD9D9" TextWrapping="Wrap"/>
+                </Border>
+
+                <TextBox Header="Seu nome" Text="{Binding SetupPlayerName, Mode=TwoWay}" Width="280"/>
+                <ComboBox Header="Jogadores" SelectedIndex="{Binding SetupNumPlayersIndex, Mode=TwoWay}" Width="280">
+                    <ComboBoxItem Content="2 jogadores"/>
+                    <ComboBoxItem Content="4 jogadores"/>
+                </ComboBox>
+                <ComboBox Header="Idioma" SelectedIndex="{Binding SetupLocaleIndex, Mode=TwoWay}" Width="280">
+                    <ComboBoxItem Content="Português (Brasil)"/>
+                    <ComboBoxItem Content="English (US)"/>
+                </ComboBox>
+                <TextBox Header="Relay URL (opcional)" Text="{Binding SetupRelayUrl, Mode=TwoWay}" Width="280"/>
+                <ComboBox Header="Papel ao entrar" SelectedIndex="{Binding SetupDesiredRoleIndex, Mode=TwoWay}" Width="280">
+                    <ComboBoxItem Content="Auto"/>
+                    <ComboBoxItem Content="Parceiro"/>
+                    <ComboBoxItem Content="Adversário"/>
+                </ComboBox>
                 
                 <Button Content="Jogar Offline" Command="{Binding StartGameCommand}" Width="280" Height="50" FontSize="16" Background="#FFCC00" Foreground="Black" FontWeight="Bold" HorizontalAlignment="Center" CornerRadius="8"/>
                 <Button Content="Criar Sala (Host)" Command="{Binding HostOnlineGameCommand}" Width="280" Height="50" FontSize="16" Background="#444444" Foreground="White" FontWeight="Bold" HorizontalAlignment="Center" CornerRadius="8"/>
@@ -83,10 +103,12 @@
                 
                 <StackPanel Grid.Column="0" Orientation="Vertical" Spacing="16" Margin="0,0,20,0">
                     <TextBlock Text="Sala Online" FontSize="36" FontWeight="Black" Foreground="White"/>
+                    <TextBlock Text="{Binding LobbyStatusText}" Foreground="#FFE7D9B6" FontSize="14"/>
                     
                     <StackPanel Orientation="Horizontal" Spacing="8" Visibility="{Binding VisibilityIfInviteKey}">
                         <TextBlock Text="Chave:" FontSize="16" Foreground="LightGray" VerticalAlignment="Center"/>
-                        <TextBox Text="{Binding LobbySnapshot.InviteKey}" IsReadOnly="True" Width="200" VerticalAlignment="Center" FontSize="16" FontWeight="Bold" Foreground="#FFCC00"/>
+                        <TextBox Text="{Binding InviteKeyText}" IsReadOnly="True" Width="200" VerticalAlignment="Center" FontSize="16" FontWeight="Bold" Foreground="#FFCC00"/>
+                        <Button Content="Copiar" Command="{Binding CopyInviteKeyCommand}" VerticalAlignment="Center" Padding="12,6"/>
                     </StackPanel>
                     
                     <Border Background="#22000000" CornerRadius="8" Padding="16">
@@ -103,7 +125,10 @@
                                                 <ColumnDefinition Width="Auto"/>
                                             </Grid.ColumnDefinitions>
                                             
-                                            <TextBlock Grid.Column="0" Text="{Binding Label}" Foreground="White" VerticalAlignment="Center"/>
+                                            <StackPanel Grid.Column="0" Spacing="2">
+                                                <TextBlock Text="{Binding Label}" Foreground="White" VerticalAlignment="Center"/>
+                                                <TextBlock Text="{Binding StatusText}" Foreground="#FFCC00" FontSize="12"/>
+                                            </StackPanel>
 
                                             <Button Grid.Column="1"
                                                     Content="Votar Host"
@@ -123,6 +148,30 @@
                             
                         </StackPanel>
                     </Border>
+
+                    <Border Background="#22000000" CornerRadius="8" Padding="16">
+                        <StackPanel Spacing="8">
+                            <TextBlock Text="Rede e controle" FontWeight="Bold" Foreground="White"/>
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <TextBlock Text="Status" Foreground="Gray"/>
+                                <TextBlock Text="{Binding ConnectionStatusText}" Foreground="LightGray"/>
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <TextBlock Text="Modo" Foreground="Gray"/>
+                                <TextBlock Text="{Binding ConnectionModeText}" Foreground="LightGray"/>
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Spacing="8" Visibility="{Binding VisibilityIfConnectionRole}">
+                                <TextBlock Text="Papel" Foreground="Gray"/>
+                                <TextBlock Text="{Binding ConnectionRoleText}" Foreground="LightGray"/>
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <TextBlock Text="Fila" Foreground="Gray"/>
+                                <TextBlock Text="{Binding EventBacklogText}" Foreground="LightGray"/>
+                            </StackPanel>
+                            <TextBlock Text="{Binding CombinedErrorText}" Foreground="#FFB3B3" TextWrapping="Wrap" Visibility="{Binding VisibilityIfCombinedError}"/>
+                            <Button Content="Atualizar" Command="{Binding RefreshStateCommand}" HorizontalAlignment="Left" Padding="12,6"/>
+                        </StackPanel>
+                    </Border>
                     
                     <Button Content="Iniciar Partida" Command="{Binding StartHostedMatchCommand}" Width="280" Height="50" Background="#00AA00" Foreground="White" FontWeight="Bold" CornerRadius="8" Visibility="{Binding VisibilityIfHost}"/>
                     <Button Content="Sair da Sala" Command="{Binding LeaveOnlineGameCommand}" Width="280" Height="40" Background="#AA0000" Foreground="White" FontWeight="Bold" CornerRadius="8"/>
@@ -132,6 +181,7 @@
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
+                        <RowDefinition Height="160"/>
                         <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
                     
@@ -148,8 +198,23 @@
                             </ItemsControl>
                         </ScrollViewer>
                     </Border>
+
+                    <Border Grid.Row="2" Background="#22000000" CornerRadius="8" Padding="12" Margin="0,0,0,12">
+                        <StackPanel Spacing="8">
+                            <TextBlock Text="Eventos da sala" FontWeight="Bold" Foreground="White"/>
+                            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                <ItemsControl ItemsSource="{Binding LobbyEventEntries}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding}" Foreground="LightGray" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,4"/>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </ScrollViewer>
+                        </StackPanel>
+                    </Border>
                     
-                    <Grid Grid.Row="2">
+                    <Grid Grid.Row="3">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*"/>
                             <ColumnDefinition Width="Auto"/>
@@ -316,8 +381,12 @@
                     </StackPanel>
                     
                     <!-- Turn Indicator -->
-                    <Border Background="#FFCC00" CornerRadius="16" Padding="12,4" Margin="0,0,0,16" HorizontalAlignment="Center">
-                        <TextBlock Text="{Binding TurnIndicatorText}" FontSize="12" FontWeight="Bold" Foreground="Black" />
+                    <Border Background="#FFCC00" CornerRadius="16" Padding="12,4" Margin="0,0,0,10" HorizontalAlignment="Center">
+                        <TextBlock Text="{Binding MatchStatusText}" FontSize="12" FontWeight="Bold" Foreground="Black" />
+                    </Border>
+
+                    <Border Background="#66000000" CornerRadius="12" Padding="14,10" Margin="0,0,0,16" HorizontalAlignment="Center" Visibility="{Binding VisibilityIfLastActionError}">
+                        <TextBlock Text="{Binding CombinedErrorText}" Foreground="#FFFFD9D9" TextWrapping="Wrap" MaxWidth="420"/>
                     </Border>
                     
                     <!-- My Cards -->
@@ -331,6 +400,7 @@
                             <DataTemplate>
                                 <Button Command="{Binding DataContext.PlayCardCommand, ElementName=RootPanel}"
                                         CommandParameter="{Binding}"
+                                        IsEnabled="{Binding DataContext.CanPlayCards, ElementName=RootPanel}"
                                         Background="Transparent" BorderThickness="0" Padding="0" Margin="20,0,0,0">
                                     
                                     <Button.Resources>
@@ -381,17 +451,113 @@
             </Grid>
             
             <!-- Global Logs / Events Banner overlay (Optional) -->
-            <StackPanel Visibility="{Binding IsPlaying}" VerticalAlignment="Bottom" HorizontalAlignment="Left" Margin="24,0,0,24" MinWidth="300">
-                <Border Background="#66000000" CornerRadius="8" Padding="16" MaxHeight="120">
-                    <ScrollViewer VerticalScrollBarVisibility="Auto">
-                        <ItemsControl ItemsSource="{Binding Snapshot.Logs}">
+            <StackPanel Visibility="{Binding VisibilityIfPlaying}" VerticalAlignment="Bottom" HorizontalAlignment="Left" Margin="24,0,0,24" MinWidth="340" Spacing="10">
+                <Border Background="#66000000" CornerRadius="8" Padding="16" MaxHeight="160">
+                    <StackPanel Spacing="8">
+                        <TextBlock Text="Log da partida" Foreground="White" FontWeight="Bold"/>
+                        <ScrollViewer VerticalScrollBarVisibility="Auto">
+                            <ItemsControl ItemsSource="{Binding MatchLogEntries}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding}" Foreground="LightGray" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,4"/>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
+                    </StackPanel>
+                </Border>
+
+                <Border Background="#66000000" CornerRadius="8" Padding="16" MaxHeight="160">
+                    <StackPanel Spacing="8">
+                        <TextBlock Text="Eventos do runtime" Foreground="White" FontWeight="Bold"/>
+                        <ScrollViewer VerticalScrollBarVisibility="Auto">
+                            <ItemsControl ItemsSource="{Binding EventLogEntries}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding}" Foreground="LightGray" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,4"/>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+
+            <StackPanel Visibility="{Binding VisibilityIfOnlineMatch}" VerticalAlignment="Bottom" HorizontalAlignment="Right" Margin="0,0,24,24" Width="320">
+                <Border Background="#66000000" CornerRadius="8" Padding="12">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="120"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+                        <TextBlock Grid.Row="0" Text="Chat" Foreground="White" FontWeight="Bold" Margin="0,0,0,8"/>
+                        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Margin="0,0,0,8">
+                            <ItemsControl ItemsSource="{Binding ChatEvents}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding}" Foreground="LightGray" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,4"/>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
+                        <Grid Grid.Row="2">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBox Grid.Column="0" Text="{Binding ChatMessage, Mode=TwoWay}" PlaceholderText="Mensagem..." Margin="0,0,8,0"/>
+                            <Button Grid.Column="1" Content="Enviar" Command="{Binding SendChatCommand}" Background="#FFCC00" Foreground="Black" FontWeight="Bold" CornerRadius="8"/>
+                        </Grid>
+                    </Grid>
+                </Border>
+                <Border Background="#66000000" CornerRadius="8" Padding="12" Margin="0,10,0,0">
+                    <StackPanel Spacing="8">
+                        <TextBlock Text="Rede e controle" Foreground="White" FontWeight="Bold"/>
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <TextBlock Text="Status" Foreground="Gray"/>
+                            <TextBlock Text="{Binding ConnectionStatusText}" Foreground="LightGray"/>
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <TextBlock Text="Modo" Foreground="Gray"/>
+                            <TextBlock Text="{Binding ConnectionModeText}" Foreground="LightGray"/>
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="8" Visibility="{Binding VisibilityIfConnectionRole}">
+                            <TextBlock Text="Papel" Foreground="Gray"/>
+                            <TextBlock Text="{Binding ConnectionRoleText}" Foreground="LightGray"/>
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <TextBlock Text="Fila" Foreground="Gray"/>
+                            <TextBlock Text="{Binding EventBacklogText}" Foreground="LightGray"/>
+                        </StackPanel>
+                        <TextBlock Text="{Binding CombinedErrorText}" Foreground="#FFB3B3" TextWrapping="Wrap" Visibility="{Binding VisibilityIfCombinedError}"/>
+                        <ItemsControl ItemsSource="{Binding LobbySlots}">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
-                                    <TextBlock Text="{Binding}" Foreground="LightGray" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,4"/>
+                                    <StackPanel Spacing="4" Margin="0,4,0,4">
+                                        <TextBlock Text="{Binding Label}" Foreground="White" TextWrapping="Wrap"/>
+                                        <StackPanel Orientation="Horizontal" Spacing="8">
+                                            <TextBlock Text="{Binding StatusText}" Foreground="#FFCC00" FontSize="12"/>
+                                            <Button Content="Votar host"
+                                                    Command="{Binding DataContext.VoteHostCommand, ElementName=RootPanel}"
+                                                    CommandParameter="{Binding Seat}"
+                                                    IsEnabled="{Binding CanVote}"
+                                                    Padding="8,4"/>
+                                            <Button Content="Substituir"
+                                                    Command="{Binding DataContext.RequestReplacementInviteCommand, ElementName=RootPanel}"
+                                                    CommandParameter="{Binding Seat}"
+                                                    IsEnabled="{Binding CanReplace}"
+                                                    Padding="8,4"/>
+                                        </StackPanel>
+                                    </StackPanel>
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
-                    </ScrollViewer>
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <Button Content="Atualizar" Command="{Binding RefreshStateCommand}" Padding="12,6"/>
+                            <Button Content="Sair da mesa" Command="{Binding LeaveMatchCommand}" Padding="12,6"/>
+                        </StackPanel>
+                    </StackPanel>
                 </Border>
             </StackPanel>
 

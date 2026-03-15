@@ -47,12 +47,16 @@ pub struct NewOfflineGamePayload {
 pub struct CreateHostPayload<'a> {
     pub host_name: &'a str,
     pub num_players: i32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub relay_url: Option<&'a str>,
 }
 
 #[derive(Serialize)]
 pub struct JoinSessionPayload<'a> {
     pub key: &'a str,
     pub player_name: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub desired_role: Option<&'a str>,
 }
 
 #[derive(Serialize)]

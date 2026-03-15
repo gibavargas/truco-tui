@@ -495,7 +495,13 @@ func (h *HostSession) StartGame() error {
 		}
 	}
 	h.started = true
-	h.broadcastLocked(Message{Type: "game_start", Slots: append([]string{}, h.slots...), NumPlayers: h.numPlayers})
+	h.broadcastLocked(Message{
+		Type:           "game_start",
+		Slots:          append([]string{}, h.slots...),
+		ConnectedSeats: h.connectedSeatsLocked(),
+		HostSeat:       h.tableHostSeat,
+		NumPlayers:     h.numPlayers,
+	})
 	h.sendEventLocked("Partida iniciada.")
 	return nil
 }
@@ -525,6 +531,10 @@ func (h *HostSession) IsSeatConnected(seat int) bool {
 func (h *HostSession) ConnectedSeats() map[int]bool {
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	return h.connectedSeatsLocked()
+}
+
+func (h *HostSession) connectedSeatsLocked() map[int]bool {
 	out := make(map[int]bool, len(h.clients)+1)
 	out[0] = true
 	for seat := range h.clients {
@@ -1033,7 +1043,13 @@ func (h *HostSession) broadcastLocked(msg Message) {
 }
 
 func (h *HostSession) broadcastLobbyLocked() {
-	h.broadcastLocked(Message{Type: "lobby_update", Slots: append([]string{}, h.slots...), NumPlayers: h.numPlayers})
+	h.broadcastLocked(Message{
+		Type:           "lobby_update",
+		Slots:          append([]string{}, h.slots...),
+		ConnectedSeats: h.connectedSeatsLocked(),
+		HostSeat:       h.tableHostSeat,
+		NumPlayers:     h.numPlayers,
+	})
 }
 
 func (h *HostSession) acceptLoop() {
@@ -1218,7 +1234,16 @@ func (h *HostSession) handleConn(conn net.Conn) {
 	}
 	h.lastPong[slot] = time.Now()
 	cachedState, hasCachedState := h.lastState[slot]
-	if err := writeMessage(conn, Message{Type: "join_ok", ProtocolVersion: protocolVersion, Assigned: slot, NumPlayers: h.numPlayers, Slots: append([]string{}, h.slots...), SessionID: h.seatID[slot]}); err != nil {
+	if err := writeMessage(conn, Message{
+		Type:            "join_ok",
+		ProtocolVersion: protocolVersion,
+		Assigned:        slot,
+		NumPlayers:      h.numPlayers,
+		Slots:           append([]string{}, h.slots...),
+		ConnectedSeats:  h.connectedSeatsLocked(),
+		HostSeat:        h.tableHostSeat,
+		SessionID:       h.seatID[slot],
+	}); err != nil {
 		if replacement {
 			h.slots[slot] = previousSlotName
 			if hadPreviousSessionID {
