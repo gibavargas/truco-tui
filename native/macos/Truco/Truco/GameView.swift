@@ -9,6 +9,7 @@ struct GameView: View {
     @State private var trickAnimOffset: CGSize = .zero
     @State private var trickWinnerTeam: Int = -1
     @State private var trickTie: Bool = false
+    @State private var chatMessage = ""
 
     private func seatPlayer(_ snap: MatchSnapshot, offset: Int) -> Player? {
         guard let players = snap.Players, let localID = snap.CurrentPlayerIdx, let count = snap.NumPlayers else { return nil }
@@ -99,7 +100,8 @@ struct GameView: View {
                         Spacer()
                         ScoreView(teamName: "Eles", points: snap.teamScore.them)
                     }
-                    .padding(50)
+                    .padding(.horizontal, 50)
+                    .padding(.top, 78)
                     Spacer()
                 }
                 .zIndex(50)
@@ -124,7 +126,7 @@ struct GameView: View {
                             .overlay(Capsule().stroke(Color.white.opacity(0.3), lineWidth: 1))
                             .shadow(radius: 4)
                             .padding(.leading, 30)
-                            .padding(.top, 30)
+                            .padding(.top, 58)
                             
                             Spacer()
                         }
@@ -138,7 +140,7 @@ struct GameView: View {
                         Spacer()
                         LogView(logs: snap.Logs ?? [])
                     }
-                    .padding(.top, 120)
+                    .padding(.top, 148)
                     .padding(.trailing, 50)
                     Spacer()
                 }
@@ -147,7 +149,7 @@ struct GameView: View {
                 VStack(spacing: 0) {
                     if let opponent = seatPlayer(snap, offset: snap.NumPlayers == 4 ? 2 : 1) {
                         OpponentView(player: opponent)
-                            .padding(.top, 60)
+                            .padding(.top, 96)
                     }
                     
                     Spacer()
@@ -321,6 +323,7 @@ struct GameView: View {
                             .padding(.trailing, 24)
                         }
                         .padding(.top, 120)
+                        .padding(.top, 26)
                         Spacer()
                     }
                 }

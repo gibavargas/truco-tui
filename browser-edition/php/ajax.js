@@ -43,7 +43,7 @@
 
   async function submitAjaxForm(form) {
     const method = (form.method || 'POST').toUpperCase();
-    const action = form.action || window.location.pathname;
+    const action = form.getAttribute('action') || window.location.pathname;
     const submission = new FormData(form);
     submission.set('ajax', '1');
     const url = new URL(action, window.location.origin);

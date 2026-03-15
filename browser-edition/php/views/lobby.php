@@ -17,22 +17,39 @@ $connectionStatus = (string) ($connection['status'] ?? ($bundle['mode'] ?? 'idle
 $roleLabel = trim((string) ($session['role'] ?? ''));
 ?>
 <section class="panel lobby-panel">
-    <h2><?= tr('lobby_title') ?></h2>
+    <div class="section-head">
+        <div>
+            <span class="section-kicker"><?= tr('setup_online_title') ?></span>
+            <h2><?= tr('lobby_title') ?></h2>
+        </div>
+        <strong class="mode-pill"><?= htmlspecialchars($mode) ?></strong>
+    </div>
 
-    <div class="lobby-meta">
-        <div><strong><?= htmlspecialchars($mode) ?></strong></div>
-        <div class="invite-row">
-            <span><?= tr('lobby_invite') ?></span>:
+    <div class="invite-stage">
+        <div class="invite-copy">
+            <span class="invite-label"><?= tr('lobby_invite') ?></span>
             <code><?= htmlspecialchars($inviteKey !== '' ? $inviteKey : '-') ?></code>
+            <p><?= tr('lobby_invite_hint') ?></p>
+        </div>
+        <div class="invite-actions">
             <?php if ($inviteKey !== ''): ?>
                 <button type="button" class="btn btn-neutral btn-copy" data-copy-text="<?= htmlspecialchars($inviteKey) ?>"><?= tr('invite_copy') ?></button>
+            <?php endif; ?>
+            <?php if ($isHost): ?>
+                <form method="post" action="index.php" data-ajax="true">
+                    <input type="hidden" name="action" value="startOnlineMatch">
+                    <button type="submit" class="btn btn-primary">▶ <?= tr('lobby_start') ?></button>
+                </form>
             <?php endif; ?>
         </div>
     </div>
 
     <div class="lobby-grid">
-        <div class="lobby-block">
-            <h3><?= tr('lobby_slots_title') ?></h3>
+        <article class="lobby-block lobby-tableau">
+            <div class="block-head">
+                <h3><?= tr('lobby_slots_title') ?></h3>
+                <span class="table-tag"><?= count($slots) ?> lugares</span>
+            </div>
             <div class="lobby-slots">
                 <?php foreach ($slots as $idx => $slotName): ?>
                     <?php
@@ -46,19 +63,19 @@ $roleLabel = trim((string) ($session['role'] ?? ''));
                     $status = (string) ($slotState['status'] ?? ($connected ? 'occupied_online' : (trim($slotName) === '' ? 'empty' : 'occupied_offline')));
                     $displayName = trim((string) ($slotState['name'] ?? $slotName)) !== '' ? (string) ($slotState['name'] ?? $slotName) : tr('lobby_slot_empty');
                     ?>
-                    <div class="lobby-slot">
-                        <div class="top">
-                            <strong>Slot <?= $idx + 1 ?></strong>
-                            <span><?= htmlspecialchars($displayName) ?></span>
+                    <article class="lobby-slot <?= $isLocalSeat ? 'local-seat' : '' ?>">
+                        <div class="slot-crest">
+                            <span class="slot-index">0<?= $idx + 1 ?></span>
+                            <strong><?= htmlspecialchars($displayName) ?></strong>
                         </div>
-                        <div class="roles">
+                        <div class="slot-tags roles">
                             <span><?= htmlspecialchars(tr('slot_status_' . $status)) ?></span>
                             <?php if ($isLocalSeat): ?><span><?= tr('slot_you') ?></span><?php endif; ?>
                             <?php if ($isHostSeat): ?><span><?= tr('slot_host') ?></span><?php endif; ?>
                             <span><?= $connected ? tr('slot_online') : tr('slot_offline') ?></span>
                             <?php if ($isProvisionalCPU): ?><span><?= tr('slot_cpu') ?></span><?php endif; ?>
                         </div>
-                        <div class="roles">
+                        <div class="slot-actions roles">
                             <?php if ($canVote): ?>
                                 <form method="post" action="index.php" data-ajax="true">
                                     <input type="hidden" name="action" value="voteHost">
@@ -74,60 +91,63 @@ $roleLabel = trim((string) ($session['role'] ?? ''));
                                 </form>
                             <?php endif; ?>
                         </div>
-                    </div>
+                    </article>
                 <?php endforeach; ?>
             </div>
-        </div>
-        <div class="lobby-block">
-            <h3><?= tr('connection_title') ?></h3>
-            <div class="connection-grid">
-                <div><span><?= tr('connection_status') ?></span><strong><?= htmlspecialchars($connectionStatus) ?></strong></div>
-                <div><span><?= tr('connection_mode') ?></span><strong><?= !empty($connection['is_online']) ? tr('connection_online') : tr('connection_offline') ?></strong></div>
-                <?php if ($roleLabel !== ''): ?>
-                    <div><span><?= tr('connection_role') ?></span><strong><?= htmlspecialchars($roleLabel) ?></strong></div>
-                <?php endif; ?>
-                <div><span><?= tr('connection_backlog') ?></span><strong><?= (int) ($diagnostics['event_backlog'] ?? 0) ?></strong></div>
-                <?php if (!empty($connection['last_error']['message'])): ?>
-                    <div class="connection-error"><span><?= tr('connection_error') ?></span><strong><?= htmlspecialchars((string) $connection['last_error']['message']) ?></strong></div>
-                <?php endif; ?>
+        </article>
+
+        <article class="lobby-block lobby-side-stack">
+            <div class="lobby-mini-grid">
+                <section class="side-block">
+                    <h3><?= tr('connection_title') ?></h3>
+                    <div class="connection-grid">
+                        <div><span><?= tr('connection_status') ?></span><strong><?= htmlspecialchars($connectionStatus) ?></strong></div>
+                        <div><span><?= tr('connection_mode') ?></span><strong><?= !empty($connection['is_online']) ? tr('connection_online') : tr('connection_offline') ?></strong></div>
+                        <?php if ($roleLabel !== ''): ?>
+                            <div><span><?= tr('connection_role') ?></span><strong><?= htmlspecialchars($roleLabel) ?></strong></div>
+                        <?php endif; ?>
+                        <div><span><?= tr('connection_backlog') ?></span><strong><?= (int) ($diagnostics['event_backlog'] ?? 0) ?></strong></div>
+                        <?php if (!empty($connection['last_error']['message'])): ?>
+                            <div class="connection-error"><span><?= tr('connection_error') ?></span><strong><?= htmlspecialchars((string) $connection['last_error']['message']) ?></strong></div>
+                        <?php endif; ?>
+                    </div>
+                </section>
+
+                <section class="side-block side-log">
+                    <h3><?= tr('lobby_events_title') ?></h3>
+                    <pre id="lobby-events" class="event-feed"><?php
+                        if (!$events) {
+                            echo htmlspecialchars(tr('lobby_events_empty'));
+                        } else {
+                            foreach ($events as $ev) {
+                                $label = '[' . htmlspecialchars(substr((string) ($ev['timestamp'] ?? ''), 11, 8)) . '] ';
+                                $label .= htmlspecialchars(formatEventLine($ev));
+                                echo $label . "\n";
+                            }
+                        }
+                    ?></pre>
+                </section>
             </div>
-        </div>
-        <div class="lobby-block">
-            <h3><?= tr('lobby_events_title') ?></h3>
-            <pre id="lobby-events"><?php
-                if (!$events) {
-                    echo htmlspecialchars(tr('lobby_events_empty'));
-                } else {
-                    foreach ($events as $ev) {
-                        $label = '[' . htmlspecialchars(substr((string) ($ev['timestamp'] ?? ''), 11, 8)) . '] ';
-                        $label .= htmlspecialchars(formatEventLine($ev));
-                        echo $label . "\n";
-                    }
-                }
-            ?></pre>
-        </div>
+
+            <section class="side-block chat-block">
+                <h3><?= tr('lobby_chat_send') ?></h3>
+                <form method="post" action="index.php" class="lobby-chat-row" data-ajax="true">
+                    <input type="hidden" name="action" value="sendChat">
+                    <input name="message" class="field" type="text" autocomplete="off" placeholder="<?= tr('chat_placeholder') ?>">
+                    <button type="submit" class="btn btn-neutral">💬 <?= tr('lobby_chat_send') ?></button>
+                </form>
+            </section>
+        </article>
     </div>
 
-    <div class="action-row" style="margin-top:12px;">
-        <?php if ($isHost): ?>
-            <form method="post" action="index.php" style="display:inline" data-ajax="true">
-                <input type="hidden" name="action" value="startOnlineMatch">
-                <button type="submit" class="btn btn-primary">▶ <?= tr('lobby_start') ?></button>
-            </form>
-        <?php endif; ?>
-        <form method="post" action="index.php" style="display:inline" data-ajax="true">
+    <div class="action-row lobby-actions">
+        <form method="post" action="index.php" data-ajax="true">
             <input type="hidden" name="action" value="refreshLobby">
             <button type="submit" class="btn btn-neutral">⟳ <?= tr('lobby_refresh') ?></button>
         </form>
-        <form method="post" action="index.php" style="display:inline" data-ajax="true">
+        <form method="post" action="index.php" data-ajax="true">
             <input type="hidden" name="action" value="leaveLobby">
             <button type="submit" class="btn btn-refuse">⎋ <?= tr('lobby_leave') ?></button>
         </form>
     </div>
-
-    <form method="post" action="index.php" class="lobby-chat-row" style="margin-top:8px;" data-ajax="true">
-        <input type="hidden" name="action" value="sendChat">
-        <input name="message" class="field" type="text" autocomplete="off" placeholder="<?= tr('chat_placeholder') ?>">
-        <button type="submit" class="btn btn-neutral">💬 <?= tr('lobby_chat_send') ?></button>
-    </form>
 </section>

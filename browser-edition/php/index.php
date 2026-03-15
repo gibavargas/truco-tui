@@ -265,37 +265,41 @@ $langAttr = ($locale === 'en-US') ? 'en' : 'pt-BR';
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <title><?= tr('title_main') ?></title>
-    <meta name="description" content="Truco Paulista no navegador, com partidas offline e online.">
+    <meta name="description" content="Truco Paulista no navegador, com mesa offline e online em uma direção visual de botequim refinado.">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link
-        href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Sora:wght@400;600;700;800&family=IBM+Plex+Mono:wght@400;600&display=swap"
-        rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700;800&family=Cormorant+Garamond:wght@500;600;700&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
 </head>
 
 <body>
     <div class="ambient ambient-a"></div>
     <div class="ambient ambient-b"></div>
+    <div class="ambient ambient-c"></div>
+    <div class="grain"></div>
 
     <main class="app-shell">
         <header class="topbar">
             <div class="brand">
-                <span class="brand-mark">🂡</span>
-                <div>
+                <span class="brand-mark">♣</span>
+                <div class="brand-copy">
+                    <div class="brand-row">
+                        <span class="brand-kicker"><?= tr('brand_kicker') ?></span>
+                        <span class="brand-stamp"><?= tr('brand_stamp') ?></span>
+                    </div>
                     <h1><?= tr('title_main') ?></h1>
-                    <p><?= tr('title_sub') ?></p>
+                    <p id="title-sub"><?= tr('title_sub') ?></p>
                 </div>
             </div>
             <div class="topbar-actions">
-                <form method="post" action="index.php" style="display:inline">
+                <form method="post" action="index.php" class="locale-form">
                     <input type="hidden" name="action" value="setLocale">
                     <label for="locale-sel"><?= tr('locale_label') ?></label>
                     <select id="locale-sel" name="locale" class="field field-sm">
                         <option value="pt-BR" <?= $locale === 'pt-BR' ? 'selected' : '' ?>>Português (BR)</option>
                         <option value="en-US" <?= $locale === 'en-US' ? 'selected' : '' ?>>English (US)</option>
                     </select>
-                    <button type="submit" class="btn btn-neutral" style="padding:6px 10px;">OK</button>
+                    <button type="submit" class="btn btn-neutral btn-mini">OK</button>
                 </form>
             </div>
         </header>
