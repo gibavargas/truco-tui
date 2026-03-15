@@ -50,6 +50,18 @@ public partial class MainViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private string _chatMessage = string.Empty;
 
+    [ObservableProperty]
+    private string _setupRelayUrl = string.Empty;
+
+    [ObservableProperty]
+    private int _setupDesiredRoleIndex;
+
+    [ObservableProperty]
+    private ConnectionSnapshot? _connectionState;
+
+    [ObservableProperty]
+    private DiagnosticsSnapshot? _diagnosticsState;
+
     public System.Collections.ObjectModel.ObservableCollection<string> ChatEvents { get; } = new();
     public System.Collections.ObjectModel.ObservableCollection<LobbySlotItem> LobbySlots { get; } = new();
 
@@ -64,6 +76,22 @@ public partial class MainViewModel : ObservableObject, IDisposable
     public Visibility VisibilityIfOnlineMatch => IsOnlineMatch ? Visibility.Visible : Visibility.Collapsed;
     public Visibility VisibilityIfHost => Mode == "host_lobby" ? Visibility.Visible : Visibility.Collapsed;
     public Visibility VisibilityIfInviteKey => string.IsNullOrEmpty(LobbySnapshot?.InviteKey) ? Visibility.Collapsed : Visibility.Visible;
+    public Visibility VisibilityIfConnectionRole => string.IsNullOrWhiteSpace(ConnectionRoleText) ? Visibility.Collapsed : Visibility.Visible;
+    public Visibility VisibilityIfConnectionError => string.IsNullOrWhiteSpace(ConnectionErrorText) ? Visibility.Collapsed : Visibility.Visible;
+    public Visibility VisibilityIfOnlineSidebar => IsOnlineLobby || IsOnlineMatch ? Visibility.Visible : Visibility.Collapsed;
+
+    [ObservableProperty]
+    private bool _showTrickEndAnimation = false;
+
+    private int _lastTrickSeqViewed = -1;
+
+    public bool TrickTie => Snapshot?.LastTrickTie ?? false;
+    public int TrickWinnerTeam => Snapshot?.LastTrickTeam ?? -1;
+    public string TrickWinnerText => TrickTie ? "EMPATE!" : (TrickWinnerTeam == MyTeamID ? "VOCE VENCEU A VAZA!" : "ELES VENCERAM");
+    public string TrickWinnerEmoji => TrickTie ? "😐" : (TrickWinnerTeam == MyTeamID ? "🎉" : "😢");
+    public Brush TrickWinnerColor => TrickTie ? Brushes.White : (TrickWinnerTeam == MyTeamID ? Brushes.LightGreen : Brushes.Red);
+    
+    public string? TrickWinningCardId => Snapshot?.CurrentHand?.WinningCardId;
 
     public Player? Me => Snapshot?.Players?.FirstOrDefault(p => p.ID == Snapshot.CurrentPlayerIdx);
     public Player? TopPlayer => GetPlayerAt(2);
@@ -96,6 +124,17 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
     public int MyTeamID => UiState?.Actions?.LocalTeam ?? 0;
     public bool CanPlayCards => UiState?.Actions?.CanPlayCard == true;
+    public string SetupDesiredRole => SetupDesiredRoleIndex switch
+    {
+        1 => "partner",
+        2 => "opponent",
+        _ => "auto"
+    };
+    public string ConnectionStatusText => ConnectionState?.Status ?? Mode;
+    public string ConnectionModeText => ConnectionState?.IsOnline == true ? "online" : "offline";
+    public string ConnectionRoleText => LobbySnapshot?.Role ?? SetupDesiredRole;
+    public string ConnectionErrorText => ConnectionState?.LastError?.Message ?? string.Empty;
+    public string EventBacklogText => (DiagnosticsState?.EventBacklog ?? 0).ToString();
 
     public string RoundText => Snapshot?.CurrentHand?.Round != null 
         ? _stringProvider.Format(StringProviderKeys.RoundFormat, Snapshot.CurrentHand.Round) 
@@ -169,6 +208,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
                 Snapshot = bundle.Match;
                 LobbySnapshot = bundle.Lobby;
                 UiState = bundle.UI;
+                ConnectionState = bundle.Connection;
+                DiagnosticsState = bundle.Diagnostics;
                 Mode = bundle.Mode ?? "idle";
                 
                 RebuildLobbySlots();
@@ -182,6 +223,9 @@ public partial class MainViewModel : ObservableObject, IDisposable
                 OnPropertyChanged(nameof(VisibilityIfOnlineMatch));
                 OnPropertyChanged(nameof(VisibilityIfHost));
                 OnPropertyChanged(nameof(VisibilityIfInviteKey));
+                OnPropertyChanged(nameof(VisibilityIfConnectionRole));
+                OnPropertyChanged(nameof(VisibilityIfConnectionError));
+                OnPropertyChanged(nameof(VisibilityIfOnlineSidebar));
                 OnPropertyChanged(nameof(IsMyTurn));
                 OnPropertyChanged(nameof(Me));
                 OnPropertyChanged(nameof(TopPlayer));
@@ -196,6 +240,26 @@ public partial class MainViewModel : ObservableObject, IDisposable
                 OnPropertyChanged(nameof(TrucoLabel));
                 OnPropertyChanged(nameof(RoundText));
                 OnPropertyChanged(nameof(LeftPlayerVisibility));
+                OnPropertyChanged(nameof(TrickWinningCardId));
+                OnPropertyChanged(nameof(ConnectionStatusText));
+                OnPropertyChanged(nameof(ConnectionModeText));
+                OnPropertyChanged(nameof(ConnectionRoleText));
+                OnPropertyChanged(nameof(ConnectionErrorText));
+                OnPropertyChanged(nameof(EventBacklogText));
+
+                // Handle trick end animation trigger
+                if (Snapshot?.LastTrickSeq != null && Snapshot.LastTrickSeq > 0)
+                {
+                    if (_lastTrickSeqViewed == -1)
+                    {
+                        _lastTrickSeqViewed = Snapshot.LastTrickSeq.Value;
+                    }
+                    else if (Snapshot.LastTrickSeq.Value > _lastTrickSeqViewed)
+                    {
+                        _lastTrickSeqViewed = Snapshot.LastTrickSeq.Value;
+                        TriggerTrickEndAnimation();
+                    }
+                }
             }
         }
         catch (JsonException ex)
@@ -215,11 +279,14 @@ public partial class MainViewModel : ObservableObject, IDisposable
                 {
                     Seat = slot.Seat + 1,
                     Label = slot.IsOccupied ? $"Slot {slot.Seat + 1}: {slot.Name}" : $"Slot {slot.Seat + 1}: (vazio)",
-                    IsAssigned = slot.IsLocal,
+                    IsAssigned = slot.IsOccupied,
                     IsHost = slot.IsHost,
                     IsConnected = slot.IsConnected,
+                    IsLocal = slot.IsLocal,
+                    IsProvisionalCpu = slot.IsProvisionalCpu,
                     CanVote = slot.CanVoteHost,
-                    CanReplace = slot.CanRequestReplacement
+                    CanReplace = slot.CanRequestReplacement,
+                    RuntimeStatus = slot.Status
                 });
             }
             return;
@@ -248,10 +315,24 @@ public partial class MainViewModel : ObservableObject, IDisposable
                 IsAssigned = isAssigned,
                 IsHost = isHost,
                 IsConnected = isConnected,
+                IsLocal = LobbySnapshot.AssignedSeat == i,
                 CanVote = isAssigned && !isHost,
                 CanReplace = isAssigned && !isConnected
             });
         }
+    }
+
+    private async void TriggerTrickEndAnimation()
+    {
+        OnPropertyChanged(nameof(TrickTie));
+        OnPropertyChanged(nameof(TrickWinnerTeam));
+        OnPropertyChanged(nameof(TrickWinnerText));
+        OnPropertyChanged(nameof(TrickWinnerEmoji));
+        OnPropertyChanged(nameof(TrickWinnerColor));
+        
+        ShowTrickEndAnimation = true;
+        await Task.Delay(1800);
+        ShowTrickEndAnimation = false;
     }
 
     private void ProcessEvent(string json)
@@ -368,6 +449,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
     {
         Snapshot = null;
         Mode = "idle";
+        _lastTrickSeqViewed = -1;
+        ShowTrickEndAnimation = false;
         OnPropertyChanged(nameof(IsPlaying));
         OnPropertyChanged(nameof(IsNotPlaying));
         OnPropertyChanged(nameof(IsOnlineLobby));
@@ -383,7 +466,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         var intent = new
         {
             kind = "create_host_session",
-            payload = new { host_name = name, num_players = numPlayers }
+            payload = new { host_name = name, num_players = numPlayers, relay_url = string.IsNullOrWhiteSpace(SetupRelayUrl) ? null : SetupRelayUrl.Trim() }
         };
         ChatEvents.Clear();
         _core.Dispatch(JsonSerializer.Serialize(intent));
@@ -397,7 +480,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         var intent = new
         {
             kind = "join_session",
-            payload = new { player_name = name, key = InviteKeyInput.Trim(), desired_role = "auto" }
+            payload = new { player_name = name, key = InviteKeyInput.Trim(), desired_role = SetupDesiredRole }
         };
         ChatEvents.Clear();
         _core.Dispatch(JsonSerializer.Serialize(intent));

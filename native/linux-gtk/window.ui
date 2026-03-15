@@ -56,6 +56,54 @@
                   </object>
                 </child>
 
+                <child>
+                  <object class="GtkBox">
+                    <property name="orientation">vertical</property>
+                    <property name="spacing">6</property>
+                    <child>
+                      <object class="GtkLabel">
+                        <property name="label">RELAY URL (OPCIONAL)</property>
+                        <property name="css-classes">setup-label</property>
+                        <property name="halign">start</property>
+                      </object>
+                    </child>
+                    <child>
+                      <object class="GtkEntry" id="entry_relay_url">
+                        <property name="width-request">280</property>
+                        <property name="placeholder-text">https://relay.example.com</property>
+                      </object>
+                    </child>
+                  </object>
+                </child>
+
+                <child>
+                  <object class="GtkBox">
+                    <property name="orientation">vertical</property>
+                    <property name="spacing">6</property>
+                    <child>
+                      <object class="GtkLabel">
+                        <property name="label">PAPEL AO ENTRAR</property>
+                        <property name="css-classes">setup-label</property>
+                        <property name="halign">start</property>
+                      </object>
+                    </child>
+                    <child>
+                      <object class="GtkDropDown" id="dd_desired_role">
+                        <property name="model">
+                          <object class="GtkStringList">
+                            <items>
+                              <item>Auto</item>
+                              <item>Parceiro</item>
+                              <item>Adversário</item>
+                            </items>
+                          </object>
+                        </property>
+                        <property name="width-request">280</property>
+                      </object>
+                    </child>
+                  </object>
+                </child>
+
                 <!-- Player Count -->
                 <child>
                   <object class="GtkBox">
@@ -302,6 +350,18 @@
                   </object>
                 </child>
                 
+                <!-- Match Leave Button -->
+                <child type="overlay">
+                  <object class="GtkButton" id="btn_leave_match">
+                    <property name="label">◄ Sair</property>
+                    <property name="halign">start</property>
+                    <property name="valign">start</property>
+                    <property name="margin-top">24</property>
+                    <property name="margin-start">24</property>
+                    <property name="css-classes">suggested-action</property>
+                  </object>
+                </child>
+                
                 <!-- HUD Layer -->
                 <child type="overlay">
                   <object class="GtkBox" id="hud_box">
@@ -377,6 +437,40 @@
                     <property name="margin-top">48</property>
                     <property name="margin-end">48</property>
                     <property name="css-classes">log-panel</property>
+                  </object>
+                </child>
+                
+                <!-- Trick End Effect Overlay -->
+                <child type="overlay">
+                  <object class="GtkOverlay" id="trick_end_overlay">
+                    <property name="visible">false</property>
+                    <child>
+                      <object class="GtkBox">
+                        <property name="css-classes">trick-end-bg</property>
+                        <property name="hexpand">true</property>
+                        <property name="vexpand">true</property>
+                      </object>
+                    </child>
+                    <child type="overlay">
+                      <object class="GtkBox">
+                        <property name="orientation">vertical</property>
+                        <property name="halign">center</property>
+                        <property name="valign">center</property>
+                        <property name="spacing">16</property>
+                        <child>
+                          <object class="GtkLabel" id="lbl_trick_emoji">
+                            <property name="label">🎉</property>
+                            <property name="css-classes">trick-emoji</property>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="GtkLabel" id="lbl_trick_text">
+                            <property name="label">VOCE VENCEU A VAZA!</property>
+                            <property name="css-classes">trick-title</property>
+                          </object>
+                        </child>
+                      </object>
+                    </child>
                   </object>
                 </child>
                 

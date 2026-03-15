@@ -33,6 +33,11 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
     private int setupNumPlayers = GameConstants.DefaultPlayers;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(SetupPlayerLabels))]
+    [NotifyPropertyChangedFor(nameof(SetupSelectedPlayerCount))]
+    private int setupNumPlayersIndex = 1;
+
+    [ObservableProperty]
     private int setupLocaleIndex;
 
     public List<string> SetupPlayerLabels
@@ -44,12 +49,12 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
                 ? _stringProvider.Get(StringProviderKeys.PlayerYou) 
                 : SetupPlayerName;
             
-            for (int i = 0; i < SetupNumPlayers; i++)
+            for (int i = 0; i < SetupSelectedPlayerCount; i++)
             {
                 labels.Add(i switch
                 {
                     0 => $"{playerName} ({_stringProvider.Get(StringProviderKeys.PlayerHuman)})",
-                    1 when SetupNumPlayers == 2 => $"{_stringProvider.Get(StringProviderKeys.PlayerCpuOpponent)} ({string.Format(_stringProvider.Get(StringProviderKeys.PlayerCpu), 2)})",
+                    1 when SetupSelectedPlayerCount == 2 => $"{_stringProvider.Get(StringProviderKeys.PlayerCpuOpponent)} ({string.Format(_stringProvider.Get(StringProviderKeys.PlayerCpu), 2)})",
                     1 => $"{_stringProvider.Get(StringProviderKeys.PlayerCpuRight)} ({string.Format(_stringProvider.Get(StringProviderKeys.PlayerCpu), 2)})",
                     2 => $"{_stringProvider.Get(StringProviderKeys.PlayerCpuPartner)} ({string.Format(_stringProvider.Get(StringProviderKeys.PlayerCpu), 1)})",
                     3 => $"{_stringProvider.Get(StringProviderKeys.PlayerCpuLeft)} ({string.Format(_stringProvider.Get(StringProviderKeys.PlayerCpu), 2)})",
@@ -79,6 +84,13 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
 
     [ObservableProperty]
     private string chatMessage = "";
+
+    [ObservableProperty]
+    private string setupRelayUrl = "";
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(SetupDesiredRole))]
+    private int setupDesiredRoleIndex;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(Mode))]
@@ -120,6 +132,20 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
     [NotifyPropertyChangedFor(nameof(VisibilityIfHost))]
     private string mode = UiConstants.IdleMode;
 
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ConnectionStatusText))]
+    [NotifyPropertyChangedFor(nameof(ConnectionModeText))]
+    [NotifyPropertyChangedFor(nameof(ConnectionRoleText))]
+    [NotifyPropertyChangedFor(nameof(ConnectionErrorText))]
+    [NotifyPropertyChangedFor(nameof(EventBacklogText))]
+    [NotifyPropertyChangedFor(nameof(VisibilityIfConnectionRole))]
+    [NotifyPropertyChangedFor(nameof(VisibilityIfConnectionError))]
+    private ConnectionSnapshot? connectionState;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(EventBacklogText))]
+    private DiagnosticsSnapshot? diagnosticsState;
+
     public bool IsPlaying => GameStateHelper.IsPlaying(Snapshot);
     public bool IsNotPlaying => GameStateHelper.IsNotPlaying(Snapshot);
     public bool IsMyTurn => UiState?.Actions?.CanPlayCard == true || UiState?.Actions?.MustRespond == true;
@@ -147,6 +173,12 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
     public Microsoft.UI.Xaml.Visibility VisibilityIfInviteKey => (!string.IsNullOrEmpty(LobbySnapshot?.InviteKey)) 
         ? Microsoft.UI.Xaml.Visibility.Visible 
         : Microsoft.UI.Xaml.Visibility.Collapsed;
+    public Microsoft.UI.Xaml.Visibility VisibilityIfConnectionRole => !string.IsNullOrWhiteSpace(ConnectionRoleText)
+        ? Microsoft.UI.Xaml.Visibility.Visible
+        : Microsoft.UI.Xaml.Visibility.Collapsed;
+    public Microsoft.UI.Xaml.Visibility VisibilityIfConnectionError => !string.IsNullOrWhiteSpace(ConnectionErrorText)
+        ? Microsoft.UI.Xaml.Visibility.Visible
+        : Microsoft.UI.Xaml.Visibility.Collapsed;
 
     public Microsoft.UI.Xaml.Visibility VisibilityIfMatchOver => IsMatchOver 
         ? Microsoft.UI.Xaml.Visibility.Visible 
@@ -169,6 +201,18 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
     public bool ShowAskTruco => UiState?.Actions?.CanAskOrRaise == true && UiState?.Actions?.MustRespond != true;
     public bool IsMatchOver => GameStateHelper.IsMatchOver(Snapshot);
     public bool CanPlayCards => UiState?.Actions?.CanPlayCard == true;
+    public int SetupSelectedPlayerCount => SetupNumPlayersIndex == 1 ? 4 : 2;
+    public string SetupDesiredRole => SetupDesiredRoleIndex switch
+    {
+        1 => "partner",
+        2 => "opponent",
+        _ => "auto"
+    };
+    public string ConnectionStatusText => ConnectionState?.Status ?? Mode;
+    public string ConnectionModeText => ConnectionState?.IsOnline == true ? "online" : "offline";
+    public string ConnectionRoleText => LobbySnapshot?.Role ?? SetupDesiredRole;
+    public string ConnectionErrorText => ConnectionState?.LastError?.Message ?? "";
+    public string EventBacklogText => $"{DiagnosticsState?.EventBacklog ?? 0}";
 
     public string MatchResultText => GameStateHelper.GetMatchResultText(Snapshot, MyTeamID);
 
@@ -293,6 +337,8 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
                     Snapshot = bundle.Match;
                     LobbySnapshot = bundle.Lobby;
                     UiState = bundle.UI;
+                    ConnectionState = bundle.Connection;
+                    DiagnosticsState = bundle.Diagnostics;
                     Mode = bundle.Mode ?? UiConstants.IdleMode;
                     RebuildLobbySlots();
                 }
@@ -321,7 +367,7 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
             string namesJson;
             string cpusJson;
 
-            if (SetupNumPlayers == GameConstants.MaxPlayers)
+            if (SetupSelectedPlayerCount == GameConstants.MaxPlayers)
             {
                 namesJson = $"[\"{name}\",\"{_stringProvider.Get(StringProviderKeys.PlayerCpuRight)}\",\"{_stringProvider.Get(StringProviderKeys.PlayerCpuPartner)}\",\"{_stringProvider.Get(StringProviderKeys.PlayerCpuLeft)}\"]";
                 cpusJson = "[false,true,true,true]";
@@ -334,7 +380,7 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
 
             _core.Dispatch($"{{\"kind\":\"{IntentKinds.NewOfflineGame}\",\"payload\":{{\"player_names\":{namesJson},\"cpu_flags\":{cpusJson}}}}}");
             RefreshSnapshot();
-            Status = _stringProvider.Format(StringProviderKeys.StatusPlaying, SetupNumPlayers);
+            Status = _stringProvider.Format(StringProviderKeys.StatusPlaying, SetupSelectedPlayerCount);
         }
         catch (Exception ex)
         {
@@ -347,7 +393,13 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
     private void HostOnlineGame()
     {
         var name = string.IsNullOrEmpty(SetupPlayerName) ? GameConstants.DefaultPlayerName : SetupPlayerName;
-        int players = SetupNumPlayers == GameConstants.MaxPlayers ? 4 : 2;
+        int players = SetupSelectedPlayerCount;
+        if (!string.IsNullOrWhiteSpace(SetupRelayUrl))
+        {
+            var safeRelayUrl = SetupRelayUrl.Replace("\\", "\\\\").Replace("\"", "\\\"");
+            _core.Dispatch($"{{\"kind\":\"create_host_session\",\"payload\":{{\"host_name\":\"{name}\",\"num_players\":{players},\"relay_url\":\"{safeRelayUrl}\"}}}}");
+            return;
+        }
         _core.Dispatch($"{{\"kind\":\"create_host_session\",\"payload\":{{\"host_name\":\"{name}\",\"num_players\":{players}}}}}");
     }
 
@@ -356,7 +408,8 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
     {
         if (string.IsNullOrEmpty(InviteKeyInput)) return;
         var name = string.IsNullOrEmpty(SetupPlayerName) ? GameConstants.DefaultPlayerName : SetupPlayerName;
-        _core.Dispatch($"{{\"kind\":\"join_session\",\"payload\":{{\"player_name\":\"{name}\",\"key\":\"{InviteKeyInput}\"}}}}");
+        var safeKey = InviteKeyInput.Replace("\\", "\\\\").Replace("\"", "\\\"");
+        _core.Dispatch($"{{\"kind\":\"join_session\",\"payload\":{{\"player_name\":\"{name}\",\"key\":\"{safeKey}\",\"desired_role\":\"{SetupDesiredRole}\"}}}}");
     }
 
     [RelayCommand]
@@ -472,9 +525,12 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
                 {
                     Seat = slot.Seat,
                     Label = string.IsNullOrWhiteSpace(slot.Name) ? "Aguardando..." : slot.Name!,
-                    IsAssigned = slot.IsLocal,
+                    IsAssigned = slot.IsOccupied,
                     IsHost = slot.IsHost,
                     IsConnected = slot.IsConnected,
+                    IsLocal = slot.IsLocal,
+                    IsProvisionalCpu = slot.IsProvisionalCpu,
+                    RuntimeStatus = slot.Status,
                     CanVote = slot.CanVoteHost,
                     CanReplace = slot.CanRequestReplacement,
                 });
@@ -494,6 +550,7 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
                 IsAssigned = LobbySnapshot.AssignedSeat == i,
                 IsHost = LobbySnapshot.HostSeat == i,
                 IsConnected = connected,
+                IsLocal = LobbySnapshot.AssignedSeat == i,
                 CanVote = !string.IsNullOrWhiteSpace(LobbySnapshot.Slots[i]) && LobbySnapshot.AssignedSeat != i,
                 CanReplace = !connected && !string.IsNullOrWhiteSpace(LobbySnapshot.Slots[i]) && LobbySnapshot.AssignedSeat != i,
             });
@@ -508,8 +565,12 @@ public class LobbySlotItem
     public bool IsAssigned { get; set; }
     public bool IsHost { get; set; }
     public bool IsConnected { get; set; }
+    public bool IsLocal { get; set; }
+    public bool IsProvisionalCpu { get; set; }
+    public string? RuntimeStatus { get; set; }
     public bool CanVote { get; set; }
     public bool CanReplace { get; set; }
+    public string StatusText => IsProvisionalCpu ? "CPU" : (IsHost ? "HOST" : (IsLocal ? "VOCE" : (!string.IsNullOrWhiteSpace(RuntimeStatus) ? RuntimeStatus!.ToUpperInvariant() : (IsConnected ? "ONLINE" : "OFFLINE"))));
 }
 
 public static class StringProviderKeys

@@ -225,6 +225,8 @@ public class ConnectionSnapshot
     public bool? IsOnline { get; set; }
     [JsonPropertyName("is_host")]
     public bool? IsHost { get; set; }
+    [JsonPropertyName("last_error")]
+    public AppError? LastError { get; set; }
 }
 
 public class DiagnosticsSnapshot
@@ -233,4 +235,13 @@ public class DiagnosticsSnapshot
     public int? EventBacklog { get; set; }
     [JsonPropertyName("event_log")]
     public List<string>? EventLog { get; set; }
+}
+
+public class AppError
+{
+    [JsonPropertyName("code")]
+    public string? Code { get; set; }
+
+    [JsonPropertyName("message")]
+    public string? Message { get; set; }
 }
