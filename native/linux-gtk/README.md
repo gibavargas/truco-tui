@@ -1,54 +1,61 @@
-# Truco - Linux GTK Native Client
+# Linux GTK Client
 
-Este é o cliente nativo de Linux para o jogo Truco, construído usando **Rust**, **GTK 4** e **libadwaita**. A lógica do jogo é mantida num back-end compartilhado em **Go** via FFI (Foreign Function Interface).
+The Linux desktop client uses Rust with GTK4 and libadwaita, while game logic and online behavior come from the shared Go runtime loaded dynamically at startup.
 
-## Requisitos
-- **Linux** (Qualquer distribuição moderna, como Ubuntu, Fedora, Arch, etc).
-- **Go** 1.22+ (para a engine do core do jogo).
-- **Rust** 1.75+ e o Cargo (via rustup).
-- Bibliotecas do sistema para **GTK4** e **libadwaita**.
+## Requirements
 
-### Ubuntu/Debian
+- A modern Linux distribution
+- Go 1.24+
+- Rust toolchain with Cargo
+- GTK4 and libadwaita development packages
+
+Ubuntu or Debian:
+
 ```bash
 sudo apt update
 sudo apt install libgtk-4-dev libadwaita-1-dev
 ```
 
-### Fedora
+Fedora:
+
 ```bash
 sudo dnf install gtk4-devel libadwaita-devel
 ```
 
-### Arch Linux
+Arch Linux:
+
 ```bash
 sudo pacman -S gtk4 libadwaita
 ```
 
-## Compilando e Rodando
+## Build the Shared Library
 
-Para compilar, precisamos antes gerar e embutir o backend core em Go (`libtrucocore_ffi.so`). O script `build.rs` deve cuidar de apontar para o diretório se ele já estiver mapeado no path, mas você pode compilar a .so do core primeiro:
+From the repository root:
 
-### 1- Build da Engine
 ```bash
-cd internal/appcore/ffi
-go build -buildmode=c-shared -o ../../../native/linux-gtk/libtrucocore_ffi.so trucocore.go
+make ffi-linux
 ```
 
-### 2- Build do App Rust
+This produces `bin/libtruco_core.so`.
+
+The current Rust loader expects the library to be available as `libtruco-core-ffi.so`, so either provide a matching filename or adjust the loader before packaging.
+
+## Build the GTK App
+
 ```bash
 cd native/linux-gtk
 cargo build --release
 ```
 
-Ou execute diretamente para teste de desenvolvimento:
+For development:
+
 ```bash
-export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$(pwd)
+cd native/linux-gtk
 cargo run
 ```
 
-## Funcionalidades
-- Temas GTK Nativo com UI polida e Adwaita (inclui compatibilidade a modo Escuro).
-- Jogo Offline contra a CPU.
-- Multiplayer Online: Sistema de Salas com códigos de convite.
-- Chat embutido da sala.
-- Controles de Manilha e Vira renderizados em tempo-real.
+## Notes
+
+- The UI entrypoint is `src/main.rs`.
+- The layout definition lives in `window.ui`.
+- Runtime parity expectations are defined in `docs/PARITY.md`.
