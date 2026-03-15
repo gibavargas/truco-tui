@@ -455,196 +455,251 @@ struct OnlineLobbyView: View {
         ZStack {
             Color(red: 0.06, green: 0.08, blue: 0.12)
                 .ignoresSafeArea()
-            
-            VStack(spacing: 24) {
-                Text(store.mode.contains("host") ? "🏠 Sala Criada" : "🔗 Conectado")
-                    .font(.title.bold())
-                    .foregroundColor(.white)
-                
-                HStack(alignment: .top, spacing: 30) {
-                    
-                    // Left Column: Players and Info
-                    VStack(spacing: 20) {
-                        if let lobby {
-                            if let key = lobby.invite_key, !key.isEmpty {
-                                VStack(spacing: 8) {
-                                    Text("Chave de convite:")
-                                        .font(.caption)
-                                        .foregroundColor(.white.opacity(0.6))
-                                    
-                                    HStack {
-                                        Text(key)
-                                            .font(.system(.body, design: .monospaced))
-                                            .foregroundColor(.yellow)
-                                            .textSelection(.enabled)
-                                        
-                                        Button {
-                                            NSPasteboard.general.clearContents()
-                                            NSPasteboard.general.setString(key, forType: .string)
-                                        } label: {
-                                            Image(systemName: "doc.on.doc")
+
+            GeometryReader { geometry in
+                let isCompact = geometry.size.width < 980 || geometry.size.height < 760
+                ScrollView {
+                    VStack(spacing: isCompact ? 18 : 24) {
+                        Text(store.mode.contains("host") ? "🏠 Sala Criada" : "🔗 Conectado")
+                            .font(.system(size: isCompact ? 30 : 34, weight: .black, design: .rounded))
+                            .foregroundColor(.white)
+
+                        if isCompact {
+                            VStack(spacing: 16) {
+                                lobbyPrimaryColumn(lobby: lobby, slotStates: slotStates, connection: connection, diagnostics: diagnostics, compact: true)
+                                    .frame(maxWidth: 720)
+
+                                lobbyEventsColumn(compact: true)
+                                    .frame(maxWidth: 720, minHeight: 200)
+                            }
+                        } else {
+                            HStack(alignment: .top, spacing: 30) {
+                                lobbyPrimaryColumn(lobby: lobby, slotStates: slotStates, connection: connection, diagnostics: diagnostics, compact: false)
+                                    .frame(width: 400)
+
+                                lobbyEventsColumn(compact: false)
+                                    .frame(width: 340, height: 370)
+                            }
+                        }
+
+                        if isCompact {
+                            HStack(spacing: 12) {
+                                if store.mode == "host_lobby" {
+                                    Button("Iniciar Partida") {
+                                        store.startHostedMatch()
+                                    }
+                                    .buttonStyle(.borderedProminent)
+                                    .tint(.green)
+                                    .controlSize(.regular)
+                                }
+
+                                Button("Sair da sala") {
+                                    store.closeSession()
+                                }
+                                .buttonStyle(.borderedProminent)
+                                .tint(.red)
+                                .controlSize(.regular)
+                            }
+                        } else {
+                            Button("Sair da sala") {
+                                store.closeSession()
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .tint(.red)
+                            .controlSize(.large)
+                        }
+                    }
+                    .padding(.horizontal, isCompact ? 28 : 40)
+                    .padding(.top, isCompact ? 34 : 56)
+                    .padding(.bottom, isCompact ? 24 : 32)
+                    .frame(maxWidth: .infinity, minHeight: geometry.size.height, alignment: .top)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func lobbyPrimaryColumn(
+        lobby: LobbySnapshot?,
+        slotStates: [LobbySlotState],
+        connection: ConnectionSnapshot?,
+        diagnostics: DiagnosticsSnapshot?,
+        compact: Bool
+    ) -> some View {
+        VStack(spacing: compact ? 14 : 20) {
+            if let lobby {
+                if let key = lobby.invite_key, !key.isEmpty {
+                    VStack(spacing: 8) {
+                        Text("Chave de convite:")
+                            .font(.footnote.weight(.semibold))
+                            .foregroundColor(.white.opacity(0.7))
+
+                        HStack(alignment: .center, spacing: 10) {
+                            Text(key)
+                                .font(.system(.body, design: .monospaced))
+                                .foregroundColor(.yellow)
+                                .textSelection(.enabled)
+                                .lineLimit(2)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+
+                            Button {
+                                NSPasteboard.general.clearContents()
+                                NSPasteboard.general.setString(key, forType: .string)
+                            } label: {
+                                Image(systemName: "doc.on.doc")
+                            }
+                            .buttonStyle(.bordered)
+                        }
+                        .padding(compact ? 10 : 12)
+                        .background(Color.black.opacity(0.34))
+                        .cornerRadius(10)
+                    }
+                }
+
+                if !slotStates.isEmpty {
+                    VStack(spacing: 10) {
+                        Text("Jogadores (\(slotStates.filter { !$0.is_empty }.count)/\(lobby.num_players ?? slotStates.count)):")
+                            .font(.footnote.weight(.bold))
+                            .foregroundColor(.white.opacity(0.7))
+
+                        ForEach(slotStates) { slot in
+                            VStack(alignment: .leading, spacing: 10) {
+                                HStack(spacing: 10) {
+                                    Circle()
+                                        .fill(slotBadgeColor(for: slot))
+                                        .frame(width: 10, height: 10)
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text(slot.name?.isEmpty == false ? slot.name! : "Aguardando...")
+                                            .font(.headline)
+                                            .foregroundColor(slot.is_empty ? .gray : .white)
+                                        Text(slotStatusLabel(slot.status))
+                                            .font(.footnote)
+                                            .foregroundColor(.white.opacity(0.68))
+                                    }
+                                    Spacer()
+                                    Text("Slot \(slot.seat + 1)")
+                                        .font(.caption.weight(.semibold))
+                                        .foregroundColor(.white.opacity(0.56))
+                                }
+
+                                HStack(spacing: 6) {
+                                    if slot.is_local { slotTag("você", color: .yellow) }
+                                    if slot.is_host { slotTag("host", color: .blue) }
+                                    slotTag(slot.is_connected ? "online" : "offline", color: slot.is_connected ? .green : .gray)
+                                    if slot.is_provisional_cpu { slotTag("cpu", color: .orange) }
+                                }
+
+                                HStack(spacing: 8) {
+                                    if slot.can_vote_host {
+                                        Button("Votar Host") {
+                                            store.voteHost(candidateSeat: slot.seat)
                                         }
+                                        .font(.caption)
                                         .buttonStyle(.bordered)
                                     }
-                                    .padding(12)
-                                    .background(Color.black.opacity(0.3))
-                                    .cornerRadius(10)
-                                }
-                            }
-                            
-                            if !slotStates.isEmpty {
-                                VStack(spacing: 8) {
-                                    Text("Jogadores (\(slotStates.filter { !$0.is_empty }.count)/\(lobby.num_players ?? slotStates.count)):")
-                                        .font(.caption.bold())
-                                        .foregroundColor(.white.opacity(0.6))
-                                    
-                                    ForEach(slotStates) { slot in
-                                        VStack(alignment: .leading, spacing: 8) {
-                                            HStack(spacing: 10) {
-                                                Circle()
-                                                    .fill(slotBadgeColor(for: slot))
-                                                    .frame(width: 10, height: 10)
-                                                VStack(alignment: .leading, spacing: 3) {
-                                                    Text(slot.name?.isEmpty == false ? slot.name! : "Aguardando...")
-                                                        .foregroundColor(slot.is_empty ? .gray : .white)
-                                                    Text(slotStatusLabel(slot.status))
-                                                        .font(.caption2)
-                                                        .foregroundColor(.white.opacity(0.55))
-                                                }
-                                                Spacer()
-                                                Text("Slot \(slot.seat + 1)")
-                                                    .font(.caption2.weight(.semibold))
-                                                    .foregroundColor(.white.opacity(0.5))
-                                            }
-
-                                            HStack(spacing: 6) {
-                                                if slot.is_local { slotTag("você", color: .yellow) }
-                                                if slot.is_host { slotTag("host", color: .blue) }
-                                                slotTag(slot.is_connected ? "online" : "offline", color: slot.is_connected ? .green : .gray)
-                                                if slot.is_provisional_cpu { slotTag("cpu", color: .orange) }
-                                            }
-
-                                            HStack(spacing: 8) {
-                                                if slot.can_vote_host {
-                                                    Button("Votar Host") {
-                                                        store.voteHost(candidateSeat: slot.seat)
-                                                    }
-                                                    .font(.caption)
-                                                    .buttonStyle(.bordered)
-                                                }
-                                                if slot.can_request_replacement {
-                                                    Button("Convite de Substituição") {
-                                                        store.requestReplacementInvite(targetSeat: slot.seat)
-                                                    }
-                                                    .font(.caption)
-                                                    .buttonStyle(.borderedProminent)
-                                                    .tint(.orange)
-                                                }
-                                            }
+                                    if slot.can_request_replacement {
+                                        Button("Convite de Substituição") {
+                                            store.requestReplacementInvite(targetSeat: slot.seat)
                                         }
-                                        .padding(12)
-                                        .background(Color.white.opacity(0.05))
-                                        .overlay(
-                                            RoundedRectangle(cornerRadius: 12)
-                                                .stroke(Color.white.opacity(0.08), lineWidth: 1)
-                                        )
-                                        .cornerRadius(12)
+                                        .font(.caption)
+                                        .buttonStyle(.borderedProminent)
+                                        .tint(.orange)
                                     }
                                 }
                             }
-                        }
-
-                        VStack(alignment: .leading, spacing: 10) {
-                            Text("Conexão")
-                                .font(.caption.bold())
-                                .foregroundColor(.white.opacity(0.6))
-                            connectionLine("Status", connection?.status ?? store.mode)
-                            connectionLine("Modo", connection?.is_online == true ? "online" : "offline")
-                            if let role = lobby?.role, !role.isEmpty {
-                                connectionLine("Papel", role)
-                            }
-                            connectionLine("Fila", "\(diagnostics?.event_backlog ?? 0)")
-                            if let message = connection?.last_error?.message, !message.isEmpty {
-                                connectionLine("Erro", message, tint: .red.opacity(0.9))
-                            }
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding()
-                        .background(Color.white.opacity(0.05))
-                        .cornerRadius(12)
-                        
-                        // Start Match
-                        if store.mode == "host_lobby" {
-                            Button("Iniciar Partida") {
-                                store.startHostedMatch()
-                            }
-                            .buttonStyle(.borderedProminent)
-                            .tint(.green)
-                            .controlSize(.large)
-                            .font(.headline.weight(.black))
-                        } else {
-                            Text("Aguardando o host iniciar a partida...")
-                                .font(.caption)
-                                .foregroundColor(.white.opacity(0.5))
+                            .padding(compact ? 12 : 14)
+                            .background(Color.white.opacity(0.06))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 12)
+                                    .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                            )
+                            .cornerRadius(12)
                         }
                     }
-                    .frame(width: 380)
-                    
-                    // Right Column: Chat and Events
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text("Chat e Eventos")
-                            .font(.headline)
-                            .foregroundColor(.white)
-                        
-                        ScrollViewReader { proxy in
-                            ScrollView {
-                                VStack(alignment: .leading, spacing: 6) {
-                                    ForEach(store.events) { ev in
-                                        eventRow(ev)
-                                    }
-                                }
-                                .padding(8)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                            }
-                            .background(Color.black.opacity(0.4))
-                            .cornerRadius(8)
-                            .onChange(of: store.events.count) { _ in
-                                if let last = store.events.last {
-                                    withAnimation { proxy.scrollTo(last.id, anchor: .bottom) }
-                                }
-                            }
-                        }
-                        
-                        HStack {
-                            TextField("Digite uma mensagem...", text: $chatMessage)
-                                .textFieldStyle(.roundedBorder)
-                                .onSubmit {
-                                    if !chatMessage.isEmpty {
-                                        store.sendChat(text: chatMessage)
-                                        chatMessage = ""
-                                    }
-                                }
-                            Button("Enviar") {
-                                if !chatMessage.isEmpty {
-                                    store.sendChat(text: chatMessage)
-                                    chatMessage = ""
-                                }
-                            }
-                            .buttonStyle(.borderedProminent)
-                            .disabled(chatMessage.isEmpty)
-                        }
-                    }
-                    .frame(width: 320, height: 350)
                 }
-                
-                Button("Sair da sala") {
-                    store.closeSession()
-                }
-                .buttonStyle(.bordered)
-                .tint(.red)
             }
-            .padding(40)
+
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Conexão")
+                    .font(.footnote.bold())
+                    .foregroundColor(.white.opacity(0.7))
+                connectionLine("Status", connection?.status ?? store.mode)
+                connectionLine("Modo", connection?.is_online == true ? "online" : "offline")
+                if let role = lobby?.role, !role.isEmpty {
+                    connectionLine("Papel", role)
+                }
+                connectionLine("Fila", "\(diagnostics?.event_backlog ?? 0)")
+                if let message = connection?.last_error?.message, !message.isEmpty {
+                    connectionLine("Erro", message, tint: .red.opacity(0.95))
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding()
+            .background(Color.white.opacity(0.06))
+            .cornerRadius(12)
+
+            if !compact && store.mode == "host_lobby" {
+                Button("Iniciar Partida") {
+                    store.startHostedMatch()
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.green)
+                .controlSize(.large)
+                .font(.headline.weight(.black))
+            } else if !compact {
+                Text("Aguardando o host iniciar a partida...")
+                    .font(.footnote)
+                    .foregroundColor(.white.opacity(0.6))
+            }
         }
+    }
+
+    @ViewBuilder
+    private func lobbyEventsColumn(compact: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Chat e Eventos")
+                .font(.headline)
+                .foregroundColor(.white)
+
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 8) {
+                        ForEach(store.events) { ev in
+                            eventRow(ev)
+                        }
+                    }
+                    .padding(10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .background(Color.black.opacity(0.48))
+                .cornerRadius(10)
+                .onChange(of: store.events.count) { _ in
+                    if let last = store.events.last {
+                        withAnimation { proxy.scrollTo(last.id, anchor: .bottom) }
+                    }
+                }
+            }
+
+            HStack {
+                TextField("Digite uma mensagem...", text: $chatMessage)
+                    .textFieldStyle(.roundedBorder)
+                    .onSubmit {
+                        if !chatMessage.isEmpty {
+                            store.sendChat(text: chatMessage)
+                            chatMessage = ""
+                        }
+                    }
+                Button("Enviar") {
+                    if !chatMessage.isEmpty {
+                        store.sendChat(text: chatMessage)
+                        chatMessage = ""
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(chatMessage.isEmpty)
+            }
+        }
+        .frame(maxHeight: compact ? 250 : .infinity, alignment: .top)
     }
 
     private func slotBadgeColor(for slot: LobbySlotState) -> Color {
@@ -675,7 +730,7 @@ struct OnlineLobbyView: View {
 
     private func slotTag(_ label: String, color: Color) -> some View {
         Text(label)
-            .font(.caption2.weight(.semibold))
+            .font(.caption.weight(.semibold))
             .foregroundColor(color)
             .padding(.horizontal, 8)
             .padding(.vertical, 3)
@@ -686,10 +741,10 @@ struct OnlineLobbyView: View {
     private func connectionLine(_ label: String, _ value: String, tint: Color = .white) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(label.uppercased())
-                .font(.caption2)
-                .foregroundColor(.white.opacity(0.45))
+                .font(.caption.weight(.semibold))
+                .foregroundColor(.white.opacity(0.52))
             Text(value)
-                .font(.caption)
+                .font(.footnote)
                 .foregroundColor(tint)
         }
     }
@@ -700,35 +755,35 @@ struct OnlineLobbyView: View {
         case "chat":
             HStack(alignment: .top) {
                 Text("\(ev.payload?.author ?? "Alguém"):")
-                    .font(.caption.bold())
+                    .font(.footnote.bold())
                     .foregroundColor(.cyan)
                 Text(ev.payload?.text ?? "")
-                    .font(.caption)
+                    .font(.footnote)
                     .foregroundColor(.white)
             }
         case "system":
             Text(ev.payload?.text ?? "")
-                .font(.caption.italic())
+                .font(.footnote.italic())
                 .foregroundColor(.gray)
         case "replacement_invite":
             Text("Link de Substituição (\(ev.payload?.target_seat ?? 0)): \(ev.payload?.invite_key ?? "")")
-                .font(.caption.italic())
+                .font(.footnote.italic())
                 .foregroundColor(.yellow)
         case "error":
             Text(ev.payload?.message ?? ev.payload?.text ?? "Erro")
-                .font(.caption)
+                .font(.footnote)
                 .foregroundColor(.red.opacity(0.9))
         case "lobby_updated":
             Text("Lobby atualizado")
-                .font(.caption)
+                .font(.footnote)
                 .foregroundColor(.white.opacity(0.6))
         case "match_updated":
             Text("Partida atualizada")
-                .font(.caption)
+                .font(.footnote)
                 .foregroundColor(.white.opacity(0.6))
         default:
             Text(ev.payload?.text ?? ev.kind)
-                .font(.caption)
+                .font(.footnote)
                 .foregroundColor(.white.opacity(0.7))
         }
     }

@@ -43,12 +43,20 @@ $canAccept = (bool) ($actions['can_accept'] ?? (!$matchFinished && $pendingFor !
 $locale = $_SESSION['locale'] ?? 'pt-BR';
 ?>
 <section class="panel game-panel">
+    <div class="section-head game-head">
+        <div>
+            <span class="section-kicker"><?= $isOnline ? tr('game_kicker_online') : tr('game_kicker_offline') ?></span>
+            <h2><?= $isOnline ? tr('game_title_online') : tr('game_title_offline') ?></h2>
+        </div>
+        <strong class="mode-pill"><?= htmlspecialchars($mode) ?></strong>
+    </div>
+
     <div class="hud">
         <div class="score-card team-a">
             <span class="score-label"><?= tr('team1') ?></span>
             <strong class="score-value"><?= $snap['MatchPoints'][0] ?? $snap['MatchPoints']['0'] ?? 0 ?></strong>
         </div>
-        <div class="stake-card">
+        <div class="stake-card <?= $pendingFor !== -1 ? 'hot' : '' ?>">
             <div class="stake-main"><span><?= tr('stake') ?></span> <strong><?= $stake ?></strong></div>
             <div class="stake-ladder">
                 <?php foreach ([1, 3, 6, 9, 12] as $step): ?>
@@ -66,6 +74,17 @@ $locale = $_SESSION['locale'] ?? 'pt-BR';
 
     <div class="turn-line <?= $turnPlayer === $myID ? 'my-turn' : '' ?>">
         <?= tr('turn_of', $turnName) ?>
+    </div>
+
+    <div class="match-ribbon">
+        <span class="ribbon-chip">Vale <?= $stake ?></span>
+        <?php if ($pendingFor !== -1): ?>
+            <span class="ribbon-chip hot">Truco em aberto</span>
+        <?php endif; ?>
+        <span class="ribbon-note"><?= tr('game_table_note') ?></span>
+        <?php if ($isOnline): ?>
+            <span class="ribbon-chip muted"><?= !empty($connection['is_online']) ? tr('connection_online') : tr('connection_offline') ?></span>
+        <?php endif; ?>
     </div>
 
     <div class="layout">
@@ -121,7 +140,7 @@ $locale = $_SESSION['locale'] ?? 'pt-BR';
         </div>
 
         <aside class="side-panel">
-            <div class="side-block">
+            <section class="side-block pulse-block">
                 <h3><?= tr('status_title') ?></h3>
                 <div class="status-line">
                     <?php
@@ -138,21 +157,24 @@ $locale = $_SESSION['locale'] ?? 'pt-BR';
                     }
                     ?>
                 </div>
-            </div>
-            <div class="side-block side-log">
+            </section>
+
+            <section class="side-block side-log">
                 <h3><?= tr('log_title') ?></h3>
-                <pre><?= htmlspecialchars(implode("\n", array_slice($snap['Logs'] ?? [], -18))) ?></pre>
-            </div>
+                <pre class="event-feed"><?= htmlspecialchars(implode("\n", array_slice($snap['Logs'] ?? [], -18))) ?></pre>
+            </section>
+
             <?php if ($isOnline): ?>
-                <div class="side-block side-log">
+                <section class="side-block side-log">
                     <h3><?= tr('game_events_title') ?></h3>
-                    <pre><?php
+                    <pre class="event-feed"><?php
                         foreach (array_slice($events, -18) as $ev) {
                             echo htmlspecialchars(formatEventLine($ev)) . "\n";
                         }
                     ?></pre>
-                </div>
-                <div class="side-block">
+                </section>
+
+                <section class="side-block">
                     <h3><?= tr('connection_title') ?></h3>
                     <div class="connection-grid">
                         <div><span><?= tr('connection_status') ?></span><strong><?= htmlspecialchars((string) ($connection['status'] ?? $mode)) ?></strong></div>
@@ -162,30 +184,30 @@ $locale = $_SESSION['locale'] ?? 'pt-BR';
                             <div class="connection-error"><span><?= tr('connection_error') ?></span><strong><?= htmlspecialchars((string) $connection['last_error']['message']) ?></strong></div>
                         <?php endif; ?>
                     </div>
-                </div>
+                </section>
             <?php endif; ?>
         </aside>
     </div>
 
     <div class="action-row">
-        <form method="post" action="index.php" style="display:inline" data-ajax="true">
+        <form method="post" action="index.php" data-ajax="true">
             <input type="hidden" name="action" value="truco">
             <button type="submit" class="btn btn-truco <?= $canTruco ? 'armed' : '' ?>" <?= $canTruco ? '' : 'disabled' ?>>⚡ <?= $canAccept ? tr('btn_raise') : tr('btn_truco') ?></button>
         </form>
-        <form method="post" action="index.php" style="display:inline" data-ajax="true">
+        <form method="post" action="index.php" data-ajax="true">
             <input type="hidden" name="action" value="accept">
             <button type="submit" class="btn btn-accept" <?= $canAccept ? '' : 'disabled' ?>>✓ <?= tr('btn_accept') ?></button>
         </form>
-        <form method="post" action="index.php" style="display:inline" data-ajax="true">
+        <form method="post" action="index.php" data-ajax="true">
             <input type="hidden" name="action" value="refuse">
             <button type="submit" class="btn btn-refuse" <?= $canAccept ? '' : 'disabled' ?>>✕ <?= tr('btn_refuse') ?></button>
         </form>
-        <form method="post" action="index.php" style="display:inline" data-ajax="true">
+        <form method="post" action="index.php" data-ajax="true">
             <input type="hidden" name="action" value="refreshGame">
             <button type="submit" class="btn btn-neutral">↺ <?= tr('refresh') ?></button>
         </form>
         <?php if ($isOnline): ?>
-            <form method="post" action="index.php" style="display:inline" data-ajax="true">
+            <form method="post" action="index.php" data-ajax="true">
                 <input type="hidden" name="action" value="leaveLobby">
                 <button type="submit" class="btn btn-refuse">⎋ <?= tr('lobby_leave') ?></button>
             </form>
@@ -197,45 +219,51 @@ $locale = $_SESSION['locale'] ?? 'pt-BR';
         <div class="my-hand" role="list">
             <?php foreach ($myCards as $idx => $card): ?>
                 <?php if ($canPlayCard): ?>
-                    <form method="post" action="index.php" style="display:inline" class="card-form" data-ajax="true">
+                    <form method="post" action="index.php" class="card-form" data-ajax="true">
                         <input type="hidden" name="action" value="play">
                         <input type="hidden" name="cardIndex" value="<?= $idx ?>">
                         <button type="submit" class="card-btn" role="listitem"><?= renderCard($card, false, (string) ($idx + 1)) ?></button>
                     </form>
                 <?php else: ?>
-                    <div class="card-btn" role="listitem" style="opacity:0.56"><?= renderCard($card, false, (string) ($idx + 1)) ?></div>
+                    <div class="card-btn disabled-card" role="listitem"><?= renderCard($card, false, (string) ($idx + 1)) ?></div>
                 <?php endif; ?>
             <?php endforeach; ?>
         </div>
     </div>
 
     <?php if ($isOnline): ?>
-        <div class="side-block" style="margin-top:12px;">
-            <h3><?= tr('lobby_events_title') ?></h3>
-            <div class="action-row" style="margin-bottom:8px;">
-                <?php foreach (($lobby['slots'] ?? []) as $idx => $slotName): ?>
-                    <?php $slotState = $slotStates[$idx] ?? []; ?>
-                    <?php if (($slotState['can_vote_host'] ?? ($idx !== ($lobby['assigned_seat'] ?? -1) && trim((string) $slotName) !== ''))): ?>
-                        <form method="post" action="index.php" style="display:inline" data-ajax="true">
-                            <input type="hidden" name="action" value="voteHost">
-                            <input type="hidden" name="slot" value="<?= $idx ?>">
-                            <button type="submit" class="btn btn-neutral"><?= tr('action_vote_host') ?> <?= $idx + 1 ?></button>
-                        </form>
-                    <?php endif; ?>
-                    <?php if (($slotState['can_request_replacement'] ?? false)): ?>
-                        <form method="post" action="index.php" style="display:inline" data-ajax="true">
-                            <input type="hidden" name="action" value="requestReplacementInvite">
-                            <input type="hidden" name="slot" value="<?= $idx ?>">
-                            <button type="submit" class="btn btn-truco"><?= tr('action_replacement_invite') ?> <?= $idx + 1 ?></button>
-                        </form>
-                    <?php endif; ?>
-                <?php endforeach; ?>
-            </div>
-            <form method="post" action="index.php" class="lobby-chat-row" data-ajax="true">
-                <input type="hidden" name="action" value="sendChat">
-                <input name="message" class="field" type="text" autocomplete="off" placeholder="<?= tr('chat_placeholder') ?>">
-                <button type="submit" class="btn btn-neutral">💬 <?= tr('lobby_chat_send') ?></button>
-            </form>
+        <div class="table-ops">
+            <section class="side-block">
+                <h3><?= tr('lobby_events_title') ?></h3>
+                <div class="action-row compact-row">
+                    <?php foreach (($lobby['slots'] ?? []) as $idx => $slotName): ?>
+                        <?php $slotState = $slotStates[$idx] ?? []; ?>
+                        <?php if (($slotState['can_vote_host'] ?? ($idx !== ($lobby['assigned_seat'] ?? -1) && trim((string) $slotName) !== ''))): ?>
+                            <form method="post" action="index.php" data-ajax="true">
+                                <input type="hidden" name="action" value="voteHost">
+                                <input type="hidden" name="slot" value="<?= $idx ?>">
+                                <button type="submit" class="btn btn-neutral"><?= tr('action_vote_host') ?> <?= $idx + 1 ?></button>
+                            </form>
+                        <?php endif; ?>
+                        <?php if (($slotState['can_request_replacement'] ?? false)): ?>
+                            <form method="post" action="index.php" data-ajax="true">
+                                <input type="hidden" name="action" value="requestReplacementInvite">
+                                <input type="hidden" name="slot" value="<?= $idx ?>">
+                                <button type="submit" class="btn btn-truco"><?= tr('action_replacement_invite') ?> <?= $idx + 1 ?></button>
+                            </form>
+                        <?php endif; ?>
+                    <?php endforeach; ?>
+                </div>
+            </section>
+
+            <section class="side-block chat-block">
+                <h3><?= tr('lobby_chat_send') ?></h3>
+                <form method="post" action="index.php" class="lobby-chat-row" data-ajax="true">
+                    <input type="hidden" name="action" value="sendChat">
+                    <input name="message" class="field" type="text" autocomplete="off" placeholder="<?= tr('chat_placeholder') ?>">
+                    <button type="submit" class="btn btn-neutral">💬 <?= tr('lobby_chat_send') ?></button>
+                </form>
+            </section>
         </div>
     <?php endif; ?>
 
