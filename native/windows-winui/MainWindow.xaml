@@ -65,6 +65,10 @@
                     </TextBlock.Shadow>
                 </TextBlock>
 
+                <Border Background="#AA3B0D0D" BorderBrush="#FFB3B3" BorderThickness="1" CornerRadius="10" Padding="12,10" Width="280" Visibility="{Binding VisibilityIfLastActionError}">
+                    <TextBlock Text="{Binding CombinedErrorText}" Foreground="#FFFFD9D9" TextWrapping="Wrap"/>
+                </Border>
+
                 <TextBox Header="Seu nome" Text="{Binding SetupPlayerName, Mode=TwoWay}" Width="280"/>
                 <ComboBox Header="Jogadores" SelectedIndex="{Binding SetupNumPlayersIndex, Mode=TwoWay}" Width="280">
                     <ComboBoxItem Content="2 jogadores"/>
@@ -99,10 +103,12 @@
                 
                 <StackPanel Grid.Column="0" Orientation="Vertical" Spacing="16" Margin="0,0,20,0">
                     <TextBlock Text="Sala Online" FontSize="36" FontWeight="Black" Foreground="White"/>
+                    <TextBlock Text="{Binding LobbyStatusText}" Foreground="#FFE7D9B6" FontSize="14"/>
                     
                     <StackPanel Orientation="Horizontal" Spacing="8" Visibility="{Binding VisibilityIfInviteKey}">
                         <TextBlock Text="Chave:" FontSize="16" Foreground="LightGray" VerticalAlignment="Center"/>
-                        <TextBox Text="{Binding LobbySnapshot.InviteKey}" IsReadOnly="True" Width="200" VerticalAlignment="Center" FontSize="16" FontWeight="Bold" Foreground="#FFCC00"/>
+                        <TextBox Text="{Binding InviteKeyText}" IsReadOnly="True" Width="200" VerticalAlignment="Center" FontSize="16" FontWeight="Bold" Foreground="#FFCC00"/>
+                        <Button Content="Copiar" Command="{Binding CopyInviteKeyCommand}" VerticalAlignment="Center" Padding="12,6"/>
                     </StackPanel>
                     
                     <Border Background="#22000000" CornerRadius="8" Padding="16">
@@ -119,7 +125,10 @@
                                                 <ColumnDefinition Width="Auto"/>
                                             </Grid.ColumnDefinitions>
                                             
-                                            <TextBlock Grid.Column="0" Text="{Binding Label}" Foreground="White" VerticalAlignment="Center"/>
+                                            <StackPanel Grid.Column="0" Spacing="2">
+                                                <TextBlock Text="{Binding Label}" Foreground="White" VerticalAlignment="Center"/>
+                                                <TextBlock Text="{Binding StatusText}" Foreground="#FFCC00" FontSize="12"/>
+                                            </StackPanel>
 
                                             <Button Grid.Column="1"
                                                     Content="Votar Host"
@@ -159,7 +168,8 @@
                                 <TextBlock Text="Fila" Foreground="Gray"/>
                                 <TextBlock Text="{Binding EventBacklogText}" Foreground="LightGray"/>
                             </StackPanel>
-                            <TextBlock Text="{Binding ConnectionErrorText}" Foreground="#FFB3B3" TextWrapping="Wrap" Visibility="{Binding VisibilityIfConnectionError}"/>
+                            <TextBlock Text="{Binding CombinedErrorText}" Foreground="#FFB3B3" TextWrapping="Wrap" Visibility="{Binding VisibilityIfCombinedError}"/>
+                            <Button Content="Atualizar" Command="{Binding RefreshStateCommand}" HorizontalAlignment="Left" Padding="12,6"/>
                         </StackPanel>
                     </Border>
                     
@@ -171,6 +181,7 @@
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
+                        <RowDefinition Height="160"/>
                         <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
                     
@@ -187,8 +198,23 @@
                             </ItemsControl>
                         </ScrollViewer>
                     </Border>
+
+                    <Border Grid.Row="2" Background="#22000000" CornerRadius="8" Padding="12" Margin="0,0,0,12">
+                        <StackPanel Spacing="8">
+                            <TextBlock Text="Eventos da sala" FontWeight="Bold" Foreground="White"/>
+                            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                <ItemsControl ItemsSource="{Binding LobbyEventEntries}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding}" Foreground="LightGray" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,4"/>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </ScrollViewer>
+                        </StackPanel>
+                    </Border>
                     
-                    <Grid Grid.Row="2">
+                    <Grid Grid.Row="3">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*"/>
                             <ColumnDefinition Width="Auto"/>
@@ -355,8 +381,12 @@
                     </StackPanel>
                     
                     <!-- Turn Indicator -->
-                    <Border Background="#FFCC00" CornerRadius="16" Padding="12,4" Margin="0,0,0,16" HorizontalAlignment="Center">
-                        <TextBlock Text="{Binding TurnIndicatorText}" FontSize="12" FontWeight="Bold" Foreground="Black" />
+                    <Border Background="#FFCC00" CornerRadius="16" Padding="12,4" Margin="0,0,0,10" HorizontalAlignment="Center">
+                        <TextBlock Text="{Binding MatchStatusText}" FontSize="12" FontWeight="Bold" Foreground="Black" />
+                    </Border>
+
+                    <Border Background="#66000000" CornerRadius="12" Padding="14,10" Margin="0,0,0,16" HorizontalAlignment="Center" Visibility="{Binding VisibilityIfLastActionError}">
+                        <TextBlock Text="{Binding CombinedErrorText}" Foreground="#FFFFD9D9" TextWrapping="Wrap" MaxWidth="420"/>
                     </Border>
                     
                     <!-- My Cards -->
@@ -421,17 +451,35 @@
             </Grid>
             
             <!-- Global Logs / Events Banner overlay (Optional) -->
-            <StackPanel Visibility="{Binding IsPlaying}" VerticalAlignment="Bottom" HorizontalAlignment="Left" Margin="24,0,0,24" MinWidth="300">
-                <Border Background="#66000000" CornerRadius="8" Padding="16" MaxHeight="120">
-                    <ScrollViewer VerticalScrollBarVisibility="Auto">
-                        <ItemsControl ItemsSource="{Binding Snapshot.Logs}">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                    <TextBlock Text="{Binding}" Foreground="LightGray" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,4"/>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                    </ScrollViewer>
+            <StackPanel Visibility="{Binding VisibilityIfPlaying}" VerticalAlignment="Bottom" HorizontalAlignment="Left" Margin="24,0,0,24" MinWidth="340" Spacing="10">
+                <Border Background="#66000000" CornerRadius="8" Padding="16" MaxHeight="160">
+                    <StackPanel Spacing="8">
+                        <TextBlock Text="Log da partida" Foreground="White" FontWeight="Bold"/>
+                        <ScrollViewer VerticalScrollBarVisibility="Auto">
+                            <ItemsControl ItemsSource="{Binding MatchLogEntries}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding}" Foreground="LightGray" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,4"/>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
+                    </StackPanel>
+                </Border>
+
+                <Border Background="#66000000" CornerRadius="8" Padding="16" MaxHeight="160">
+                    <StackPanel Spacing="8">
+                        <TextBlock Text="Eventos do runtime" Foreground="White" FontWeight="Bold"/>
+                        <ScrollViewer VerticalScrollBarVisibility="Auto">
+                            <ItemsControl ItemsSource="{Binding EventLogEntries}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding}" Foreground="LightGray" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,4"/>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
+                    </StackPanel>
                 </Border>
             </StackPanel>
 
@@ -482,7 +530,7 @@
                             <TextBlock Text="Fila" Foreground="Gray"/>
                             <TextBlock Text="{Binding EventBacklogText}" Foreground="LightGray"/>
                         </StackPanel>
-                        <TextBlock Text="{Binding ConnectionErrorText}" Foreground="#FFB3B3" TextWrapping="Wrap" Visibility="{Binding VisibilityIfConnectionError}"/>
+                        <TextBlock Text="{Binding CombinedErrorText}" Foreground="#FFB3B3" TextWrapping="Wrap" Visibility="{Binding VisibilityIfCombinedError}"/>
                         <ItemsControl ItemsSource="{Binding LobbySlots}">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
@@ -505,6 +553,10 @@
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <Button Content="Atualizar" Command="{Binding RefreshStateCommand}" Padding="12,6"/>
+                            <Button Content="Sair da mesa" Command="{Binding LeaveMatchCommand}" Padding="12,6"/>
+                        </StackPanel>
                     </StackPanel>
                 </Border>
             </StackPanel>
