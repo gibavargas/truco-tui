@@ -80,10 +80,19 @@ public class GameSnapshot
     public int? PendingRaiseBy { get; set; }
     public int? PendingRaiseTo { get; set; }
     public int? CurrentPlayerIdx { get; set; }
+    [JsonPropertyName("last_trick_seq")]
     public int? LastTrickSeq { get; set; }
+
+    [JsonPropertyName("last_trick_team")]
     public int? LastTrickTeam { get; set; }
+
+    [JsonPropertyName("last_trick_winner")]
     public int? LastTrickWinner { get; set; }
+
+    [JsonPropertyName("last_trick_tie")]
     public bool? LastTrickTie { get; set; }
+
+    [JsonPropertyName("last_trick_round")]
     public int? LastTrickRound { get; set; }
 }
 
@@ -104,6 +113,36 @@ public class HandState
     public int? WinnerTeam { get; set; }
     public bool? Finished { get; set; }
     public int? PendingRaiseFor { get; set; }
+    
+    [JsonIgnore]
+    public string? WinningCardId
+    {
+        get
+        {
+            if (RoundCards == null || RoundCards.Count == 0) return null;
+            
+            string? bestId = null;
+            int bestPower = -1;
+            bool isTie = false;
+
+            foreach (var pc in RoundCards)
+            {
+                if (pc.Card == null) continue;
+                int p = pc.Card.Power(Manilha);
+                if (p > bestPower)
+                {
+                    bestPower = p;
+                    bestId = $"{pc.PlayerID}-{pc.Card.Rank}-{pc.Card.Suit}";
+                    isTie = false;
+                }
+                else if (p == bestPower)
+                {
+                    isTie = true;
+                }
+            }
+            return isTie ? null : bestId;
+        }
+    }
 }
 
 public class Player
@@ -145,6 +184,28 @@ public class Card
 
     [JsonIgnore]
     public string DisplayText => $"{Rank}{SuitSymbol}";
+    
+    [JsonIgnore]
+    public string Id => $"{Rank}-{Suit}";
+
+    public int Power(string? manilha)
+    {
+        var normalPower = new Dictionary<string, int>
+        {
+            { "3", 10 }, { "2", 9 }, { "A", 8 }, { "K", 7 }, { "J", 6 }, 
+            { "Q", 5 }, { "7", 4 }, { "6", 3 }, { "5", 2 }, { "4", 1 }
+        };
+        var manilhaSuitPower = new Dictionary<string, int>
+        {
+            { "Paus", 4 }, { "Copas", 3 }, { "Espadas", 2 }, { "Ouros", 1 }
+        };
+
+        if (Rank == manilha)
+        {
+            return 100 + (manilhaSuitPower.TryGetValue(Suit, out int sp) ? sp : 0);
+        }
+        return normalPower.TryGetValue(Rank, out int p) ? p : 0;
+    }
 }
 
 public class LobbySnapshot
@@ -172,10 +233,23 @@ public class LobbySlotItem
     public bool IsAssigned { get; set; }
     public bool IsHost { get; set; }
     public bool IsConnected { get; set; }
+    public bool IsLocal { get; set; }
+    public bool IsProvisionalCpu { get; set; }
     public bool CanVote { get; set; }
     public bool CanReplace { get; set; }
-    public string StatusText => IsHost ? "HOST" : (IsConnected ? "ONLINE" : (IsAssigned ? "OFFLINE" : "EMPTY"));
-    public Brush StatusColor => IsHost ? Brushes.Gold : (IsConnected ? Brushes.LightGreen : (IsAssigned ? Brushes.Gray : Brushes.DimGray));
+    public string? RuntimeStatus { get; set; }
+    public string StatusText
+    {
+        get
+        {
+            if (IsProvisionalCpu) return "CPU";
+            if (IsHost) return "HOST";
+            if (IsLocal) return "VOCE";
+            if (!string.IsNullOrWhiteSpace(RuntimeStatus)) return RuntimeStatus!.ToUpperInvariant();
+            return IsConnected ? "ONLINE" : (IsAssigned ? "OFFLINE" : "EMPTY");
+        }
+    }
+    public Brush StatusColor => IsProvisionalCpu ? Brushes.Orange : (IsHost ? Brushes.Gold : (IsLocal ? Brushes.DeepSkyBlue : (IsConnected ? Brushes.LightGreen : (IsAssigned ? Brushes.Gray : Brushes.DimGray))));
 }
 
 public class LobbySlotState
@@ -234,6 +308,8 @@ public class ConnectionSnapshot
     public bool? IsOnline { get; set; }
     [JsonPropertyName("is_host")]
     public bool? IsHost { get; set; }
+    [JsonPropertyName("last_error")]
+    public AppError? LastError { get; set; }
 }
 
 public class DiagnosticsSnapshot
@@ -242,4 +318,13 @@ public class DiagnosticsSnapshot
     public int? EventBacklog { get; set; }
     [JsonPropertyName("event_log")]
     public List<string>? EventLog { get; set; }
+}
+
+public class AppError
+{
+    [JsonPropertyName("code")]
+    public string? Code { get; set; }
+
+    [JsonPropertyName("message")]
+    public string? Message { get; set; }
 }

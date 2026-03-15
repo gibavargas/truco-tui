@@ -14,6 +14,7 @@ struct AppState {
     pub last_snapshot_str: String,
     pub last_pending_raise: Option<i32>,
     pub truco_flash_ticks: u32,
+    pub last_trick_seq_viewed: i32,
     pub event_history: Vec<String>,
 }
 
@@ -36,6 +37,7 @@ fn main() {
             last_snapshot_str: String::new(),
             last_pending_raise: None,
             truco_flash_ticks: 0,
+            last_trick_seq_viewed: -1,
             event_history: Vec::new(),
         }));
 
@@ -75,12 +77,22 @@ fn main() {
             let _ = core_start.dispatch(&intent);
         });
 
-        // Back to lobby button
         let btn_back = window.btn_back_lobby();
         let win_back = window.clone();
         btn_back.connect_clicked(move |_| {
             win_back.game_over_overlay().set_visible(false);
             win_back.main_stack().set_visible_child_name("lobby");
+        });
+
+        // Leave Match Button
+        let btn_leave_match = window.btn_leave_match();
+        let win_leave_match = window.clone();
+        let core_leave_match = core.clone();
+        btn_leave_match.connect_clicked(move |_| {
+            let _ = core_leave_match.dispatch(r#"{"kind":"close_session"}"#);
+            win_leave_match.game_over_overlay().set_visible(false);
+            win_leave_match.trick_end_overlay().set_visible(false);
+            clear_listbox(&win_leave_match.list_chat());
         });
 
         // Online Host button
@@ -92,10 +104,19 @@ fn main() {
             let name = if player_name.is_empty() { "Voce".to_string() } else { player_name };
             let num_idx = win_host.dd_num_players().selected();
             let num_players = if num_idx == 1 { 4 } else { 2 };
-            let intent = format!(
-                r#"{{"kind":"create_host_session","payload":{{"host_name":"{}","num_players":{}}}}}"#,
-                name, num_players
-            );
+            let relay_url = win_host.entry_relay_url().text().to_string();
+            let intent = if relay_url.trim().is_empty() {
+                format!(
+                    r#"{{"kind":"create_host_session","payload":{{"host_name":"{}","num_players":{}}}}}"#,
+                    name, num_players
+                )
+            } else {
+                let safe_relay = relay_url.replace("\"", "\\\"");
+                format!(
+                    r#"{{"kind":"create_host_session","payload":{{"host_name":"{}","num_players":{},"relay_url":"{}"}}}}"#,
+                    name, num_players, safe_relay
+                )
+            };
             let _ = core_host.dispatch(&intent);
         });
 
@@ -108,9 +129,14 @@ fn main() {
             let name = if player_name.is_empty() { "Voce".to_string() } else { player_name };
             let key = win_join.entry_invite_key().text().to_string();
             if key.is_empty() { return; }
+            let desired_role = match win_join.dd_desired_role().selected() {
+                1 => "partner",
+                2 => "opponent",
+                _ => "auto",
+            };
             let intent = format!(
-                r#"{{"kind":"join_session","payload":{{"key":"{}","player_name":"{}"}}}}"#,
-                key, name
+                r#"{{"kind":"join_session","payload":{{"key":"{}","player_name":"{}","desired_role":"{}"}}}}"#,
+                key, name, desired_role
             );
             let _ = core_join.dispatch(&intent);
         });
@@ -197,7 +223,8 @@ fn main() {
                 if snap_str != s.last_snapshot_str {
                     s.last_snapshot_str = snap_str.clone();
                     if let Some(bundle) = models::SnapshotBundle::from_json(&snap_str) {
-                         update_ui(&s.window, &bundle, &s.core, &s.event_history);
+                         let AppState { window, core, event_history, last_trick_seq_viewed, .. } = &mut *s;
+                         update_ui(window, &bundle, core, event_history, last_trick_seq_viewed);
                     }
                 }
             }
@@ -241,13 +268,13 @@ fn clear_listbox(lb: &gtk::ListBox) {
     }
 }
 
-fn update_ui(window: &window::TrucoWindow, bundle: &models::SnapshotBundle, core: &TrucoCore, event_history: &[String]) {
+fn update_ui(window: &window::TrucoWindow, bundle: &models::SnapshotBundle, core: &TrucoCore, event_history: &[String], last_trick_seq_viewed: &mut i32) {
     let mode = bundle.mode.as_deref().unwrap_or("idle");
     
     if mode == "offline_match" || mode == "host_match" || mode == "client_match" || mode == "match_over" {
         window.main_stack().set_visible_child_name("game");
         if let Some(ref snap) = bundle.match_snapshot {
-            update_game_ui(window, snap, bundle, core, event_history);
+            update_game_ui(window, snap, bundle, core, event_history, last_trick_seq_viewed);
         }
     } else if mode == "host_lobby" || mode == "client_lobby" {
         window.main_stack().set_visible_child_name("online_lobby");
@@ -258,10 +285,24 @@ fn update_ui(window: &window::TrucoWindow, bundle: &models::SnapshotBundle, core
 }
 
 fn update_lobby_ui(window: &window::TrucoWindow, bundle: &models::SnapshotBundle, core: &TrucoCore, mode: &str) {
-    window.lbl_online_status().set_label(if mode == "host_lobby" { "🏠 Sala Criada" } else { "🔗 Conectado" });
+    let status = bundle.connection.as_ref()
+        .and_then(|v| v.get("status").and_then(|s| s.as_str()))
+        .unwrap_or(mode);
+    let online = bundle.connection.as_ref()
+        .and_then(|v| v.get("is_online").and_then(|s| s.as_bool()))
+        .unwrap_or(true);
+    let backlog = bundle.diagnostics.as_ref()
+        .and_then(|v| v.get("event_backlog").and_then(|n| n.as_i64()))
+        .unwrap_or(0);
     
     if let Some(lobby_val) = &bundle.lobby {
         if let Ok(lobby) = serde_json::from_value::<models::LobbySnapshot>(lobby_val.clone()) {
+            let header = if let Some(role) = lobby.role.as_deref() {
+                format!("{}  •  {}  •  fila {}  •  papel {}", status, if online { "online" } else { "offline" }, backlog, role)
+            } else {
+                format!("{}  •  {}  •  fila {}", status, if online { "online" } else { "offline" }, backlog)
+            };
+            window.lbl_online_status().set_label(&header);
             if let Some(key) = &lobby.invite_key {
                 window.lbl_invite_key_display().set_label(&format!("Chave: {}", key));
             } else {
@@ -333,18 +374,23 @@ fn update_lobby_ui(window: &window::TrucoWindow, bundle: &models::SnapshotBundle
                 }
             }
         }
+    } else {
+        let header = format!("{}  •  {}  •  fila {}", status, if online { "online" } else { "offline" }, backlog);
+        window.lbl_online_status().set_label(&header);
     }
     
     window.btn_start_online_match().set_visible(mode == "host_lobby");
 }
 
-fn update_game_ui(window: &window::TrucoWindow, snapshot: &models::GameSnapshot, bundle: &models::SnapshotBundle, core: &TrucoCore, event_history: &[String]) {
+fn update_game_ui(window: &window::TrucoWindow, snapshot: &models::GameSnapshot, bundle: &models::SnapshotBundle, core: &TrucoCore, event_history: &[String], last_trick_seq_viewed: &mut i32) {
     let mode = bundle.mode.as_deref().unwrap_or("idle");
     
     if mode == "offline_match" || mode == "host_match" || mode == "client_match" || mode == "match_over" {
         window.main_stack().set_visible_child_name("game");
     } else {
         window.main_stack().set_visible_child_name("online_lobby");
+        *last_trick_seq_viewed = -1;
+        window.trick_end_overlay().set_visible(false);
         return;
     }
 
@@ -353,6 +399,40 @@ fn update_game_ui(window: &window::TrucoWindow, snapshot: &models::GameSnapshot,
         .and_then(|p| p.iter().find(|pl| pl.id == local_idx))
         .map(|pl| pl.team).unwrap_or(0);
     let n = snapshot.num_players.unwrap_or(2) as usize;
+
+    // Trick End Animation Tracker
+    if let Some(trick_seq) = snapshot.last_trick_seq {
+        if trick_seq > 0 {
+            if *last_trick_seq_viewed == -1 {
+                *last_trick_seq_viewed = trick_seq;
+            } else if trick_seq > *last_trick_seq_viewed {
+                *last_trick_seq_viewed = trick_seq;
+                
+                // Show banner
+                let winner_team = snapshot.last_trick_team.unwrap_or(-1);
+                let tie = snapshot.last_trick_tie.unwrap_or(false);
+                
+                let emoji = if tie { "😐" } else if winner_team == my_team { "🎉" } else { "😢" };
+                let text = if tie { "EMPATE!" } else if winner_team == my_team { "VOCE VENCEU A VAZA!" } else { "ELES VENCERAM" };
+                
+                window.lbl_trick_emoji().set_label(emoji);
+                window.lbl_trick_text().set_label(text);
+                if tie {
+                    window.lbl_trick_text().add_css_class("text-tie");
+                } else if winner_team == my_team {
+                    window.lbl_trick_text().add_css_class("text-victory");
+                } else {
+                    window.lbl_trick_text().add_css_class("text-defeat");
+                }
+                
+                window.trick_end_overlay().set_visible(true);
+                let win_clone = window.clone();
+                glib::timeout_add_local_once(std::time::Duration::from_millis(1800), move || {
+                    win_clone.trick_end_overlay().set_visible(false);
+                });
+            }
+        }
+    }
 
     // Match Over
     if snapshot.match_finished == Some(true) {
@@ -491,14 +571,33 @@ fn update_game_ui(window: &window::TrucoWindow, snapshot: &models::GameSnapshot,
         played_box.set_size_request(180, 160);
         played_box.set_valign(gtk::Align::Center);
         played_box.set_halign(gtk::Align::Center);
+        
+        // Find winning card formatted ID
+        let winning_card_id = hand.winning_card_id();
+
         if let Some(rounds) = &hand.round_cards {
             for playing in rounds.iter() {
                 let col = gtk::Box::new(gtk::Orientation::Vertical, 4);
                 let pname = snapshot.players.as_ref()
                     .and_then(|p| p.iter().find(|pl| pl.id == playing.player_id))
                     .map(|pl| pl.name.as_str()).unwrap_or("?");
-                col.append(&gtk::Label::new(Some(pname)));
-                col.append(&create_card_widget(Some(&playing.card)));
+                
+                let is_winner = winning_card_id.as_ref().map(|id| *id == format!("{}-{}-{}", playing.player_id, playing.card.rank, playing.card.suit)).unwrap_or(false);
+                
+                let plbl = gtk::Label::new(Some(pname));
+                plbl.add_css_class("playing-nametag");
+                if is_winner {
+                    plbl.add_css_class("playing-nametag-winner");
+                }
+                
+                col.append(&plbl);
+                
+                let c_widget = create_card_widget(Some(&playing.card));
+                if is_winner {
+                    c_widget.add_css_class("card-winner");
+                }
+                
+                col.append(&c_widget);
                 played_box.append(&col);
             }
         }

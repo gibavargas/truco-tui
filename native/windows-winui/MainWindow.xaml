@@ -64,6 +64,22 @@
                         <ThemeShadow />
                     </TextBlock.Shadow>
                 </TextBlock>
+
+                <TextBox Header="Seu nome" Text="{Binding SetupPlayerName, Mode=TwoWay}" Width="280"/>
+                <ComboBox Header="Jogadores" SelectedIndex="{Binding SetupNumPlayersIndex, Mode=TwoWay}" Width="280">
+                    <ComboBoxItem Content="2 jogadores"/>
+                    <ComboBoxItem Content="4 jogadores"/>
+                </ComboBox>
+                <ComboBox Header="Idioma" SelectedIndex="{Binding SetupLocaleIndex, Mode=TwoWay}" Width="280">
+                    <ComboBoxItem Content="Português (Brasil)"/>
+                    <ComboBoxItem Content="English (US)"/>
+                </ComboBox>
+                <TextBox Header="Relay URL (opcional)" Text="{Binding SetupRelayUrl, Mode=TwoWay}" Width="280"/>
+                <ComboBox Header="Papel ao entrar" SelectedIndex="{Binding SetupDesiredRoleIndex, Mode=TwoWay}" Width="280">
+                    <ComboBoxItem Content="Auto"/>
+                    <ComboBoxItem Content="Parceiro"/>
+                    <ComboBoxItem Content="Adversário"/>
+                </ComboBox>
                 
                 <Button Content="Jogar Offline" Command="{Binding StartGameCommand}" Width="280" Height="50" FontSize="16" Background="#FFCC00" Foreground="Black" FontWeight="Bold" HorizontalAlignment="Center" CornerRadius="8"/>
                 <Button Content="Criar Sala (Host)" Command="{Binding HostOnlineGameCommand}" Width="280" Height="50" FontSize="16" Background="#444444" Foreground="White" FontWeight="Bold" HorizontalAlignment="Center" CornerRadius="8"/>
@@ -121,6 +137,29 @@
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
                             
+                        </StackPanel>
+                    </Border>
+
+                    <Border Background="#22000000" CornerRadius="8" Padding="16">
+                        <StackPanel Spacing="8">
+                            <TextBlock Text="Rede e controle" FontWeight="Bold" Foreground="White"/>
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <TextBlock Text="Status" Foreground="Gray"/>
+                                <TextBlock Text="{Binding ConnectionStatusText}" Foreground="LightGray"/>
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <TextBlock Text="Modo" Foreground="Gray"/>
+                                <TextBlock Text="{Binding ConnectionModeText}" Foreground="LightGray"/>
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Spacing="8" Visibility="{Binding VisibilityIfConnectionRole}">
+                                <TextBlock Text="Papel" Foreground="Gray"/>
+                                <TextBlock Text="{Binding ConnectionRoleText}" Foreground="LightGray"/>
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <TextBlock Text="Fila" Foreground="Gray"/>
+                                <TextBlock Text="{Binding EventBacklogText}" Foreground="LightGray"/>
+                            </StackPanel>
+                            <TextBlock Text="{Binding ConnectionErrorText}" Foreground="#FFB3B3" TextWrapping="Wrap" Visibility="{Binding VisibilityIfConnectionError}"/>
                         </StackPanel>
                     </Border>
                     
@@ -423,6 +462,50 @@
                             <Button Grid.Column="1" Content="Enviar" Command="{Binding SendChatCommand}" Background="#FFCC00" Foreground="Black" FontWeight="Bold" CornerRadius="8"/>
                         </Grid>
                     </Grid>
+                </Border>
+                <Border Background="#66000000" CornerRadius="8" Padding="12" Margin="0,10,0,0">
+                    <StackPanel Spacing="8">
+                        <TextBlock Text="Rede e controle" Foreground="White" FontWeight="Bold"/>
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <TextBlock Text="Status" Foreground="Gray"/>
+                            <TextBlock Text="{Binding ConnectionStatusText}" Foreground="LightGray"/>
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <TextBlock Text="Modo" Foreground="Gray"/>
+                            <TextBlock Text="{Binding ConnectionModeText}" Foreground="LightGray"/>
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="8" Visibility="{Binding VisibilityIfConnectionRole}">
+                            <TextBlock Text="Papel" Foreground="Gray"/>
+                            <TextBlock Text="{Binding ConnectionRoleText}" Foreground="LightGray"/>
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <TextBlock Text="Fila" Foreground="Gray"/>
+                            <TextBlock Text="{Binding EventBacklogText}" Foreground="LightGray"/>
+                        </StackPanel>
+                        <TextBlock Text="{Binding ConnectionErrorText}" Foreground="#FFB3B3" TextWrapping="Wrap" Visibility="{Binding VisibilityIfConnectionError}"/>
+                        <ItemsControl ItemsSource="{Binding LobbySlots}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <StackPanel Spacing="4" Margin="0,4,0,4">
+                                        <TextBlock Text="{Binding Label}" Foreground="White" TextWrapping="Wrap"/>
+                                        <StackPanel Orientation="Horizontal" Spacing="8">
+                                            <TextBlock Text="{Binding StatusText}" Foreground="#FFCC00" FontSize="12"/>
+                                            <Button Content="Votar host"
+                                                    Command="{Binding DataContext.VoteHostCommand, ElementName=RootPanel}"
+                                                    CommandParameter="{Binding Seat}"
+                                                    IsEnabled="{Binding CanVote}"
+                                                    Padding="8,4"/>
+                                            <Button Content="Substituir"
+                                                    Command="{Binding DataContext.RequestReplacementInviteCommand, ElementName=RootPanel}"
+                                                    CommandParameter="{Binding Seat}"
+                                                    IsEnabled="{Binding CanReplace}"
+                                                    Padding="8,4"/>
+                                        </StackPanel>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
                 </Border>
             </StackPanel>
 
