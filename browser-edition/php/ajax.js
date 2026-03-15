@@ -1,6 +1,9 @@
 (() => {
+  const UI_MODE_KEY = 'truco-browser-ui-mode';
   const viewRoot = document.getElementById('view-root');
   if (!viewRoot) return;
+
+  applyUiMode(localStorage.getItem(UI_MODE_KEY) || 'polished');
 
   viewRoot.addEventListener('submit', async (event) => {
     const form = event.target.closest('form[data-ajax="true"]');
@@ -16,6 +19,7 @@
       const payload = await submitAjaxForm(form);
       if (payload && payload.viewHtml) {
         viewRoot.innerHTML = payload.viewHtml;
+        syncUiModeButtons();
       }
     } catch (error) {
       console.error('AJAX form failed', error);
@@ -25,6 +29,15 @@
   });
 
   viewRoot.addEventListener('click', async (event) => {
+    const modeButton = event.target.closest('[data-ui-mode]');
+    if (modeButton) {
+      const nextMode = modeButton.dataset.uiMode === 'wireframe' ? 'wireframe' : 'polished';
+      localStorage.setItem(UI_MODE_KEY, nextMode);
+      applyUiMode(nextMode);
+      syncUiModeButtons();
+      return;
+    }
+
     const button = event.target.closest('.btn-copy');
     if (!button) return;
     const text = button.dataset.copyText || '';
@@ -40,6 +53,8 @@
       console.error('Copy failed', error);
     }
   });
+
+  syncUiModeButtons();
 
   async function submitAjaxForm(form) {
     const method = (form.method || 'POST').toUpperCase();
@@ -60,6 +75,19 @@
     }
 
     return response.json();
+  }
+
+  function applyUiMode(mode) {
+    document.body.classList.toggle('ui-wireframe', mode === 'wireframe');
+    document.body.classList.toggle('ui-polished', mode !== 'wireframe');
+  }
+
+  function syncUiModeButtons() {
+    const mode = document.body.classList.contains('ui-wireframe') ? 'wireframe' : 'polished';
+    document.querySelectorAll('[data-ui-mode]').forEach((button) => {
+      button.classList.toggle('is-active', button.dataset.uiMode === mode);
+      button.setAttribute('aria-pressed', button.dataset.uiMode === mode ? 'true' : 'false');
+    });
   }
 
   // 3D Card Tilt Effect
