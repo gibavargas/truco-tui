@@ -1,520 +1,656 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <interface>
   <template class="TrucoWindow" parent="AdwApplicationWindow">
-    <property name="title">Truco</property>
-    <property name="default-width">1200</property>
-    <property name="default-height">800</property>
-    
+    <property name="title">Truco Paulista</property>
+    <property name="default-width">1360</property>
+    <property name="default-height">900</property>
+
     <property name="content">
-      <object class="GtkStack" id="main_stack">
-        <property name="transition-type">crossfade</property>
-        <property name="transition-duration">400</property>
-        
-        <!-- LOBBY PAGE -->
-        <child>
-          <object class="GtkStackPage">
-            <property name="name">lobby</property>
-            <property name="child">
-              <object class="GtkBox" id="lobby_page">
-                <property name="orientation">vertical</property>
-                <property name="halign">center</property>
-                <property name="valign">center</property>
-                <property name="spacing">24</property>
-                
-                <child>
-                  <object class="GtkLabel">
-                    <property name="label">♣ TRUCO PAULISTA ♥</property>
-                    <property name="css-classes">lobby-title</property>
-                  </object>
-                </child>
-                
-                <child>
-                  <object class="GtkLabel">
-                    <property name="label">Edição Nativa Linux</property>
-                    <property name="css-classes">lobby-subtitle</property>
-                  </object>
-                </child>
+      <object class="AdwToastOverlay" id="toast_overlay">
+        <property name="child">
+          <object class="GtkBox">
+            <property name="orientation">vertical</property>
 
-                <!-- Player Name -->
-                <child>
-                  <object class="GtkBox">
-                    <property name="orientation">vertical</property>
-                    <property name="spacing">6</property>
-                    <child>
-                      <object class="GtkLabel">
-                        <property name="label">SEU NOME</property>
-                        <property name="css-classes">setup-label</property>
-                        <property name="halign">start</property>
-                      </object>
-                    </child>
-                    <child>
-                      <object class="GtkEntry" id="entry_player_name">
-                        <property name="text">Voce</property>
-                        <property name="width-request">280</property>
-                      </object>
-                    </child>
-                  </object>
-                </child>
+            <child>
+              <object class="AdwBanner" id="banner">
+                <property name="revealed">false</property>
+                <property name="button-label">OK</property>
+              </object>
+            </child>
 
-                <child>
-                  <object class="GtkBox">
-                    <property name="orientation">vertical</property>
-                    <property name="spacing">6</property>
-                    <child>
-                      <object class="GtkLabel">
-                        <property name="label">RELAY URL (OPCIONAL)</property>
-                        <property name="css-classes">setup-label</property>
-                        <property name="halign">start</property>
-                      </object>
-                    </child>
-                    <child>
-                      <object class="GtkEntry" id="entry_relay_url">
-                        <property name="width-request">280</property>
-                        <property name="placeholder-text">https://relay.example.com</property>
-                      </object>
-                    </child>
-                  </object>
-                </child>
-
-                <child>
-                  <object class="GtkBox">
-                    <property name="orientation">vertical</property>
-                    <property name="spacing">6</property>
-                    <child>
-                      <object class="GtkLabel">
-                        <property name="label">PAPEL AO ENTRAR</property>
-                        <property name="css-classes">setup-label</property>
-                        <property name="halign">start</property>
-                      </object>
-                    </child>
-                    <child>
-                      <object class="GtkDropDown" id="dd_desired_role">
-                        <property name="model">
-                          <object class="GtkStringList">
-                            <items>
-                              <item>Auto</item>
-                              <item>Parceiro</item>
-                              <item>Adversário</item>
-                            </items>
-                          </object>
-                        </property>
-                        <property name="width-request">280</property>
-                      </object>
-                    </child>
-                  </object>
-                </child>
-
-                <!-- Player Count -->
-                <child>
-                  <object class="GtkBox">
-                    <property name="orientation">vertical</property>
-                    <property name="spacing">6</property>
-                    <child>
-                      <object class="GtkLabel">
-                        <property name="label">JOGADORES</property>
-                        <property name="css-classes">setup-label</property>
-                        <property name="halign">start</property>
-                      </object>
-                    </child>
-                    <child>
-                      <object class="GtkDropDown" id="dd_num_players">
-                        <property name="model">
-                          <object class="GtkStringList">
-                            <items>
-                              <item>2 Jogadores</item>
-                              <item>4 Jogadores</item>
-                            </items>
-                          </object>
-                        </property>
-                        <property name="width-request">280</property>
-                      </object>
-                    </child>
-                  </object>
-                </child>
-
-                <!-- Language -->
-                <child>
-                  <object class="GtkBox">
-                    <property name="orientation">vertical</property>
-                    <property name="spacing">6</property>
-                    <child>
-                      <object class="GtkLabel">
-                        <property name="label">IDIOMA / LANGUAGE</property>
-                        <property name="css-classes">setup-label</property>
-                        <property name="halign">start</property>
-                      </object>
-                    </child>
-                    <child>
-                      <object class="GtkDropDown" id="dd_locale">
-                        <property name="model">
-                          <object class="GtkStringList">
-                            <items>
-                              <item>Português (pt-BR)</item>
-                              <item>English (en-US)</item>
-                            </items>
-                          </object>
-                        </property>
-                        <property name="width-request">280</property>
-                      </object>
-                    </child>
-                  </object>
-                </child>
-
-                <!-- Start Actions -->
-                <child>
-                  <object class="GtkBox">
-                    <property name="orientation">vertical</property>
-                    <property name="spacing">12</property>
-                    <property name="margin-top">16</property>
-                    <property name="width-request">280</property>
-                    
-                    <child>
-                      <object class="GtkButton" id="btn_start_demo">
-                        <property name="label">Jogar Offline</property>
-                        <property name="css-classes">suggested-action</property>
-                        <property name="height-request">44</property>
-                      </object>
-                    </child>
-                    <child>
-                      <object class="GtkButton" id="btn_host_online">
-                        <property name="label">Criar Sala (Host)</property>
-                        <property name="height-request">44</property>
-                      </object>
-                    </child>
-                    <child>
+            <child>
+              <object class="AdwToolbarView">
+                <child type="top">
+                  <object class="AdwHeaderBar">
+                    <child type="title">
                       <object class="GtkBox">
                         <property name="orientation">horizontal</property>
-                        <property name="spacing">8</property>
-                        <child>
-                          <object class="GtkEntry" id="entry_invite_key">
-                            <property name="placeholder-text">Chave...</property>
-                            <property name="hexpand">true</property>
-                          </object>
-                        </child>
-                        <child>
-                          <object class="GtkButton" id="btn_join_online">
-                            <property name="label">Entrar</property>
-                          </object>
-                        </child>
-                      </object>
-                    </child>
-                  </object>
-                </child>
-              </object>
-            </property>
-          </object>
-        </child>
-
-        <!-- ONLINE LOBBY PAGE -->
-        <child>
-          <object class="GtkStackPage">
-            <property name="name">online_lobby</property>
-            <property name="child">
-              <object class="GtkBox">
-                <property name="orientation">vertical</property>
-                <property name="spacing">16</property>
-                <property name="margin-top">32</property>
-                <property name="margin-bottom">32</property>
-                <property name="margin-start">32</property>
-                <property name="margin-end">32</property>
-                
-                <child>
-                  <object class="GtkLabel" id="lbl_online_status">
-                    <property name="label">Sala Online</property>
-                    <property name="css-classes">lobby-subtitle</property>
-                  </object>
-                </child>
-                
-                <child>
-                  <object class="GtkBox">
-                    <property name="orientation">horizontal</property>
-                    <property name="spacing">32</property>
-                    <property name="vexpand">true</property>
-                    
-                    <!-- Left: Slots -->
-                    <child>
-                      <object class="GtkBox">
-                        <property name="orientation">vertical</property>
                         <property name="spacing">12</property>
-                        <property name="width-request">300</property>
-                        
                         <child>
-                          <object class="GtkLabel" id="lbl_invite_key_display">
-                            <property name="label">Chave: ...</property>
-                            <property name="selectable">true</property>
-                            <property name="halign">start</property>
+                          <object class="GtkLabel">
+                            <property name="label">TRUCO PAULISTA</property>
+                            <property name="css-classes">header-title</property>
                           </object>
                         </child>
-                        
                         <child>
-                          <object class="GtkListBox" id="list_slots">
-                            <property name="selection-mode">none</property>
-                            <property name="css-classes">boxed-list</property>
+                          <object class="GtkLabel" id="lbl_status_chip">
+                            <property name="label">Mesa pronta</property>
+                            <property name="css-classes">status-chip</property>
                           </object>
                         </child>
-                        
-                        <child>
-                          <object class="GtkButton" id="btn_start_online_match">
-                            <property name="label">Iniciar Partida</property>
-                            <property name="css-classes">suggested-action</property>
-                            <property name="margin-top">16</property>
-                            <property name="visible">false</property>
-                          </object>
-                        </child>
-                        
                       </object>
                     </child>
-                    
-                    <!-- Right: Chat -->
+                  </object>
+                </child>
+
+                <property name="content">
+                  <object class="GtkStack" id="main_stack">
+                    <property name="transition-type">crossfade</property>
+                    <property name="transition-duration">300</property>
+
                     <child>
-                      <object class="GtkBox">
-                        <property name="orientation">vertical</property>
-                        <property name="spacing">8</property>
-                        <property name="hexpand">true</property>
-                        
-                        <child>
+                      <object class="GtkStackPage">
+                        <property name="name">lobby</property>
+                        <property name="child">
                           <object class="GtkScrolledWindow">
+                            <property name="hscrollbar-policy">never</property>
                             <property name="vexpand">true</property>
+                            <child>
+                              <object class="AdwClamp">
+                                <property name="maximum-size">1280</property>
+                                <property name="child">
+                                  <object class="GtkBox" id="lobby_page">
+                                    <property name="orientation">vertical</property>
+                                    <property name="spacing">28</property>
+                                    <property name="margin-top">42</property>
+                                    <property name="margin-bottom">42</property>
+                                    <property name="margin-start">28</property>
+                                    <property name="margin-end">28</property>
+
+                                    <child>
+                                      <object class="GtkBox">
+                                        <property name="orientation">horizontal</property>
+                                        <property name="spacing">24</property>
+                                        <property name="css-classes">hero-shell</property>
+
+                                        <child>
+                                          <object class="GtkBox">
+                                            <property name="orientation">vertical</property>
+                                            <property name="spacing">10</property>
+                                            <property name="hexpand">true</property>
+                                            <property name="css-classes">hero-copy</property>
+                                            <child>
+                                              <object class="GtkLabel" id="lbl_lobby_title">
+                                                <property name="label">Truco Paulista</property>
+                                                <property name="wrap">true</property>
+                                                <property name="halign">start</property>
+                                                <property name="css-classes">lobby-title</property>
+                                              </object>
+                                            </child>
+                                            <child>
+                                              <object class="GtkLabel" id="lbl_lobby_subtitle">
+                                                <property name="label">Mesa nativa Linux em libadwaita</property>
+                                                <property name="wrap">true</property>
+                                                <property name="halign">start</property>
+                                                <property name="css-classes">lobby-subtitle</property>
+                                              </object>
+                                            </child>
+                                          </object>
+                                        </child>
+
+                                        <child>
+                                          <object class="GtkFrame">
+                                            <property name="hexpand">true</property>
+                                            <property name="css-classes">setup-card</property>
+                                            <property name="child">
+                                              <object class="GtkBox">
+                                                <property name="orientation">vertical</property>
+                                                <property name="spacing">20</property>
+                                                <property name="margin-top">24</property>
+                                                <property name="margin-bottom">24</property>
+                                                <property name="margin-start">24</property>
+                                                <property name="margin-end">24</property>
+
+                                                <child>
+                                                  <object class="GtkLabel">
+                                                    <property name="label">Prepare a mesa</property>
+                                                    <property name="halign">start</property>
+                                                    <property name="css-classes">section-title</property>
+                                                  </object>
+                                                </child>
+
+                                                <child>
+                                                  <object class="GtkBox">
+                                                    <property name="orientation">vertical</property>
+                                                    <property name="spacing">6</property>
+                                                    <child>
+                                                      <object class="GtkLabel">
+                                                        <property name="label">SEU NOME</property>
+                                                        <property name="css-classes">setup-label</property>
+                                                        <property name="halign">start</property>
+                                                      </object>
+                                                    </child>
+                                                    <child>
+                                                      <object class="GtkEntry" id="entry_player_name">
+                                                        <property name="text">Voce</property>
+                                                        <property name="hexpand">true</property>
+                                                      </object>
+                                                    </child>
+                                                  </object>
+                                                </child>
+
+                                                <child>
+                                                  <object class="GtkBox">
+                                                    <property name="orientation">horizontal</property>
+                                                    <property name="spacing">12</property>
+                                                    <child>
+                                                      <object class="GtkBox">
+                                                        <property name="orientation">vertical</property>
+                                                        <property name="spacing">6</property>
+                                                        <property name="hexpand">true</property>
+                                                        <child>
+                                                          <object class="GtkLabel">
+                                                            <property name="label">JOGADORES</property>
+                                                            <property name="css-classes">setup-label</property>
+                                                            <property name="halign">start</property>
+                                                          </object>
+                                                        </child>
+                                                        <child>
+                                                          <object class="GtkDropDown" id="dd_num_players">
+                                                            <property name="model">
+                                                              <object class="GtkStringList">
+                                                                <items>
+                                                                  <item>2 Jogadores</item>
+                                                                  <item>4 Jogadores</item>
+                                                                </items>
+                                                              </object>
+                                                            </property>
+                                                          </object>
+                                                        </child>
+                                                      </object>
+                                                    </child>
+                                                    <child>
+                                                      <object class="GtkBox">
+                                                        <property name="orientation">vertical</property>
+                                                        <property name="spacing">6</property>
+                                                        <property name="hexpand">true</property>
+                                                        <child>
+                                                          <object class="GtkLabel">
+                                                            <property name="label">IDIOMA</property>
+                                                            <property name="css-classes">setup-label</property>
+                                                            <property name="halign">start</property>
+                                                          </object>
+                                                        </child>
+                                                        <child>
+                                                          <object class="GtkDropDown" id="dd_locale">
+                                                            <property name="model">
+                                                              <object class="GtkStringList">
+                                                                <items>
+                                                                  <item>Português (pt-BR)</item>
+                                                                  <item>English (en-US)</item>
+                                                                </items>
+                                                              </object>
+                                                            </property>
+                                                          </object>
+                                                        </child>
+                                                      </object>
+                                                    </child>
+                                                  </object>
+                                                </child>
+
+                                                <child>
+                                                  <object class="GtkBox">
+                                                    <property name="orientation">horizontal</property>
+                                                    <property name="spacing">12</property>
+                                                    <child>
+                                                      <object class="GtkBox">
+                                                        <property name="orientation">vertical</property>
+                                                        <property name="spacing">6</property>
+                                                        <property name="hexpand">true</property>
+                                                        <child>
+                                                          <object class="GtkLabel">
+                                                            <property name="label">RELAY URL (OPCIONAL)</property>
+                                                            <property name="css-classes">setup-label</property>
+                                                            <property name="halign">start</property>
+                                                          </object>
+                                                        </child>
+                                                        <child>
+                                                          <object class="GtkEntry" id="entry_relay_url">
+                                                            <property name="placeholder-text">https://relay.example.com</property>
+                                                          </object>
+                                                        </child>
+                                                      </object>
+                                                    </child>
+                                                    <child>
+                                                      <object class="GtkBox">
+                                                        <property name="orientation">vertical</property>
+                                                        <property name="spacing">6</property>
+                                                        <property name="hexpand">true</property>
+                                                        <child>
+                                                          <object class="GtkLabel">
+                                                            <property name="label">PAPEL AO ENTRAR</property>
+                                                            <property name="css-classes">setup-label</property>
+                                                            <property name="halign">start</property>
+                                                          </object>
+                                                        </child>
+                                                        <child>
+                                                          <object class="GtkDropDown" id="dd_desired_role">
+                                                            <property name="model">
+                                                              <object class="GtkStringList">
+                                                                <items>
+                                                                  <item>Auto</item>
+                                                                  <item>Parceiro</item>
+                                                                  <item>Adversário</item>
+                                                                </items>
+                                                              </object>
+                                                            </property>
+                                                          </object>
+                                                        </child>
+                                                      </object>
+                                                    </child>
+                                                  </object>
+                                                </child>
+
+                                                <child>
+                                                  <object class="GtkButton" id="btn_start_demo">
+                                                    <property name="label">Jogar Offline</property>
+                                                    <property name="css-classes">suggested-action</property>
+                                                    <property name="height-request">48</property>
+                                                  </object>
+                                                </child>
+
+                                                <child>
+                                                  <object class="GtkButton" id="btn_host_online">
+                                                    <property name="label">Criar Sala</property>
+                                                    <property name="height-request">44</property>
+                                                    <property name="css-classes">pill-button</property>
+                                                  </object>
+                                                </child>
+
+                                                <child>
+                                                  <object class="GtkBox">
+                                                    <property name="orientation">horizontal</property>
+                                                    <property name="spacing">8</property>
+                                                    <child>
+                                                      <object class="GtkEntry" id="entry_invite_key">
+                                                        <property name="placeholder-text">Cole a chave de convite</property>
+                                                        <property name="hexpand">true</property>
+                                                      </object>
+                                                    </child>
+                                                    <child>
+                                                      <object class="GtkButton" id="btn_join_online">
+                                                        <property name="label">Entrar</property>
+                                                        <property name="css-classes">pill-button</property>
+                                                      </object>
+                                                    </child>
+                                                  </object>
+                                                </child>
+                                              </object>
+                                            </property>
+                                          </object>
+                                        </child>
+                                      </object>
+                                    </child>
+                                  </object>
+                                </property>
+                              </object>
+                            </child>
+                          </object>
+                        </property>
+                      </object>
+                    </child>
+
+                    <child>
+                      <object class="GtkStackPage">
+                        <property name="name">online_lobby</property>
+                        <property name="child">
+                          <object class="GtkScrolledWindow">
                             <property name="hscrollbar-policy">never</property>
                             <child>
-                              <object class="GtkListBox" id="list_chat">
-                                <property name="selection-mode">none</property>
+                              <object class="AdwClamp">
+                                <property name="maximum-size">1320</property>
+                                <property name="child">
+                                  <object class="GtkBox">
+                                    <property name="orientation">vertical</property>
+                                    <property name="spacing">16</property>
+                                    <property name="margin-top">24</property>
+                                    <property name="margin-bottom">24</property>
+                                    <property name="margin-start">24</property>
+                                    <property name="margin-end">24</property>
+
+                                    <child>
+                                      <object class="GtkBox">
+                                        <property name="orientation">horizontal</property>
+                                        <property name="spacing">12</property>
+                                        <child>
+                                          <object class="GtkLabel" id="lbl_online_status">
+                                            <property name="label">Sala Online</property>
+                                            <property name="css-classes">section-title</property>
+                                          </object>
+                                        </child>
+                                        <child>
+                                          <object class="GtkButton" id="btn_copy_invite">
+                                            <property name="label">Copiar chave</property>
+                                            <property name="css-classes">pill-button</property>
+                                          </object>
+                                        </child>
+                                      </object>
+                                    </child>
+
+                                    <child>
+                                      <object class="GtkLabel" id="lbl_invite_key_display">
+                                        <property name="label">Chave: ...</property>
+                                        <property name="selectable">true</property>
+                                        <property name="halign">start</property>
+                                        <property name="css-classes">invite-label</property>
+                                      </object>
+                                    </child>
+
+                                    <child>
+                                      <object class="GtkBox">
+                                        <property name="orientation">horizontal</property>
+                                        <property name="spacing">18</property>
+                                        <property name="vexpand">true</property>
+
+                                        <child>
+                                          <object class="GtkFrame">
+                                            <property name="hexpand">true</property>
+                                            <property name="child">
+                                              <object class="GtkBox">
+                                                <property name="orientation">vertical</property>
+                                                <property name="spacing">12</property>
+                                                <property name="margin-top">18</property>
+                                                <property name="margin-bottom">18</property>
+                                                <property name="margin-start">18</property>
+                                                <property name="margin-end">18</property>
+                                                <child>
+                                                  <object class="GtkLabel">
+                                                    <property name="label">Assentos</property>
+                                                    <property name="halign">start</property>
+                                                    <property name="css-classes">setup-label</property>
+                                                  </object>
+                                                </child>
+                                                <child>
+                                                  <object class="GtkListBox" id="list_slots">
+                                                    <property name="selection-mode">none</property>
+                                                    <property name="css-classes">boxed-list</property>
+                                                  </object>
+                                                </child>
+                                                <child>
+                                                  <object class="GtkButton" id="btn_start_online_match">
+                                                    <property name="label">Iniciar partida</property>
+                                                    <property name="css-classes">suggested-action</property>
+                                                    <property name="visible">false</property>
+                                                  </object>
+                                                </child>
+                                                <child>
+                                                  <object class="GtkButton" id="btn_leave_online">
+                                                    <property name="label">Sair da sala</property>
+                                                    <property name="css-classes">danger-button</property>
+                                                  </object>
+                                                </child>
+                                              </object>
+                                            </property>
+                                          </object>
+                                        </child>
+
+                                        <child>
+                                          <object class="GtkFrame">
+                                            <property name="hexpand">true</property>
+                                            <property name="vexpand">true</property>
+                                            <property name="child">
+                                              <object class="GtkBox">
+                                                <property name="orientation">vertical</property>
+                                                <property name="spacing">12</property>
+                                                <property name="margin-top">18</property>
+                                                <property name="margin-bottom">18</property>
+                                                <property name="margin-start">18</property>
+                                                <property name="margin-end">18</property>
+                                                <child>
+                                                  <object class="GtkLabel">
+                                                    <property name="label">Chat da mesa</property>
+                                                    <property name="halign">start</property>
+                                                    <property name="css-classes">setup-label</property>
+                                                  </object>
+                                                </child>
+                                                <child>
+                                                  <object class="GtkScrolledWindow">
+                                                    <property name="vexpand">true</property>
+                                                    <property name="hscrollbar-policy">never</property>
+                                                    <child>
+                                                      <object class="GtkListBox" id="list_chat">
+                                                        <property name="selection-mode">none</property>
+                                                        <property name="css-classes">chat-list</property>
+                                                      </object>
+                                                    </child>
+                                                  </object>
+                                                </child>
+                                                <child>
+                                                  <object class="GtkBox">
+                                                    <property name="orientation">horizontal</property>
+                                                    <property name="spacing">8</property>
+                                                    <child>
+                                                      <object class="GtkEntry" id="entry_chat">
+                                                        <property name="hexpand">true</property>
+                                                        <property name="placeholder-text">Digite a mensagem...</property>
+                                                      </object>
+                                                    </child>
+                                                    <child>
+                                                      <object class="GtkButton" id="btn_send_chat">
+                                                        <property name="label">Enviar</property>
+                                                        <property name="css-classes">pill-button</property>
+                                                      </object>
+                                                    </child>
+                                                  </object>
+                                                </child>
+                                              </object>
+                                            </property>
+                                          </object>
+                                        </child>
+                                      </object>
+                                    </child>
+                                  </object>
+                                </property>
                               </object>
                             </child>
                           </object>
-                        </child>
-                        
-                        <child>
-                          <object class="GtkBox">
-                            <property name="orientation">horizontal</property>
-                            <property name="spacing">8</property>
+                        </property>
+                      </object>
+                    </child>
+
+                    <child>
+                      <object class="GtkStackPage">
+                        <property name="name">game</property>
+                        <property name="child">
+                          <object class="GtkScrolledWindow">
+                            <property name="vexpand">true</property>
                             <child>
-                              <object class="GtkEntry" id="entry_chat">
+                              <object class="GtkOverlay" id="game_page">
                                 <property name="hexpand">true</property>
-                                <property name="placeholder-text">Digite a mensagem...</property>
+                                <property name="vexpand">true</property>
+                                <property name="margin-start">16</property>
+                                <property name="margin-end">16</property>
+                                <property name="margin-top">16</property>
+                                <property name="margin-bottom">24</property>
+
+                                <child>
+                                  <object class="GtkBox">
+                                    <property name="orientation">vertical</property>
+                                    <property name="hexpand">true</property>
+                                    <property name="vexpand">true</property>
+                                    <style><class name="table-wood"/></style>
+                                    <child>
+                                      <object class="GtkBox">
+                                        <property name="orientation">vertical</property>
+                                        <property name="hexpand">true</property>
+                                        <property name="vexpand">true</property>
+                                        <style><class name="table-felt"/></style>
+                                      </object>
+                                    </child>
+                                  </object>
+                                </child>
+
+                                <child type="overlay">
+                                  <object class="GtkBox" id="hud_box">
+                                    <property name="orientation">horizontal</property>
+                                    <property name="spacing">36</property>
+                                    <property name="halign">center</property>
+                                    <property name="valign">start</property>
+                                    <property name="margin-top">32</property>
+                                  </object>
+                                </child>
+
+                                <child type="overlay">
+                                  <object class="GtkBox" id="opponent_box">
+                                    <property name="orientation">vertical</property>
+                                    <property name="spacing">16</property>
+                                    <property name="halign">center</property>
+                                    <property name="valign">start</property>
+                                    <property name="margin-top">160</property>
+                                  </object>
+                                </child>
+
+                                <child type="overlay">
+                                  <object class="GtkBox" id="left_player_box">
+                                    <property name="orientation">vertical</property>
+                                    <property name="spacing">8</property>
+                                    <property name="halign">start</property>
+                                    <property name="valign">center</property>
+                                    <property name="margin-start">28</property>
+                                  </object>
+                                </child>
+
+                                <child type="overlay">
+                                  <object class="GtkBox" id="right_player_box">
+                                    <property name="orientation">vertical</property>
+                                    <property name="spacing">8</property>
+                                    <property name="halign">end</property>
+                                    <property name="valign">center</property>
+                                    <property name="margin-end">28</property>
+                                  </object>
+                                </child>
+
+                                <child type="overlay">
+                                  <object class="GtkBox" id="center_box">
+                                    <property name="orientation">horizontal</property>
+                                    <property name="spacing">48</property>
+                                    <property name="halign">center</property>
+                                    <property name="valign">center</property>
+                                  </object>
+                                </child>
+
+                                <child type="overlay">
+                                  <object class="GtkBox" id="bottom_box">
+                                    <property name="orientation">vertical</property>
+                                    <property name="spacing">20</property>
+                                    <property name="halign">center</property>
+                                    <property name="valign">end</property>
+                                    <property name="margin-bottom">36</property>
+                                  </object>
+                                </child>
+
+                                <child type="overlay">
+                                  <object class="GtkBox" id="log_box">
+                                    <property name="orientation">vertical</property>
+                                    <property name="spacing">4</property>
+                                    <property name="halign">end</property>
+                                    <property name="valign">start</property>
+                                    <property name="margin-top">28</property>
+                                    <property name="margin-end">28</property>
+                                    <property name="css-classes">log-panel</property>
+                                  </object>
+                                </child>
+
+                                <child type="overlay">
+                                  <object class="GtkButton" id="btn_leave_match">
+                                    <property name="label">Sair da partida</property>
+                                    <property name="css-classes">danger-button</property>
+                                    <property name="halign">end</property>
+                                    <property name="valign">end</property>
+                                    <property name="margin-end">28</property>
+                                    <property name="margin-bottom">28</property>
+                                  </object>
+                                </child>
+
+                                <child type="overlay">
+                                  <object class="GtkOverlay" id="trick_end_overlay">
+                                    <property name="visible">false</property>
+                                    <child>
+                                      <object class="GtkBox">
+                                        <property name="css-classes">game-over-bg</property>
+                                        <property name="hexpand">true</property>
+                                        <property name="vexpand">true</property>
+                                      </object>
+                                    </child>
+                                    <child type="overlay">
+                                      <object class="GtkBox">
+                                        <property name="orientation">vertical</property>
+                                        <property name="halign">center</property>
+                                        <property name="valign">center</property>
+                                        <property name="spacing">12</property>
+                                        <child>
+                                          <object class="GtkLabel" id="lbl_trick_emoji">
+                                            <property name="label">♠</property>
+                                            <property name="css-classes">game-over-title</property>
+                                          </object>
+                                        </child>
+                                        <child>
+                                          <object class="GtkLabel" id="lbl_trick_text">
+                                            <property name="label">Rodada encerrada</property>
+                                            <property name="css-classes">lobby-subtitle</property>
+                                          </object>
+                                        </child>
+                                      </object>
+                                    </child>
+                                  </object>
+                                </child>
+
+                                <child type="overlay">
+                                  <object class="GtkOverlay" id="game_over_overlay">
+                                    <property name="visible">false</property>
+                                    <child>
+                                      <object class="GtkBox">
+                                        <property name="css-classes">game-over-bg</property>
+                                        <property name="hexpand">true</property>
+                                        <property name="vexpand">true</property>
+                                      </object>
+                                    </child>
+                                    <child type="overlay">
+                                      <object class="GtkBox">
+                                        <property name="orientation">vertical</property>
+                                        <property name="halign">center</property>
+                                        <property name="valign">center</property>
+                                        <property name="spacing">24</property>
+                                        <child>
+                                          <object class="GtkLabel" id="lbl_winner">
+                                            <property name="label">Vencedor</property>
+                                            <property name="css-classes">game-over-title</property>
+                                          </object>
+                                        </child>
+                                        <child>
+                                          <object class="GtkButton" id="btn_back_lobby">
+                                            <property name="label">Voltar ao Lobby</property>
+                                            <property name="css-classes">suggested-action</property>
+                                            <property name="width-request">220</property>
+                                            <property name="height-request">48</property>
+                                          </object>
+                                        </child>
+                                      </object>
+                                    </child>
+                                  </object>
+                                </child>
                               </object>
                             </child>
-                            <child>
-                              <object class="GtkButton" id="btn_send_chat">
-                                <property name="label">Enviar</property>
-                              </object>
-                            </child>
                           </object>
-                        </child>
+                        </property>
                       </object>
                     </child>
-                    
                   </object>
-                </child>
-                
-                <child>
-                  <object class="GtkButton" id="btn_leave_online">
-                    <property name="label">Sair da Sala</property>
-                    <property name="halign">center</property>
-                    <property name="width-request">200</property>
-                    <property name="margin-top">16</property>
-                  </object>
-                </child>
-                
+                </property>
               </object>
-            </property>
+            </child>
           </object>
-        </child>
-
-        <!-- GAME PAGE -->
-        <child>
-          <object class="GtkStackPage">
-            <property name="name">game</property>
-            <property name="child">
-              <object class="GtkOverlay" id="game_page">
-                
-                <!-- Table Backgrounds -->
-                <child>
-                  <object class="GtkBox">
-                    <property name="orientation">vertical</property>
-                    <property name="hexpand">true</property>
-                    <property name="vexpand">true</property>
-                    <style>
-                      <class name="table-wood"/>
-                    </style>
-                    <child>
-                      <object class="GtkBox">
-                        <property name="orientation">vertical</property>
-                        <property name="hexpand">true</property>
-                        <property name="vexpand">true</property>
-                        <style>
-                          <class name="table-felt"/>
-                        </style>
-                      </object>
-                    </child>
-                  </object>
-                </child>
-                
-                <!-- Match Leave Button -->
-                <child type="overlay">
-                  <object class="GtkButton" id="btn_leave_match">
-                    <property name="label">◄ Sair</property>
-                    <property name="halign">start</property>
-                    <property name="valign">start</property>
-                    <property name="margin-top">24</property>
-                    <property name="margin-start">24</property>
-                    <property name="css-classes">suggested-action</property>
-                  </object>
-                </child>
-                
-                <!-- HUD Layer -->
-                <child type="overlay">
-                  <object class="GtkBox" id="hud_box">
-                    <property name="orientation">horizontal</property>
-                    <property name="spacing">48</property>
-                    <property name="halign">center</property>
-                    <property name="valign">start</property>
-                    <property name="margin-top">48</property>
-                  </object>
-                </child>
-                
-                <!-- Opponent Layer (Top) -->
-                <child type="overlay">
-                  <object class="GtkBox" id="opponent_box">
-                    <property name="orientation">vertical</property>
-                    <property name="spacing">16</property>
-                    <property name="halign">center</property>
-                    <property name="valign">start</property>
-                    <property name="margin-top">180</property>
-                  </object>
-                </child>
-
-                <!-- Left Player Layer -->
-                <child type="overlay">
-                  <object class="GtkBox" id="left_player_box">
-                    <property name="orientation">vertical</property>
-                    <property name="spacing">8</property>
-                    <property name="halign">start</property>
-                    <property name="valign">center</property>
-                    <property name="margin-start">48</property>
-                  </object>
-                </child>
-
-                <!-- Right Player Layer -->
-                <child type="overlay">
-                  <object class="GtkBox" id="right_player_box">
-                    <property name="orientation">vertical</property>
-                    <property name="spacing">8</property>
-                    <property name="halign">end</property>
-                    <property name="valign">center</property>
-                    <property name="margin-end">48</property>
-                  </object>
-                </child>
-
-                <!-- Center Table Layer -->
-                <child type="overlay">
-                  <object class="GtkBox" id="center_box">
-                    <property name="orientation">horizontal</property>
-                    <property name="spacing">80</property>
-                    <property name="halign">center</property>
-                    <property name="valign">center</property>
-                  </object>
-                </child>
-
-                <!-- My Hand and Controls Layer -->
-                <child type="overlay">
-                  <object class="GtkBox" id="bottom_box">
-                    <property name="orientation">vertical</property>
-                    <property name="spacing">24</property>
-                    <property name="halign">center</property>
-                    <property name="valign">end</property>
-                    <property name="margin-bottom">48</property>
-                  </object>
-                </child>
-
-                <!-- Game Log Layer -->
-                <child type="overlay">
-                  <object class="GtkBox" id="log_box">
-                    <property name="orientation">vertical</property>
-                    <property name="spacing">4</property>
-                    <property name="halign">end</property>
-                    <property name="valign">start</property>
-                    <property name="margin-top">48</property>
-                    <property name="margin-end">48</property>
-                    <property name="css-classes">log-panel</property>
-                  </object>
-                </child>
-                
-                <!-- Trick End Effect Overlay -->
-                <child type="overlay">
-                  <object class="GtkOverlay" id="trick_end_overlay">
-                    <property name="visible">false</property>
-                    <child>
-                      <object class="GtkBox">
-                        <property name="css-classes">trick-end-bg</property>
-                        <property name="hexpand">true</property>
-                        <property name="vexpand">true</property>
-                      </object>
-                    </child>
-                    <child type="overlay">
-                      <object class="GtkBox">
-                        <property name="orientation">vertical</property>
-                        <property name="halign">center</property>
-                        <property name="valign">center</property>
-                        <property name="spacing">16</property>
-                        <child>
-                          <object class="GtkLabel" id="lbl_trick_emoji">
-                            <property name="label">🎉</property>
-                            <property name="css-classes">trick-emoji</property>
-                          </object>
-                        </child>
-                        <child>
-                          <object class="GtkLabel" id="lbl_trick_text">
-                            <property name="label">VOCE VENCEU A VAZA!</property>
-                            <property name="css-classes">trick-title</property>
-                          </object>
-                        </child>
-                      </object>
-                    </child>
-                  </object>
-                </child>
-                
-                <!-- Game Over Sub-overlay -->
-                <child type="overlay">
-                  <object class="GtkOverlay" id="game_over_overlay">
-                    <property name="visible">false</property>
-                    <child>
-                      <object class="GtkBox">
-                        <property name="css-classes">game-over-bg</property>
-                        <property name="hexpand">true</property>
-                        <property name="vexpand">true</property>
-                      </object>
-                    </child>
-                    <child type="overlay">
-                      <object class="GtkBox">
-                        <property name="orientation">vertical</property>
-                        <property name="halign">center</property>
-                        <property name="valign">center</property>
-                        <property name="spacing">24</property>
-                        <child>
-                          <object class="GtkLabel" id="lbl_winner">
-                            <property name="label">Vencedor: NÓS</property>
-                            <property name="css-classes">game-over-title</property>
-                          </object>
-                        </child>
-                        <child>
-                          <object class="GtkButton" id="btn_back_lobby">
-                            <property name="label">Voltar ao Lobby</property>
-                            <property name="css-classes">suggested-action</property>
-                            <property name="width-request">200</property>
-                            <property name="height-request">48</property>
-                          </object>
-                        </child>
-                      </object>
-                    </child>
-                  </object>
-                </child>
-
-              </object>
-            </property>
-          </object>
-        </child>
-
+        </property>
       </object>
     </property>
   </template>
