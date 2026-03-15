@@ -33,6 +33,17 @@
                 <ComboBoxItem Content="Portugues (Brasil)"/>
                 <ComboBoxItem Content="English (US)"/>
             </ComboBox>
+
+            <TextBlock Text="Relay URL (opcional):" Foreground="White" Margin="0,0,0,5"/>
+            <TextBox Text="{Binding SetupRelayUrl, UpdateSourceTrigger=PropertyChanged}"
+                     Width="300" Height="40" FontSize="16" Margin="0,0,0,20" Padding="8,6"/>
+
+            <TextBlock Text="Papel desejado ao entrar:" Foreground="White" Margin="0,0,0,5"/>
+            <ComboBox SelectedIndex="{Binding SetupDesiredRoleIndex}" Width="300" Height="40" FontSize="16" Margin="0,0,0,30">
+                <ComboBoxItem Content="Auto"/>
+                <ComboBoxItem Content="Parceiro"/>
+                <ComboBoxItem Content="Adversario"/>
+            </ComboBox>
             
             <Button Content="INICIAR JOGO" Command="{Binding StartGameCommand}"
                     Background="#00AA00" Foreground="White" FontSize="20" FontWeight="Bold"
@@ -184,8 +195,37 @@
             </StackPanel>
 
             <!-- Chat Panel -->
-            <Border Grid.Column="1" Background="#111" CornerRadius="12" Padding="15">
-                <Grid>
+            <StackPanel Grid.Column="1">
+                <Border Background="#1a1a1a" CornerRadius="12" Padding="15" Margin="0,0,0,15">
+                    <StackPanel>
+                        <TextBlock Text="REDE E CONTROLE" Foreground="White" FontSize="18" FontWeight="Bold" Margin="0,0,0,10"/>
+                        <UniformGrid Columns="2">
+                            <StackPanel Margin="0,0,0,8">
+                                <TextBlock Text="Status" Foreground="LightGray" FontSize="12"/>
+                                <TextBlock Text="{Binding ConnectionStatusText}" Foreground="White" FontWeight="Bold"/>
+                            </StackPanel>
+                            <StackPanel Margin="0,0,0,8">
+                                <TextBlock Text="Modo" Foreground="LightGray" FontSize="12"/>
+                                <TextBlock Text="{Binding ConnectionModeText}" Foreground="White" FontWeight="Bold"/>
+                            </StackPanel>
+                            <StackPanel Margin="0,0,0,8" Visibility="{Binding VisibilityIfConnectionRole}">
+                                <TextBlock Text="Papel" Foreground="LightGray" FontSize="12"/>
+                                <TextBlock Text="{Binding ConnectionRoleText}" Foreground="White" FontWeight="Bold"/>
+                            </StackPanel>
+                            <StackPanel Margin="0,0,0,8">
+                                <TextBlock Text="Fila" Foreground="LightGray" FontSize="12"/>
+                                <TextBlock Text="{Binding EventBacklogText}" Foreground="White" FontWeight="Bold"/>
+                            </StackPanel>
+                        </UniformGrid>
+                        <StackPanel Visibility="{Binding VisibilityIfConnectionError}">
+                            <TextBlock Text="Erro" Foreground="#ff8080" FontSize="12"/>
+                            <TextBlock Text="{Binding ConnectionErrorText}" Foreground="#ffb3b3" FontWeight="Bold" TextWrapping="Wrap"/>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
+                <Border Background="#111" CornerRadius="12" Padding="15">
+                    <Grid>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
@@ -233,8 +273,9 @@
                             </Button.Style>
                         </Button>
                     </Grid>
-                </Grid>
-            </Border>
+                    </Grid>
+                </Border>
+            </StackPanel>
         </Grid>
 
         <!-- Game Screen -->
@@ -249,6 +290,31 @@
                 <ColumnDefinition Width="3*"/>
                 <ColumnDefinition Width="*"/>
             </Grid.ColumnDefinitions>
+
+            <!-- Leave Match Button -->
+            <Button Grid.Row="0" Grid.Column="0" Content="◄ Sair" Command="{Binding LeaveOnlineGameCommand}"
+                    HorizontalAlignment="Left" VerticalAlignment="Top" Margin="20,20,0,0"
+                    Background="Transparent" BorderBrush="#88FFFFFF" BorderThickness="1" 
+                    Foreground="White" FontSize="14" FontWeight="Bold" Padding="15,5" Cursor="Hand">
+                <Button.Style>
+                    <Style TargetType="Button">
+                        <Setter Property="Template">
+                            <Setter.Value>
+                                <ControlTemplate TargetType="Button">
+                                    <Border Background="{TemplateBinding Background}" CornerRadius="20" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}">
+                                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                    </Border>
+                                </ControlTemplate>
+                            </Setter.Value>
+                        </Setter>
+                        <Style.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Background" Value="#33FFFFFF"/>
+                            </Trigger>
+                        </Style.Triggers>
+                    </Style>
+                </Button.Style>
+            </Button>
 
             <!-- Top Player -->
             <StackPanel Grid.Row="0" Grid.Column="1" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,10,0,0">
@@ -340,12 +406,59 @@
                             </ItemsControl.ItemsPanel>
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
-                                    <Border Width="70" Height="100" Background="White" CornerRadius="6" 
-                                            BorderBrush="LightGray" BorderThickness="1" Margin="-20,0,0,0">
-                                        <TextBlock Text="{Binding Card.DisplayText}" FontSize="16" 
-                                                   Foreground="{Binding Card.ColorBrush}"
-                                                   HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                    </Border>
+                                    <StackPanel Margin="-20,0,0,0">
+                                        <TextBlock Text="{Binding PlayerID}" FontSize="10" Foreground="White" 
+                                                   HorizontalAlignment="Center" Background="#AA000000" Padding="4,2" Margin="0,0,0,5">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock">
+                                                    <Style.Triggers>
+                                                        <DataTrigger Value="True">
+                                                            <DataTrigger.Binding>
+                                                                <MultiBinding Converter="{StaticResource EqualityConverter}">
+                                                                    <Binding Path="Card.Id"/>
+                                                                    <Binding Path="DataContext.TrickWinningCardId" RelativeSource="{RelativeSource AncestorType=Window}"/>
+                                                                </MultiBinding>
+                                                            </DataTrigger.Binding>
+                                                            <Setter Property="Foreground" Value="Yellow"/>
+                                                            <Setter Property="FontWeight" Value="Bold"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
+                                        
+                                        <Border Width="70" Height="100" Background="White" CornerRadius="6">
+                                            <Border.Style>
+                                                <Style TargetType="Border">
+                                                    <Setter Property="BorderBrush" Value="LightGray"/>
+                                                    <Setter Property="BorderThickness" Value="1"/>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Value="True">
+                                                            <DataTrigger.Binding>
+                                                                <MultiBinding Converter="{StaticResource EqualityConverter}">
+                                                                    <Binding Path="Card.Id"/>
+                                                                    <Binding Path="DataContext.TrickWinningCardId" RelativeSource="{RelativeSource AncestorType=Window}"/>
+                                                                </MultiBinding>
+                                                            </DataTrigger.Binding>
+                                                            <Setter Property="BorderBrush" Value="Yellow"/>
+                                                            <Setter Property="BorderThickness" Value="3"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Border.Style>
+
+                                            <!-- Inner drop shadow effect for glow -->
+                                            <Border.Effect>
+                                                <DropShadowEffect Color="Yellow" BlurRadius="10" ShadowDepth="0" Opacity="0">
+                                                    <!-- Optional: Use attached behaviors or triggers to animate this if needed, keeping simple mapping first -->
+                                                </DropShadowEffect>
+                                            </Border.Effect>
+
+                                            <TextBlock Text="{Binding Card.DisplayText}" FontSize="16" 
+                                                       Foreground="{Binding Card.ColorBrush}"
+                                                       HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                        </Border>
+                                    </StackPanel>
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
@@ -512,6 +625,44 @@
                         </Grid>
                     </Grid>
                 </Border>
+                <Border Background="#1a1a1a" CornerRadius="8" Padding="10" Margin="0,10,0,0">
+                    <StackPanel>
+                        <TextBlock Text="Rede e controle" Foreground="White" FontWeight="Bold" Margin="0,0,0,8"/>
+                        <TextBlock Text="{Binding ConnectionStatusText}" Foreground="White" FontWeight="SemiBold"/>
+                        <TextBlock Text="{Binding ConnectionModeText}" Foreground="LightGray" Margin="0,2,0,0"/>
+                        <TextBlock Text="{Binding ConnectionRoleText}" Foreground="LightGray" Margin="0,2,0,0"
+                                   Visibility="{Binding VisibilityIfConnectionRole}"/>
+                        <TextBlock Text="{Binding EventBacklogText, StringFormat=Fila de eventos: {0}}" Foreground="LightGray" Margin="0,2,0,6"/>
+                        <TextBlock Text="{Binding ConnectionErrorText}" Foreground="#ffb3b3" TextWrapping="Wrap"
+                                   Visibility="{Binding VisibilityIfConnectionError}" Margin="0,0,0,8"/>
+                        <ItemsControl ItemsSource="{Binding LobbySlots}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Background="#222" CornerRadius="6" Padding="8" Margin="0,0,0,6">
+                                        <StackPanel>
+                                            <DockPanel>
+                                                <TextBlock Text="{Binding Label}" Foreground="White" FontSize="12" DockPanel.Dock="Left"/>
+                                                <Border Background="{Binding StatusColor}" CornerRadius="4" Padding="5,2" HorizontalAlignment="Right">
+                                                    <TextBlock Text="{Binding StatusText}" FontSize="10" FontWeight="Bold" Foreground="Black"/>
+                                                </Border>
+                                            </DockPanel>
+                                            <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                                                <Button Content="Substituir" Command="{Binding DataContext.RequestReplacementInviteCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                        CommandParameter="{Binding}"
+                                                        Visibility="{Binding CanReplace, Converter={StaticResource BoolToVisibility}}"
+                                                        Background="#aa5500" Foreground="White" Padding="8,4" Margin="0,0,8,0" Cursor="Hand"/>
+                                                <Button Content="Votar host" Command="{Binding DataContext.VoteHostCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                        CommandParameter="{Binding}"
+                                                        Visibility="{Binding CanVote, Converter={StaticResource BoolToVisibility}}"
+                                                        Background="#2e5a88" Foreground="White" Padding="8,4" Cursor="Hand"/>
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </Border>
                 <Button Content="SAIR DA SALA" Command="{Binding LeaveOnlineGameCommand}"
                         Background="#990000" Foreground="White" FontSize="12" FontWeight="Bold"
                         Height="30" Margin="0,10,0,0" Cursor="Hand">
@@ -530,6 +681,19 @@
                     </Button.Style>
                 </Button>
             </StackPanel>
+            
+            <!-- Trick End Animation Overlay -->
+            <Grid Grid.Row="0" Grid.RowSpan="3" Grid.Column="0" Grid.ColumnSpan="3"
+                  Visibility="{Binding ShowTrickEndAnimation, Converter={StaticResource BoolToVisibility}}"
+                  Background="#88000000" IsHitTestVisible="False" Panel.ZIndex="100">
+                <Border Background="#CC000000" CornerRadius="20" BorderBrush="#44FFFFFF" BorderThickness="2"
+                        HorizontalAlignment="Center" VerticalAlignment="Center" Padding="40" Margin="0,0,0,50">
+                    <StackPanel HorizontalAlignment="Center">
+                        <TextBlock Text="{Binding TrickWinnerEmoji}" FontSize="80" HorizontalAlignment="Center" Margin="0,0,0,10"/>
+                        <TextBlock Text="{Binding TrickWinnerText}" FontSize="32" FontWeight="Bold" Foreground="{Binding TrickWinnerColor}" HorizontalAlignment="Center"/>
+                    </StackPanel>
+                </Border>
+            </Grid>
         </Grid>
     </Grid>
     

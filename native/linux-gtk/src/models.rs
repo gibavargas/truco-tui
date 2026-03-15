@@ -155,6 +155,12 @@ pub struct GameSnapshot {
     pub last_trick_seq: Option<i32>,
     #[serde(rename = "LastTrickWinner")]
     pub last_trick_winner: Option<i32>,
+    #[serde(rename = "LastTrickTeam")]
+    pub last_trick_team: Option<i32>,
+    #[serde(rename = "LastTrickTie")]
+    pub last_trick_tie: Option<bool>,
+    #[serde(rename = "LastTrickRound")]
+    pub last_trick_round: Option<i32>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -185,6 +191,35 @@ pub struct HandState {
     pub trick_wins: Option<std::collections::HashMap<String, i32>>,
     #[serde(rename = "TrickResults")]
     pub trick_results: Option<Vec<i32>>,
+}
+
+impl HandState {
+    pub fn winning_card_id(&self) -> Option<String> {
+        let cards = self.round_cards.as_ref()?;
+        if cards.is_empty() {
+            return None;
+        }
+
+        let mut best_id: Option<String> = None;
+        let mut best_power = -1;
+        let mut is_tie = false;
+        
+        // Use Option::as_deref() to pass an Option<&str> to power()
+        let manilha_ref = self.manilha.as_deref();
+
+        for pc in cards {
+            let p = pc.card.power(manilha_ref);
+            if p > best_power {
+                best_power = p;
+                best_id = Some(format!("{}-{}-{}", pc.player_id, pc.card.rank, pc.card.suit));
+                is_tie = false;
+            } else if p == best_power {
+                is_tie = true;
+            }
+        }
+
+        if is_tie { None } else { best_id }
+    }
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -232,5 +267,25 @@ impl Card {
     
     pub fn is_red(&self) -> bool {
         self.suit == "Copas" || self.suit == "Ouros"
+    }
+    
+    pub fn power(&self, manilha: Option<&str>) -> i32 {
+        let normal_power = match self.rank.as_str() {
+            "3" => 10, "2" => 9, "A" => 8, "K" => 7, "J" => 6,
+            "Q" => 5, "7" => 4, "6" => 3, "5" => 2, "4" => 1,
+            _ => 0,
+        };
+        
+        if let Some(m) = manilha {
+            if self.rank == m {
+                let suit_power = match self.suit.as_str() {
+                    "Paus" => 4, "Copas" => 3, "Espadas" => 2, "Ouros" => 1,
+                    _ => 0,
+                };
+                return 100 + suit_power;
+            }
+        }
+        
+        normal_power
     }
 }
