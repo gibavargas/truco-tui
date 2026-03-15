@@ -1,6 +1,6 @@
 # Linux GTK Client
 
-The Linux desktop client uses Rust with GTK4 and libadwaita, while game logic and online behavior come from the shared Go runtime loaded dynamically at startup.
+The Linux desktop client uses Rust with GTK4 and libadwaita, while game logic and online behavior come from the shared Go runtime loaded dynamically at startup through `libtruco_core.so`.
 
 ## Requirements
 
@@ -38,20 +38,47 @@ make ffi-linux
 
 This produces `bin/libtruco_core.so`.
 
-The current Rust loader expects the library to be available as `libtruco-core-ffi.so`, so either provide a matching filename or adjust the loader before packaging.
-
 ## Build the GTK App
 
 ```bash
-cd native/linux-gtk
-cargo build --release
+make linux-gtk
 ```
+
+That will:
+
+- build `bin/libtruco_core.so`
+- copy it to `native/linux-gtk/lib/libtruco_core.so`
+- compile the GTK client in release mode
 
 For development:
 
 ```bash
-cd native/linux-gtk
-cargo run
+mkdir -p native/linux-gtk/lib
+cp bin/libtruco_core.so native/linux-gtk/lib/libtruco_core.so
+cargo run --manifest-path native/linux-gtk/Cargo.toml
+```
+
+The Linux loader searches for the runtime in this order:
+
+- `TRUCO_CORE_LIB`
+- `bin/libtruco_core.so`
+- `native/linux-gtk/lib/libtruco_core.so`
+- `lib/libtruco_core.so`
+- `libtruco_core.so`
+- next to the packaged executable
+
+## Flatpak
+
+Manifest:
+
+```bash
+native/linux-gtk/dev.truco.Native.yaml
+```
+
+Build locally:
+
+```bash
+make flatpak-linux
 ```
 
 ## Notes

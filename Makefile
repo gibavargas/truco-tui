@@ -11,7 +11,7 @@ endef
 HOST_TUI_BIN := $(TUI_DIR)/$(HOST_TUI_NAME)$(call bin_ext,$(HOST_GOOS))
 WIN_TUI_BIN := $(TUI_DIR)/$(WIN_TUI_NAME).exe
 
-.PHONY: build run relay test windows browser clean browser-clean ffi ffi-macos ffi-linux
+.PHONY: build run relay test windows browser clean browser-clean ffi ffi-macos ffi-linux ffi-windows linux-gtk flatpak-linux
 
 # Naming rule: `truco-<type>-<client>-<platform>-<arch>[-<variant>]` with TUI binaries under `bin/tui`
 # and any GUI bundles under `bin/gui`. This keeps CLI/GUI outputs distinct.
@@ -41,6 +41,14 @@ ffi-linux:
 
 ffi-windows:
 	GOOS=windows GOARCH=amd64 go build -buildmode=c-shared -o bin/truco-core-ffi.dll ./cmd/truco-core-ffi
+
+linux-gtk: ffi-linux
+	mkdir -p native/linux-gtk/lib
+	cp bin/libtruco_core.so native/linux-gtk/lib/libtruco_core.so
+	cargo build --manifest-path native/linux-gtk/Cargo.toml --release
+
+flatpak-linux:
+	flatpak-builder --force-clean .flatpak-builder build/flatpak native/linux-gtk/dev.truco.Native.yaml
 
 windows:
 	@mkdir -p $(TUI_DIR)

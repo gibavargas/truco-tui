@@ -76,6 +76,26 @@ Build the shared Windows FFI library:
 make ffi-windows
 ```
 
+Build the Linux GTK client:
+
+```bash
+make linux-gtk
+```
+
+- Builds `bin/libtruco_core.so`
+- Copies the library to `native/linux-gtk/lib/libtruco_core.so`
+- Compiles the libadwaita client at `native/linux-gtk/target/release/truco-linux-gtk`
+
+Build the Linux Flatpak bundle:
+
+```bash
+make flatpak-linux
+```
+
+## Binary Naming
+
+All produced binaries follow [docs/BINARY_NAMING.md](docs/BINARY_NAMING.md).
+
 ## Multiplayer Overview
 
 - Offline matches support 2 or 4 players with CPU seats.
@@ -101,6 +121,13 @@ Environment variables:
 - `TRUCO_RELAY_QUIC_ADDR`: QUIC tunnel address. Default: `127.0.0.1:9444`
 - `TRUCO_RELAY_TLS_CERT_FILE`: TLS certificate path for production
 - `TRUCO_RELAY_TLS_KEY_FILE`: TLS key path for production
+
+Relay protocol notes:
+
+- Online transport uses protocol version 2.
+- Relay invites use short-lived `relay_join_ticket` values.
+- Clients validate TLS 1.3 and may enforce SPKI pinning.
+- Expired relay sessions, members, and tickets are cleaned up automatically.
 
 Operational endpoints:
 

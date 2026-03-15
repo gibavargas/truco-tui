@@ -1,0 +1,25 @@
+app-id: dev.truco.Native
+runtime: org.gnome.Platform
+runtime-version: "47"
+sdk: org.gnome.Sdk
+command: truco-linux-gtk
+finish-args:
+  - --share=network
+  - --socket=fallback-x11
+  - --socket=wayland
+  - --device=dri
+modules:
+  - name: truco-linux-gtk
+    buildsystem: simple
+    build-commands:
+      - mkdir -p /run/build/truco-linux-gtk/bin
+      - GOOS=linux GOARCH=amd64 go build -buildmode=c-shared -o /run/build/truco-linux-gtk/bin/libtruco_core.so ./cmd/truco-core-ffi
+      - cargo build --manifest-path native/linux-gtk/Cargo.toml --release
+      - install -Dm755 native/linux-gtk/target/release/truco-linux-gtk /app/bin/truco-linux-gtk
+      - install -Dm755 /run/build/truco-linux-gtk/bin/libtruco_core.so /app/bin/libtruco_core.so
+      - install -Dm644 native/linux-gtk/dev.truco.Native.desktop /app/share/applications/dev.truco.Native.desktop
+      - install -Dm644 native/linux-gtk/dev.truco.Native.metainfo.xml /app/share/metainfo/dev.truco.Native.metainfo.xml
+      - install -Dm644 native/linux-gtk/dev.truco.Native.svg /app/share/icons/hicolor/scalable/apps/dev.truco.Native.svg
+    sources:
+      - type: dir
+        path: ../..
