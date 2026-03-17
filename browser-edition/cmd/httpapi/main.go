@@ -58,7 +58,7 @@ func (srv *apiServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
 
 	if r.Method != http.MethodPost {
-		writeJSON(w, http.StatusMethodNotAllowed, errResult("only POST is allowed"))
+		writeJSON(w, http.StatusMethodNotAllowed, errResult("method_not_allowed", "only POST is allowed"))
 		return
 	}
 
@@ -68,7 +68,7 @@ func (srv *apiServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		action = r.URL.Query().Get("action")
 	}
 	if action == "" {
-		writeJSON(w, http.StatusBadRequest, errResult("missing action"))
+		writeJSON(w, http.StatusBadRequest, errResult("missing_action", "missing action"))
 		return
 	}
 
@@ -83,7 +83,7 @@ func (srv *apiServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10))
 		decoder.DisallowUnknownFields()
 		if err := decoder.Decode(&body); err != nil && err.Error() != "EOF" {
-			writeJSON(w, http.StatusBadRequest, errResult("invalid JSON body"))
+			writeJSON(w, http.StatusBadRequest, errResult("invalid_json_body", "invalid JSON body"))
 			return
 		}
 	}
@@ -91,134 +91,129 @@ func (srv *apiServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		body = map[string]interface{}{}
 	}
 
-	result := srv.dispatch(action, sessionID, body)
-	writeJSON(w, http.StatusOK, result)
+	status, result := srv.dispatch(action, sessionID, body)
+	writeJSON(w, status, result)
 }
 
-func (srv *apiServer) dispatch(action, sessionID string, body map[string]interface{}) map[string]interface{} {
+func (srv *apiServer) dispatch(action, sessionID string, body map[string]interface{}) (int, map[string]interface{}) {
 	if action == "createSession" {
 		id := srv.store.create()
-		return map[string]interface{}{"ok": true, "sessionId": id}
+		return http.StatusOK, map[string]interface{}{"ok": true, "sessionId": id}
 	}
 
 	bs := srv.store.get(sessionID)
 	if bs == nil {
-		return errResult("session not found")
+		return http.StatusNotFound, errResult("session_not_found", "session not found")
 	}
 
 	switch action {
 	case "setLocale":
-		if err := dispatchIntent(bs.rt, "set_locale", appcore.SetLocalePayload{
-			Locale: strVal(body, "locale", "pt-BR"),
+		if err := dispatchIntent(bs.rt, appcore.IntentSetLocale, appcore.SetLocalePayload{
+			Locale: strVal(body, "locale", appcore.LocalePTBR),
 		}); err != nil {
-			return errResult(err.Error())
+			return http.StatusUnprocessableEntity, runtimeErrResult(bs.rt, "set_locale_failed", err)
 		}
-		return runtimeResult(bs.rt, true)
+		return http.StatusOK, runtimeResult(bs.rt, true)
 
 	case "startGame":
 		numPlayers := sanitizeNumPlayers(intVal(body, "numPlayers", 2))
 		name := strVal(body, "name", "Voce")
 		names, cpus := offlinePlayers(name, numPlayers)
-		if err := dispatchIntent(bs.rt, "new_offline_game", appcore.NewOfflineGamePayload{
+		if err := dispatchIntent(bs.rt, appcore.IntentNewOfflineGame, appcore.NewOfflineGamePayload{
 			PlayerNames: names,
 			CPUFlags:    cpus,
 		}); err != nil {
-			return errResult(err.Error())
+			return http.StatusUnprocessableEntity, runtimeErrResult(bs.rt, "start_game_failed", err)
 		}
-		return runtimeResult(bs.rt, false)
+		return http.StatusOK, runtimeResult(bs.rt, false)
 
-	case "snapshot", "autoCpuLoopTick", "newHand":
-		return runtimeResult(bs.rt, false)
+	case "snapshot":
+		return http.StatusOK, runtimeResult(bs.rt, false)
 
 	case "play":
 		idx := intVal(body, "cardIndex", -1)
 		if idx < 0 {
-			return errResult("índice da carta ausente")
+			return http.StatusBadRequest, errResult("missing_card_index", "índice da carta ausente")
 		}
-		if err := dispatchIntent(bs.rt, "game_action", appcore.GameActionPayload{
+		if err := dispatchIntent(bs.rt, appcore.IntentGameAction, appcore.GameActionPayload{
 			Action:    "play",
 			CardIndex: idx,
 		}); err != nil {
-			return errResult(err.Error())
+			return http.StatusUnprocessableEntity, runtimeErrResult(bs.rt, "game_action_failed", err)
 		}
-		return runtimeResult(bs.rt, false)
+		return http.StatusOK, runtimeResult(bs.rt, false)
 
 	case "truco", "accept", "refuse":
-		if err := dispatchIntent(bs.rt, "game_action", appcore.GameActionPayload{
+		if err := dispatchIntent(bs.rt, appcore.IntentGameAction, appcore.GameActionPayload{
 			Action: action,
 		}); err != nil {
-			return errResult(err.Error())
+			return http.StatusUnprocessableEntity, runtimeErrResult(bs.rt, "game_action_failed", err)
 		}
-		return runtimeResult(bs.rt, false)
+		return http.StatusOK, runtimeResult(bs.rt, false)
 
 	case "reset", "leaveSession":
-		if err := dispatchIntent(bs.rt, "close_session", nil); err != nil {
-			return errResult(err.Error())
+		if err := dispatchIntent(bs.rt, appcore.IntentCloseSession, nil); err != nil {
+			return http.StatusUnprocessableEntity, runtimeErrResult(bs.rt, "close_session_failed", err)
 		}
-		return runtimeResult(bs.rt, true)
+		return http.StatusOK, runtimeResult(bs.rt, true)
 
 	case "startOnlineHost":
-		if err := dispatchIntent(bs.rt, "create_host_session", appcore.CreateHostPayload{
+		if err := dispatchIntent(bs.rt, appcore.IntentCreateHostSession, appcore.CreateHostPayload{
 			HostName:   strings.TrimSpace(strVal(body, "name", "Host")),
 			NumPlayers: sanitizeNumPlayers(intVal(body, "numPlayers", 2)),
 			RelayURL:   strings.TrimSpace(strVal(body, "relay_url", "")),
 		}); err != nil {
-			return errResult(err.Error())
+			return http.StatusUnprocessableEntity, runtimeErrResult(bs.rt, "create_host_session_failed", err)
 		}
-		return runtimeResult(bs.rt, true)
+		return http.StatusOK, runtimeResult(bs.rt, true)
 
 	case "joinOnline":
-		if err := dispatchIntent(bs.rt, "join_session", appcore.JoinSessionPayload{
+		if err := dispatchIntent(bs.rt, appcore.IntentJoinSession, appcore.JoinSessionPayload{
 			Key:         strings.TrimSpace(strVal(body, "key", "")),
 			PlayerName:  strings.TrimSpace(strVal(body, "name", "Player")),
-			DesiredRole: strings.TrimSpace(strVal(body, "role", "auto")),
+			DesiredRole: strings.TrimSpace(strVal(body, "role", appcore.DesiredRoleAuto)),
 		}); err != nil {
-			return errResult(err.Error())
+			return http.StatusUnprocessableEntity, runtimeErrResult(bs.rt, "join_session_failed", err)
 		}
-		return runtimeResult(bs.rt, true)
-
-	case "onlineState":
-		return runtimeResult(bs.rt, false)
+		return http.StatusOK, runtimeResult(bs.rt, true)
 
 	case "startOnlineMatch":
-		if err := dispatchIntent(bs.rt, "start_hosted_match", nil); err != nil {
-			return errResult(err.Error())
+		if err := dispatchIntent(bs.rt, appcore.IntentStartHostedMatch, nil); err != nil {
+			return http.StatusUnprocessableEntity, runtimeErrResult(bs.rt, "start_hosted_match_failed", err)
 		}
-		return runtimeResult(bs.rt, true)
+		return http.StatusOK, runtimeResult(bs.rt, true)
 
 	case "sendChat":
 		msg := strings.TrimSpace(strVal(body, "message", ""))
 		if msg == "" {
-			return errResult("chat message is empty")
+			return http.StatusBadRequest, errResult("empty_chat_message", "chat message is empty")
 		}
-		if err := dispatchIntent(bs.rt, "send_chat", appcore.SendChatPayload{Text: msg}); err != nil {
-			return errResult(err.Error())
+		if err := dispatchIntent(bs.rt, appcore.IntentSendChat, appcore.SendChatPayload{Text: msg}); err != nil {
+			return http.StatusUnprocessableEntity, runtimeErrResult(bs.rt, "send_chat_failed", err)
 		}
-		return runtimeResult(bs.rt, true)
+		return http.StatusOK, runtimeResult(bs.rt, true)
 
 	case "sendHostVote":
-		if err := dispatchIntent(bs.rt, "vote_host", appcore.HostVotePayload{
+		if err := dispatchIntent(bs.rt, appcore.IntentVoteHost, appcore.HostVotePayload{
 			CandidateSeat: intVal(body, "slot", 0),
 		}); err != nil {
-			return errResult(err.Error())
+			return http.StatusUnprocessableEntity, runtimeErrResult(bs.rt, "vote_host_failed", err)
 		}
-		return runtimeResult(bs.rt, true)
+		return http.StatusOK, runtimeResult(bs.rt, true)
 
 	case "requestReplacementInvite":
-		if err := dispatchIntent(bs.rt, "request_replacement_invite", appcore.ReplacementInvitePayload{
+		if err := dispatchIntent(bs.rt, appcore.IntentRequestReplacementInvite, appcore.ReplacementInvitePayload{
 			TargetSeat: intVal(body, "slot", 0),
 		}); err != nil {
-			return errResult(err.Error())
+			return http.StatusUnprocessableEntity, runtimeErrResult(bs.rt, "request_replacement_invite_failed", err)
 		}
-		return runtimeResult(bs.rt, true)
+		return http.StatusOK, runtimeResult(bs.rt, true)
 
 	case "pullOnlineEvents", "pollEvents":
-		out := runtimeResult(bs.rt, true)
-		out["events"] = drainEvents(bs.rt)
-		return out
+		return http.StatusOK, runtimeResult(bs.rt, true)
 
 	default:
-		return errResult("unknown action: " + action)
+		return http.StatusBadRequest, errResult("unknown_action", "unknown action: "+action)
 	}
 }
 
@@ -311,7 +306,7 @@ func normalizeEvent(ev appcore.AppEvent) interface{} {
 	b, err := json.Marshal(ev)
 	if err != nil {
 		return map[string]interface{}{
-			"kind":      "error",
+			"kind":      appcore.EventError,
 			"sequence":  ev.Sequence,
 			"timestamp": ev.Timestamp,
 			"payload":   map[string]interface{}{"text": err.Error()},
@@ -320,7 +315,7 @@ func normalizeEvent(ev appcore.AppEvent) interface{} {
 	var out interface{}
 	if err := json.Unmarshal(b, &out); err != nil {
 		return map[string]interface{}{
-			"kind":      "error",
+			"kind":      appcore.EventError,
 			"sequence":  ev.Sequence,
 			"timestamp": ev.Timestamp,
 			"payload":   map[string]interface{}{"text": err.Error()},
@@ -336,10 +331,30 @@ func sanitizeNumPlayers(v int) int {
 	return 2
 }
 
-func errResult(msg string) map[string]interface{} {
+func runtimeErrResult(rt *appcore.Runtime, fallbackCode string, err error) map[string]interface{} {
+	bundle := rt.SnapshotBundle()
+	code := fallbackCode
+	message := err.Error()
+	if bundle.Connection.LastError != nil {
+		if strings.TrimSpace(bundle.Connection.LastError.Code) != "" {
+			code = bundle.Connection.LastError.Code
+		}
+		if strings.TrimSpace(bundle.Connection.LastError.Message) != "" {
+			message = bundle.Connection.LastError.Message
+		}
+	}
+	out := errResult(code, message)
+	out["bundle"] = bundle
+	out["mode"] = bundle.Mode
+	out["session"] = sessionFromBundle(bundle)
+	return out
+}
+
+func errResult(code, msg string) map[string]interface{} {
 	return map[string]interface{}{
-		"ok":    false,
-		"error": msg,
+		"ok":         false,
+		"error":      msg,
+		"error_code": code,
 	}
 }
 

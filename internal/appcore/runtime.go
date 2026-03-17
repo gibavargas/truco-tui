@@ -41,7 +41,7 @@ type Runtime struct {
 
 func NewRuntime() *Runtime {
 	return &Runtime{
-		mode:      "idle",
+		mode:      ModeIdle,
 		localSeat: -1,
 	}
 }
@@ -64,7 +64,7 @@ func (r *Runtime) DispatchIntent(intent AppIntent) error {
 	r.recordIntentLocked(intent)
 
 	switch intent.Kind {
-	case "set_locale":
+	case IntentSetLocale:
 		var payload SetLocalePayload
 		if err := decodeIntentPayload(intent.Payload, &payload); err != nil {
 			return r.failLocked("invalid_intent", err)
@@ -72,67 +72,67 @@ func (r *Runtime) DispatchIntent(intent AppIntent) error {
 		if !ui.SetLocale(payload.Locale) {
 			return r.failLocked("invalid_locale", fmt.Errorf("locale inválido: %s", payload.Locale))
 		}
-		r.queueEventLocked("locale_changed", map[string]any{"locale": ui.LocaleCode()})
+		r.queueEventLocked(EventLocaleChanged, map[string]any{"locale": ui.LocaleCode()})
 		return nil
 
-	case "new_offline_game":
+	case IntentNewOfflineGame:
 		var payload NewOfflineGamePayload
 		if err := decodeIntentPayload(intent.Payload, &payload); err != nil {
 			return r.failLocked("invalid_intent", err)
 		}
 		return r.startOfflineLocked(payload)
 
-	case "create_host_session":
+	case IntentCreateHostSession:
 		var payload CreateHostPayload
 		if err := decodeIntentPayload(intent.Payload, &payload); err != nil {
 			return r.failLocked("invalid_intent", err)
 		}
 		return r.createHostLocked(payload)
 
-	case "start_hosted_match":
+	case IntentStartHostedMatch:
 		return r.startHostedMatchLocked()
 
-	case "join_session":
+	case IntentJoinSession:
 		var payload JoinSessionPayload
 		if err := decodeIntentPayload(intent.Payload, &payload); err != nil {
 			return r.failLocked("invalid_intent", err)
 		}
 		return r.joinSessionLocked(payload)
 
-	case "game_action":
+	case IntentGameAction:
 		var payload GameActionPayload
 		if err := decodeIntentPayload(intent.Payload, &payload); err != nil {
 			return r.failLocked("invalid_intent", err)
 		}
 		return r.applyGameActionLocked(payload)
 
-	case "send_chat":
+	case IntentSendChat:
 		var payload SendChatPayload
 		if err := decodeIntentPayload(intent.Payload, &payload); err != nil {
 			return r.failLocked("invalid_intent", err)
 		}
 		return r.sendChatLocked(payload.Text)
 
-	case "vote_host":
+	case IntentVoteHost:
 		var payload HostVotePayload
 		if err := decodeIntentPayload(intent.Payload, &payload); err != nil {
 			return r.failLocked("invalid_intent", err)
 		}
 		return r.voteHostLocked(payload.CandidateSeat)
 
-	case "request_replacement_invite":
+	case IntentRequestReplacementInvite:
 		var payload ReplacementInvitePayload
 		if err := decodeIntentPayload(intent.Payload, &payload); err != nil {
 			return r.failLocked("invalid_intent", err)
 		}
 		return r.requestReplacementInviteLocked(payload.TargetSeat)
 
-	case "close_session":
+	case IntentCloseSession:
 		r.teardownSessionLocked()
-		r.mode = "idle"
+		r.mode = ModeIdle
 		r.match = nil
 		r.lobby = nil
-		r.queueEventLocked("session_closed", nil)
+		r.queueEventLocked(EventSessionClosed, nil)
 		return nil
 	}
 
@@ -235,7 +235,7 @@ func (r *Runtime) queueEventLocked(kind string, payload any) {
 
 func (r *Runtime) failLocked(code string, err error) error {
 	r.lastError = &AppError{Code: code, Message: err.Error()}
-	r.queueEventLocked("error", r.lastError)
+	r.queueEventLocked(EventError, r.lastError)
 	return err
 }
 
@@ -277,14 +277,14 @@ func (r *Runtime) startOfflineLocked(payload NewOfflineGamePayload) error {
 		return r.failLocked("create_offline_failed", err)
 	}
 	r.game = game
-	r.mode = "offline_match"
+	r.mode = ModeOfflineMatch
 	r.localSeat = 0
 	snap := game.Snapshot(0)
 	r.setMatchLocked(snap)
 	r.lobby = nil
 	gen := r.sessionGen
 	go r.runGameTicker(gen)
-	r.queueEventLocked("session_ready", map[string]any{"mode": r.mode})
+	r.queueEventLocked(EventSessionReady, map[string]any{"mode": r.mode})
 	return nil
 }
 
@@ -302,11 +302,11 @@ func (r *Runtime) createHostLocked(payload CreateHostPayload) error {
 		return r.failLocked("create_host_failed", err)
 	}
 	r.host = host
-	r.mode = "host_lobby"
+	r.mode = ModeHostLobby
 	r.localSeat = 0
 	r.inviteKey = key
 	r.updateHostLobbyLocked()
-	r.queueEventLocked("host_created", map[string]any{"invite_key": key})
+	r.queueEventLocked(EventHostCreated, map[string]any{"invite_key": key})
 	gen := r.sessionGen
 	go r.runHostEventLoop(gen, host)
 	return nil
@@ -324,7 +324,7 @@ func (r *Runtime) startHostedMatchLocked() error {
 		return r.failLocked("create_host_game_failed", err)
 	}
 	r.game = game
-	r.mode = "host_match"
+	r.mode = ModeHostMatch
 	snap := game.Snapshot(0)
 	r.setMatchLocked(snap)
 	pushSnapshotsToClients(r.host, game)
@@ -332,7 +332,7 @@ func (r *Runtime) startHostedMatchLocked() error {
 	gen := r.sessionGen
 	go r.runHostActionLoop(gen, r.host)
 	go r.runGameTicker(gen)
-	r.queueEventLocked("match_started", map[string]any{"mode": r.mode})
+	r.queueEventLocked(EventMatchStarted, map[string]any{"mode": r.mode})
 	return nil
 }
 
@@ -344,7 +344,7 @@ func (r *Runtime) joinSessionLocked(payload JoinSessionPayload) error {
 		return r.failLocked("join_session_failed", err)
 	}
 	r.client = client
-	r.mode = "client_lobby"
+	r.mode = ModeClientLobby
 	r.localSeat = client.AssignedSeat()
 	r.lobby = &LobbySnapshot{
 		Slots:        client.Slots(),
@@ -355,27 +355,27 @@ func (r *Runtime) joinSessionLocked(payload JoinSessionPayload) error {
 	}
 	gen := r.sessionGen
 	go r.runClientLoop(gen, client)
-	r.queueEventLocked("client_joined", map[string]any{"seat": r.localSeat})
+	r.queueEventLocked(EventClientJoined, map[string]any{"seat": r.localSeat})
 	return nil
 }
 
 func (r *Runtime) applyGameActionLocked(payload GameActionPayload) error {
 	r.clearErrorLocked()
 	switch r.mode {
-	case "offline_match":
+	case ModeOfflineMatch:
 		if err := applyGameActionHost(r.game, r.localSeat, payload); err != nil {
 			return r.failLocked("game_action_failed", err)
 		}
 		r.setMatchLocked(r.game.Snapshot(r.localSeat))
 		return nil
-	case "host_match":
+	case ModeHostMatch:
 		if err := applyGameActionHost(r.game, r.localSeat, payload); err != nil {
 			return r.failLocked("game_action_failed", err)
 		}
 		pushSnapshotsToClients(r.host, r.game)
 		r.setMatchLocked(r.game.Snapshot(r.localSeat))
 		return nil
-	case "client_match":
+	case ModeClientMatch:
 		if r.client == nil {
 			return r.failLocked("invalid_state", errors.New("cliente ausente"))
 		}
@@ -391,13 +391,13 @@ func (r *Runtime) applyGameActionLocked(payload GameActionPayload) error {
 func (r *Runtime) sendChatLocked(text string) error {
 	r.clearErrorLocked()
 	switch r.mode {
-	case "offline_match":
-		r.queueEventLocked("chat", map[string]any{"author": "local", "text": text})
+	case ModeOfflineMatch:
+		r.queueEventLocked(EventChat, map[string]any{"author": "local", "text": text})
 		return nil
-	case "host_lobby", "host_match":
+	case ModeHostLobby, ModeHostMatch:
 		r.host.SendHostChat(text)
 		return nil
-	case "client_lobby", "client_match":
+	case ModeClientLobby, ModeClientMatch:
 		if err := r.client.SendChat(text); err != nil {
 			return r.failLocked("send_chat_failed", err)
 		}
@@ -409,13 +409,13 @@ func (r *Runtime) sendChatLocked(text string) error {
 
 func (r *Runtime) voteHostLocked(candidateSeat int) error {
 	switch r.mode {
-	case "host_lobby", "host_match":
+	case ModeHostLobby, ModeHostMatch:
 		if err := r.host.CastHostVote(0, candidateSeat); err != nil {
 			return r.failLocked("vote_host_failed", err)
 		}
 		r.updateHostLobbyLocked()
 		return nil
-	case "client_lobby", "client_match":
+	case ModeClientLobby, ModeClientMatch:
 		if err := r.client.SendHostVote(candidateSeat); err != nil {
 			return r.failLocked("vote_host_failed", err)
 		}
@@ -427,14 +427,14 @@ func (r *Runtime) voteHostLocked(candidateSeat int) error {
 
 func (r *Runtime) requestReplacementInviteLocked(targetSeat int) error {
 	switch r.mode {
-	case "host_lobby", "host_match":
+	case ModeHostLobby, ModeHostMatch:
 		key, err := r.host.RequestReplacementInvite(0, targetSeat)
 		if err != nil {
 			return r.failLocked("replacement_invite_failed", err)
 		}
-		r.queueEventLocked("replacement_invite", map[string]any{"target_seat": targetSeat, "invite_key": key})
+		r.queueEventLocked(EventReplacementInvite, map[string]any{"target_seat": targetSeat, "invite_key": key})
 		return nil
-	case "client_lobby", "client_match":
+	case ModeClientLobby, ModeClientMatch:
 		if err := r.client.RequestReplacementInvite(targetSeat); err != nil {
 			return r.failLocked("replacement_invite_failed", err)
 		}
@@ -446,7 +446,7 @@ func (r *Runtime) requestReplacementInviteLocked(targetSeat int) error {
 
 func (r *Runtime) setMatchLocked(s truco.Snapshot) {
 	r.match = &s
-	r.queueEventLocked("match_updated", s)
+	r.queueEventLocked(EventMatchUpdated, s)
 }
 
 func (r *Runtime) updateHostLobbyLocked() {
@@ -463,13 +463,17 @@ func (r *Runtime) updateHostLobbyLocked() {
 		HostSeat:       r.host.CurrentHostSeat(),
 		ConnectedSeats: r.host.ConnectedSeats(),
 	}
-	r.queueEventLocked("lobby_updated", r.lobby)
+	r.queueEventLocked(EventLobbyUpdated, r.lobby)
 }
 
 func (r *Runtime) updateClientLobbyLocked() {
 	if r.client == nil {
 		r.lobby = nil
 		return
+	}
+	role := ""
+	if r.lobby != nil {
+		role = r.lobby.Role
 	}
 	r.lobby = &LobbySnapshot{
 		Slots:          r.client.Slots(),
@@ -478,9 +482,9 @@ func (r *Runtime) updateClientLobbyLocked() {
 		Started:        r.client.GameStarted(),
 		HostSeat:       r.client.CurrentHostSeat(),
 		ConnectedSeats: r.client.ConnectedSeats(),
-		Role:           "",
+		Role:           role,
 	}
-	r.queueEventLocked("lobby_updated", r.lobby)
+	r.queueEventLocked(EventLobbyUpdated, r.lobby)
 }
 
 func (r *Runtime) runHostEventLoop(gen uint64, host *netp2p.HostSession) {
@@ -491,7 +495,7 @@ func (r *Runtime) runHostEventLoop(gen uint64, host *netp2p.HostSession) {
 			return
 		}
 		r.updateHostLobbyLocked()
-		r.queueEventLocked("system", map[string]any{"text": ev})
+		r.queueEventLocked(EventSystem, map[string]any{"text": ev})
 		r.mu.Unlock()
 	}
 }
@@ -505,7 +509,7 @@ func (r *Runtime) runHostActionLoop(gen uint64, host *netp2p.HostSession) {
 		}
 		if err := applyRemoteAction(r.game, action); err != nil {
 			r.lastError = &AppError{Code: "remote_action_invalid", Message: err.Error()}
-			r.queueEventLocked("error", r.lastError)
+			r.queueEventLocked(EventError, r.lastError)
 			host.SendSystemToSeat(action.Seat, err.Error())
 			r.mu.Unlock()
 			continue
@@ -524,7 +528,7 @@ func (r *Runtime) runClientLoop(gen uint64, client *netp2p.ClientSession) {
 				r.mu.Unlock()
 				return
 			}
-			r.mode = "client_match"
+			r.mode = ModeClientMatch
 			r.localSeat = client.AssignedSeat()
 			r.setMatchLocked(state)
 			r.updateClientLobbyLocked()
@@ -543,7 +547,7 @@ func (r *Runtime) runClientLoop(gen uint64, client *netp2p.ClientSession) {
 			return
 		}
 		r.updateClientLobbyLocked()
-		r.queueEventLocked("system", map[string]any{"text": ev})
+		r.queueEventLocked(EventSystem, map[string]any{"text": ev})
 		r.mu.Unlock()
 	}
 }
@@ -650,13 +654,13 @@ func (r *Runtime) handleClientFailover(gen uint64, client *netp2p.ClientSession)
 		r.client = nil
 		r.host = host
 		r.game = game
-		r.mode = "host_match"
+		r.mode = ModeHostMatch
 		r.localSeat = 0
 		r.inviteKey = ""
 		r.setMatchLocked(game.Snapshot(0))
 		r.updateHostLobbyLocked()
 		pushSnapshotsToClients(host, game)
-		r.queueEventLocked("failover_promoted", map[string]any{"host_seat": 0})
+		r.queueEventLocked(EventFailoverPromoted, map[string]any{"host_seat": 0})
 		newGen := r.sessionGen
 		go r.runHostEventLoop(newGen, host)
 		go r.runHostActionLoop(newGen, host)
@@ -676,10 +680,10 @@ func (r *Runtime) handleClientFailover(gen uint64, client *netp2p.ClientSession)
 			}
 			_ = r.client.Close()
 			r.client = newClient
-			r.mode = "client_lobby"
+			r.mode = ModeClientLobby
 			r.localSeat = newClient.AssignedSeat()
 			r.updateClientLobbyLocked()
-			r.queueEventLocked("failover_rejoined", map[string]any{"seat": r.localSeat})
+			r.queueEventLocked(EventFailoverRejoined, map[string]any{"seat": r.localSeat})
 			r.mu.Unlock()
 			go r.runClientLoop(gen, newClient)
 			return
@@ -704,7 +708,7 @@ func (r *Runtime) runGameTicker(gen uint64) {
 			r.mu.Unlock()
 			return
 		}
-		if r.mode == "host_match" {
+		if r.mode == ModeHostMatch {
 			r.syncProvisionalCPUsLocked()
 		}
 		changed, err := r.stepCPUIfNeededLocked()
@@ -713,7 +717,7 @@ func (r *Runtime) runGameTicker(gen uint64) {
 			r.mu.Unlock()
 			continue
 		}
-		if changed && r.mode == "host_match" && r.host != nil {
+		if changed && r.mode == ModeHostMatch && r.host != nil {
 			pushSnapshotsToClients(r.host, r.game)
 		}
 		r.mu.Unlock()
@@ -737,14 +741,14 @@ func (r *Runtime) syncProvisionalCPUsLocked() bool {
 		if !seatOnline && !provisional {
 			if r.game.SetPlayerCPU(playerID, true, true) {
 				changed = true
-				r.queueEventLocked("system", map[string]any{"text": fmt.Sprintf(ui.Translate("online_provisional_cpu_on"), snap.Players[i].Name)})
+				r.queueEventLocked(EventSystem, map[string]any{"text": fmt.Sprintf(ui.Translate("online_provisional_cpu_on"), snap.Players[i].Name)})
 			}
 			continue
 		}
 		if seatOnline && provisional {
 			if r.game.SetPlayerCPU(playerID, false, false) {
 				changed = true
-				r.queueEventLocked("system", map[string]any{"text": fmt.Sprintf(ui.Translate("online_provisional_cpu_off"), snap.Players[i].Name)})
+				r.queueEventLocked(EventSystem, map[string]any{"text": fmt.Sprintf(ui.Translate("online_provisional_cpu_off"), snap.Players[i].Name)})
 			}
 		}
 	}
@@ -766,7 +770,7 @@ func (r *Runtime) stepCPUIfNeededLocked() (bool, error) {
 	if !isCPU {
 		return false, nil
 	}
-	if r.mode == "host_match" && pid == 0 {
+	if r.mode == ModeHostMatch && pid == 0 {
 		return false, nil
 	}
 	act := truco.DecideCPUAction(r.game, pid)
@@ -782,7 +786,7 @@ func (r *Runtime) uiStateLocked(match *truco.Snapshot, lobby *LobbySnapshot) UIS
 		Actions: ActionSnapshot{
 			LocalPlayerID:   -1,
 			LocalTeam:       -1,
-			CanCloseSession: r.mode != "idle",
+			CanCloseSession: r.mode != ModeIdle,
 		},
 	}
 	if match != nil {
@@ -803,7 +807,7 @@ func (r *Runtime) uiStateLocked(match *truco.Snapshot, lobby *LobbySnapshot) UIS
 			MustRespond:     mustRespond,
 			CanAccept:       mustRespond,
 			CanRefuse:       mustRespond,
-			CanCloseSession: r.mode != "idle",
+			CanCloseSession: r.mode != ModeIdle,
 		}
 	}
 	if lobby == nil {
@@ -823,7 +827,7 @@ func (r *Runtime) uiStateLocked(match *truco.Snapshot, lobby *LobbySnapshot) UIS
 		slot.IsOccupied = !slot.IsEmpty
 		slot.IsProvisionalCPU = r.isSeatProvisionalCPULocked(seat)
 		slot.CanVoteHost = slot.IsOccupied && !slot.IsLocal
-		slot.CanRequestReplacement = (r.mode == "host_lobby" || r.mode == "host_match" || ((r.mode == "client_lobby" || r.mode == "client_match") && localIsTableHost)) &&
+		slot.CanRequestReplacement = (r.mode == ModeHostLobby || r.mode == ModeHostMatch || ((r.mode == ModeClientLobby || r.mode == ModeClientMatch) && localIsTableHost)) &&
 			lobby.Started && slot.IsOccupied && !slot.IsLocal && !slot.IsConnected
 		switch {
 		case slot.IsEmpty:

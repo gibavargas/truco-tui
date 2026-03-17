@@ -47,6 +47,7 @@ This script:
 
 - compiles the Go API into `browser-edition/dist/truco-api`
 - copies the PHP frontend into `browser-edition/dist/`
+- validates that `dist/` contains only the copied PHP tree plus the compiled API binary
 
 Serve the packaged output with:
 
@@ -64,6 +65,8 @@ http://127.0.0.1:8080/index.php
 
 The browser frontend uses session-scoped POST endpoints under `/api/<action>`. The server creates an in-memory runtime per browser session and returns snapshot bundles plus drained events as needed.
 
+Non-OK responses also include `error_code` so the browser adapter can distinguish transport failures from runtime failures without parsing localized text.
+
 Notable actions include:
 
 - `createSession`
@@ -80,4 +83,5 @@ Notable actions include:
 ## Notes
 
 - `dist/` is generated output and can be rebuilt at any time from `php/` and `cmd/httpapi`.
+- `make verify-browser-dist` validates the generated `dist/` tree without rebuilding it.
 - Browser parity expectations are defined in `docs/PARITY.md`.

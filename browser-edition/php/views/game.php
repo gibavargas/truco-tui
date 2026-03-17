@@ -63,10 +63,10 @@ if (!empty($roundCards)) {
     $lastPlayedPlayerID = (int) ($lastPlayed['PlayerID'] ?? -1);
 }
 
-$canPlayCard = (bool) ($actions['can_play_card'] ?? (!$matchFinished && $turnPlayer === $myID && $pendingFor === -1));
-$canTruco = (bool) ($actions['can_ask_or_raise'] ?? (!$matchFinished && (($turnPlayer === $myID && $pendingFor === -1) || ($pendingFor !== -1 && $pendingFor === $myTeam))));
-$canAccept = (bool) ($actions['can_accept'] ?? (!$matchFinished && $pendingFor !== -1 && $pendingFor === $myTeam));
-$canRefuse = (bool) ($actions['can_refuse'] ?? $canAccept);
+$canPlayCard = (bool) ($actions['can_play_card'] ?? false);
+$canTruco = (bool) ($actions['can_ask_or_raise'] ?? false);
+$canAccept = (bool) ($actions['can_accept'] ?? false);
+$canRefuse = (bool) ($actions['can_refuse'] ?? false);
 
 $stakeSteps = [1, 3, 6, 9, 12];
 $nextStake = $stake;
@@ -431,14 +431,14 @@ $hierarchyText = $locale === 'en-US'
                     <div class="action-row compact-row">
                         <?php foreach (($lobby['slots'] ?? []) as $idx => $slotName): ?>
                             <?php $slotState = $slotStates[$idx] ?? []; ?>
-                            <?php if (($slotState['can_vote_host'] ?? ($idx !== ($lobby['assigned_seat'] ?? -1) && trim((string) $slotName) !== ''))): ?>
+                            <?php if (!empty($slotState['can_vote_host'])): ?>
                                 <form method="post" action="index.php" data-ajax="true">
                                     <input type="hidden" name="action" value="voteHost">
                                     <input type="hidden" name="slot" value="<?= $idx ?>">
                                     <button type="submit" class="btn btn-neutral"><?= tr('action_vote_host') ?> <?= $idx + 1 ?></button>
                                 </form>
                             <?php endif; ?>
-                            <?php if (($slotState['can_request_replacement'] ?? false)): ?>
+                            <?php if (!empty($slotState['can_request_replacement'])): ?>
                                 <form method="post" action="index.php" data-ajax="true">
                                     <input type="hidden" name="action" value="requestReplacementInvite">
                                     <input type="hidden" name="slot" value="<?= $idx ?>">

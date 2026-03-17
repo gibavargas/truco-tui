@@ -1,23 +1,30 @@
 APP=truco
 TUI_DIR=bin/tui
 GUI_DIR=bin/gui
+RELAY_DIR=bin
 HOST_GOOS := $(shell go env GOOS)
 HOST_GOARCH := $(shell go env GOARCH)
 HOST_TUI_NAME := $(APP)-tui-core-$(HOST_GOOS)-$(HOST_GOARCH)
+HOST_RELAY_NAME := $(APP)-relay-$(HOST_GOOS)-$(HOST_GOARCH)
 WIN_TUI_NAME := $(APP)-tui-core-windows-amd64
 define bin_ext
 $(if $(filter windows,$(1)),.exe,)
 endef
 HOST_TUI_BIN := $(TUI_DIR)/$(HOST_TUI_NAME)$(call bin_ext,$(HOST_GOOS))
+HOST_RELAY_BIN := $(RELAY_DIR)/$(HOST_RELAY_NAME)$(call bin_ext,$(HOST_GOOS))
 WIN_TUI_BIN := $(TUI_DIR)/$(WIN_TUI_NAME).exe
 
-.PHONY: build run relay test windows browser clean browser-clean ffi ffi-macos ffi-linux ffi-windows linux-gtk flatpak-linux
+.PHONY: build build-relay run relay test windows browser clean browser-clean ffi ffi-macos ffi-linux ffi-windows linux-gtk flatpak-linux verify-artifacts verify-browser-dist
 
 # Naming rule: `truco-<type>-<client>-<platform>-<arch>[-<variant>]` with TUI binaries under `bin/tui`
 # and any GUI bundles under `bin/gui`. This keeps CLI/GUI outputs distinct.
 build:
 	@mkdir -p $(TUI_DIR)
 	go build -o $(HOST_TUI_BIN) ./cmd/truco
+
+build-relay:
+	@mkdir -p $(RELAY_DIR)
+	go build -o $(HOST_RELAY_BIN) ./cmd/truco-relay
 
 run:
 	go run ./cmd/truco
@@ -56,6 +63,12 @@ windows:
 
 browser:
 	bash browser-edition/scripts/build-web.sh
+
+verify-browser-dist:
+	bash scripts/validate-browser-dist.sh
+
+verify-artifacts: verify-browser-dist
+	bash scripts/validate-artifacts.sh
 
 browser-clean:
 	rm -rf browser-edition/dist

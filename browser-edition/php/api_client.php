@@ -53,6 +53,9 @@ class TrucoApiClient {
             ];
         }
         if ($httpCode >= 400) {
+            if (!array_key_exists('ok', $decoded)) {
+                $decoded['ok'] = false;
+            }
             $decoded['httpCode'] = $httpCode;
         }
         return $decoded;

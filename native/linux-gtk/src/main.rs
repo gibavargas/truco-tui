@@ -10,6 +10,7 @@ use std::rc::Rc;
 use adw::prelude::*;
 use gtk::gdk;
 use gtk::glib;
+use serde::Deserialize;
 
 use i18n::{text, Locale};
 use intents::{
@@ -362,7 +363,7 @@ where
     };
     match core.dispatch(&json) {
         Ok(Some(response)) => {
-            let message = parse_runtime_message(&response)
+            let message = parse_runtime_error(&response)
                 .or(fallback_error.map(str::to_string))
                 .unwrap_or(response);
             show_banner(&state.window, &message);
@@ -488,12 +489,21 @@ fn fallback_name(name: &str, locale: Locale) -> String {
     }
 }
 
-fn parse_runtime_message(response: &str) -> Option<String> {
-    let value: serde_json::Value = serde_json::from_str(response).ok()?;
-    value
-        .get("message")
-        .and_then(|m| m.as_str())
-        .map(str::to_string)
+fn parse_runtime_error(response: &str) -> Option<String> {
+    let value: RuntimeError = serde_json::from_str(response).ok()?;
+    let message = value.message?.trim().to_string();
+    if message.is_empty() {
+        return None;
+    }
+    if let Some(code) = value
+        .code
+        .as_deref()
+        .map(str::trim)
+        .filter(|code| !code.is_empty())
+    {
+        return Some(format!("{code}: {message}"));
+    }
+    Some(message)
 }
 
 fn dispatch_game_action(core: &TrucoCore, action: &'static str, card_index: Option<usize>) {
@@ -515,6 +525,12 @@ fn clear_listbox(lb: &gtk::ListBox) {
     }
 }
 
+#[derive(Debug, Deserialize)]
+struct RuntimeError {
+    code: Option<String>,
+    message: Option<String>,
+}
+
 fn update_ui(
     window: &window::TrucoWindow,
     bundle: &SnapshotBundle,
@@ -522,6 +538,12 @@ fn update_ui(
     locale: Locale,
 ) {
     let mode = bundle.mode.as_deref().unwrap_or("idle");
+    let can_close_session = bundle
+        .ui
+        .as_ref()
+        .and_then(|ui| ui.actions.as_ref())
+        .map(|actions| actions.can_close_session)
+        .unwrap_or(false);
     let status_text = bundle
         .connection
         .as_ref()
@@ -529,6 +551,8 @@ fn update_ui(
         .cloned()
         .unwrap_or_else(|| mode.to_string());
     set_status(window, &status_text.replace('_', " "));
+    window.btn_leave_online().set_sensitive(can_close_session);
+    window.btn_leave_match().set_sensitive(can_close_session);
 
     if mode == "offline_match"
         || mode == "host_match"
@@ -576,7 +600,81 @@ fn update_lobby_ui(
         }
 
         clear_listbox(&window.list_slots());
-        if let Some(slots) = &lobby.slots {
+        let slot_states = bundle
+            .ui
+            .as_ref()
+            .and_then(|ui| ui.lobby_slots.as_ref())
+            .cloned()
+            .unwrap_or_default();
+
+        if !slot_states.is_empty() {
+            for slot in &slot_states {
+                let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+                row.set_halign(gtk::Align::Fill);
+                row.set_hexpand(true);
+
+                let display_name = slot
+                    .name
+                    .as_deref()
+                    .filter(|name| !name.is_empty())
+                    .unwrap_or("Aguardando...");
+                let mut display = display_name.to_string();
+                if slot.is_host {
+                    display.push_str(" [host]");
+                }
+                if slot.is_occupied && !slot.is_connected && !slot.is_local {
+                    display.push_str(" [offline]");
+                }
+                let lbl = gtk::Label::new(Some(&display));
+                lbl.set_hexpand(true);
+                lbl.set_xalign(0.0);
+                row.append(&lbl);
+
+                if slot.is_local {
+                    let me_lbl = gtk::Label::new(Some(text(locale, "you")));
+                    me_lbl.add_css_class("ladder-active");
+                    row.append(&me_lbl);
+                } else {
+                    if slot.can_request_replacement {
+                        let btn_invite = gtk::Button::with_label("Convite");
+                        btn_invite.add_css_class("pill-button");
+                        let core_inv = core.clone();
+                        let target_seat = slot.seat as usize;
+                        btn_invite.connect_clicked(move |_| {
+                            let intent = AppIntent::with_payload(
+                                "request_replacement_invite",
+                                ReplacementInvitePayload { target_seat },
+                            );
+                            if let Some(json) = to_json(&intent) {
+                                let _ = core_inv.dispatch(&json);
+                            }
+                        });
+                        row.append(&btn_invite);
+                    }
+
+                    if slot.can_vote_host {
+                        let btn_vote = gtk::Button::with_label("Votar Host");
+                        btn_vote.add_css_class("pill-button");
+                        let core_vote = core.clone();
+                        let candidate_seat = slot.seat as usize;
+                        btn_vote.connect_clicked(move |_| {
+                            let intent = AppIntent::with_payload(
+                                "vote_host",
+                                HostVotePayload { candidate_seat },
+                            );
+                            if let Some(json) = to_json(&intent) {
+                                let _ = core_vote.dispatch(&json);
+                            }
+                        });
+                        row.append(&btn_vote);
+                    }
+                }
+
+                let lb_row = gtk::ListBoxRow::new();
+                lb_row.set_child(Some(&row));
+                window.list_slots().append(&lb_row);
+            }
+        } else if let Some(slots) = &lobby.slots {
             for (i, name) in slots.iter().enumerate() {
                 let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
                 row.set_halign(gtk::Align::Fill);
@@ -606,34 +704,6 @@ fn update_lobby_ui(
                     let me_lbl = gtk::Label::new(Some(text(locale, "you")));
                     me_lbl.add_css_class("ladder-active");
                     row.append(&me_lbl);
-                } else if name.is_empty() && mode.contains("host") {
-                    let btn_invite = gtk::Button::with_label("Convite");
-                    btn_invite.add_css_class("pill-button");
-                    let core_inv = core.clone();
-                    btn_invite.connect_clicked(move |_| {
-                        let intent = AppIntent::with_payload(
-                            "request_replacement_invite",
-                            ReplacementInvitePayload { target_seat: i },
-                        );
-                        if let Some(json) = to_json(&intent) {
-                            let _ = core_inv.dispatch(&json);
-                        }
-                    });
-                    row.append(&btn_invite);
-                } else if !name.is_empty() {
-                    let btn_vote = gtk::Button::with_label("Votar Host");
-                    btn_vote.add_css_class("pill-button");
-                    let core_vote = core.clone();
-                    btn_vote.connect_clicked(move |_| {
-                        let intent = AppIntent::with_payload(
-                            "vote_host",
-                            HostVotePayload { candidate_seat: i },
-                        );
-                        if let Some(json) = to_json(&intent) {
-                            let _ = core_vote.dispatch(&json);
-                        }
-                    });
-                    row.append(&btn_vote);
                 }
 
                 let lb_row = gtk::ListBoxRow::new();

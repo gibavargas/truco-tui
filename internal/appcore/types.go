@@ -11,6 +11,124 @@ const (
 	SnapshotSchemaMajor = 1
 )
 
+const (
+	LocalePTBR = "pt-BR"
+	LocaleENUS = "en-US"
+)
+
+const (
+	ModeIdle         = "idle"
+	ModeHostLobby    = "host_lobby"
+	ModeClientLobby  = "client_lobby"
+	ModeOfflineMatch = "offline_match"
+	ModeHostMatch    = "host_match"
+	ModeClientMatch  = "client_match"
+)
+
+const (
+	IntentSetLocale                = "set_locale"
+	IntentNewOfflineGame           = "new_offline_game"
+	IntentCreateHostSession        = "create_host_session"
+	IntentJoinSession              = "join_session"
+	IntentStartHostedMatch         = "start_hosted_match"
+	IntentGameAction               = "game_action"
+	IntentSendChat                 = "send_chat"
+	IntentVoteHost                 = "vote_host"
+	IntentRequestReplacementInvite = "request_replacement_invite"
+	IntentCloseSession             = "close_session"
+)
+
+const (
+	EventChat              = "chat"
+	EventClientJoined      = "client_joined"
+	EventError             = "error"
+	EventFailoverPromoted  = "failover_promoted"
+	EventFailoverRejoined  = "failover_rejoined"
+	EventHostCreated       = "host_created"
+	EventLobbyUpdated      = "lobby_updated"
+	EventLocaleChanged     = "locale_changed"
+	EventMatchStarted      = "match_started"
+	EventMatchUpdated      = "match_updated"
+	EventReplacementInvite = "replacement_invite"
+	EventSessionClosed     = "session_closed"
+	EventSessionReady      = "session_ready"
+	EventSystem            = "system"
+)
+
+const (
+	DesiredRoleAuto     = "auto"
+	DesiredRolePartner  = "partner"
+	DesiredRoleOpponent = "opponent"
+)
+
+var (
+	supportedLocales = []string{
+		LocalePTBR,
+		LocaleENUS,
+	}
+	supportedIntentKinds = []string{
+		IntentSetLocale,
+		IntentNewOfflineGame,
+		IntentCreateHostSession,
+		IntentJoinSession,
+		IntentStartHostedMatch,
+		IntentGameAction,
+		IntentSendChat,
+		IntentVoteHost,
+		IntentRequestReplacementInvite,
+		IntentCloseSession,
+	}
+	supportedEventKinds = []string{
+		EventChat,
+		EventClientJoined,
+		EventError,
+		EventFailoverPromoted,
+		EventFailoverRejoined,
+		EventHostCreated,
+		EventLobbyUpdated,
+		EventLocaleChanged,
+		EventMatchStarted,
+		EventMatchUpdated,
+		EventReplacementInvite,
+		EventSessionClosed,
+		EventSessionReady,
+		EventSystem,
+	}
+	supportedModes = []string{
+		ModeIdle,
+		ModeHostLobby,
+		ModeClientLobby,
+		ModeOfflineMatch,
+		ModeHostMatch,
+		ModeClientMatch,
+	}
+	supportedDesiredRoles = []string{
+		DesiredRoleAuto,
+		DesiredRolePartner,
+		DesiredRoleOpponent,
+	}
+)
+
+func SupportedLocales() []string {
+	return append([]string(nil), supportedLocales...)
+}
+
+func SupportedIntentKinds() []string {
+	return append([]string(nil), supportedIntentKinds...)
+}
+
+func SupportedEventKinds() []string {
+	return append([]string(nil), supportedEventKinds...)
+}
+
+func SupportedModes() []string {
+	return append([]string(nil), supportedModes...)
+}
+
+func SupportedDesiredRoles() []string {
+	return append([]string(nil), supportedDesiredRoles...)
+}
+
 type AppIntent struct {
 	Kind    string          `json:"kind"`
 	Payload json.RawMessage `json:"payload,omitempty"`

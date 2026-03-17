@@ -209,7 +209,11 @@ public static class JsonOptions
     {
         get
         {
-            _default ??= new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+            _default ??= new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true,
+                DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+            };
             return _default;
         }
     }

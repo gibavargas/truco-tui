@@ -496,6 +496,7 @@ struct OnlineLobbyView: View {
                                 Button("Sair da sala") {
                                     store.closeSession()
                                 }
+                                .disabled(!store.canCloseSession)
                                 .buttonStyle(.borderedProminent)
                                 .tint(.red)
                                 .controlSize(.regular)
@@ -504,6 +505,7 @@ struct OnlineLobbyView: View {
                             Button("Sair da sala") {
                                 store.closeSession()
                             }
+                            .disabled(!store.canCloseSession)
                             .buttonStyle(.borderedProminent)
                             .tint(.red)
                             .controlSize(.large)
@@ -673,7 +675,7 @@ struct OnlineLobbyView: View {
                 }
                 .background(Color.black.opacity(0.48))
                 .cornerRadius(10)
-                .onChange(of: store.events.count) { _ in
+                .onChange(of: store.events.count) {
                     if let last = store.events.last {
                         withAnimation { proxy.scrollTo(last.id, anchor: .bottom) }
                     }

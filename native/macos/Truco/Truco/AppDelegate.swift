@@ -25,7 +25,7 @@ struct TrucoApp: App {
                 .keyboardShortcut("n")
                 
                 Button("Sair da Sala") {
-                    store.dispatchIntent(json: "{\"kind\":\"close_session\"}")
+                    store.closeSession()
                 }
                 .keyboardShortcut("w")
             }

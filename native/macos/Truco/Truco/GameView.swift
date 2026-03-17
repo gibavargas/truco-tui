@@ -117,6 +117,7 @@ struct GameView: View {
                                         .fontWeight(.bold)
                                 }
                             }
+                            .disabled(!store.canCloseSession)
                             .buttonStyle(.plain)
                             .padding(.horizontal, 16)
                             .padding(.vertical, 8)
@@ -352,6 +353,7 @@ struct GameView: View {
                             Button("SAIR DA SESSÃO") {
                                 store.closeSession()
                             }
+                            .disabled(!store.canCloseSession)
                             .buttonStyle(.borderedProminent)
                             .tint(.yellow)
                             .foregroundColor(.black)
@@ -417,7 +419,8 @@ struct GameView: View {
                     .transition(.opacity.animation(.easeInOut(duration: 0.2)))
                 }
             }
-            .onChange(of: snap.LastTrickSeq) { newSeq in
+            .onChange(of: snap.LastTrickSeq) {
+                let newSeq = snap.LastTrickSeq
                 guard let seq = newSeq, seq > 0 else { return }
                 if lastTrickSeqViewed == -1 {
                     lastTrickSeqViewed = seq

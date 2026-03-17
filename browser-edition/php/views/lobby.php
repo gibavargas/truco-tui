@@ -54,13 +54,13 @@ $roleLabel = trim((string) ($session['role'] ?? ''));
                 <?php foreach ($slots as $idx => $slotName): ?>
                     <?php
                     $slotState = $slotStates[$idx] ?? [];
-                    $connected = (bool) ($slotState['is_connected'] ?? (!empty($connectedSeats[(string) $idx]) || !empty($connectedSeats[$idx])));
-                    $isHostSeat = (bool) ($slotState['is_host'] ?? ($idx === $hostSeat));
-                    $isLocalSeat = (bool) ($slotState['is_local'] ?? ($idx === $assignedSeat));
-                    $canVote = (bool) ($slotState['can_vote_host'] ?? (trim($slotName) !== '' && $idx !== $assignedSeat));
+                    $connected = (bool) ($slotState['is_connected'] ?? false);
+                    $isHostSeat = (bool) ($slotState['is_host'] ?? false);
+                    $isLocalSeat = (bool) ($slotState['is_local'] ?? false);
+                    $canVote = (bool) ($slotState['can_vote_host'] ?? false);
                     $canReplace = (bool) ($slotState['can_request_replacement'] ?? false);
                     $isProvisionalCPU = (bool) ($slotState['is_provisional_cpu'] ?? false);
-                    $status = (string) ($slotState['status'] ?? ($connected ? 'occupied_online' : (trim($slotName) === '' ? 'empty' : 'occupied_offline')));
+                    $status = (string) ($slotState['status'] ?? 'empty');
                     $displayName = trim((string) ($slotState['name'] ?? $slotName)) !== '' ? (string) ($slotState['name'] ?? $slotName) : tr('lobby_slot_empty');
                     ?>
                     <article class="lobby-slot <?= $isLocalSeat ? 'local-seat' : '' ?>">

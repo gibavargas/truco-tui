@@ -14,6 +14,10 @@ final class TrucoAppStore: ObservableObject {
     private var lastOfflineNames: [String] = ["Voce", "CPU-2"]
     private var lastOfflineCPUFlags: [Bool] = [false, true]
 
+    var canCloseSession: Bool {
+        bundle?.ui?.actions?.can_close_session == true
+    }
+
     // MARK: - Offline
 
     func startOffline(names: [String], cpuFlags: [Bool]) {
@@ -64,9 +68,7 @@ final class TrucoAppStore: ObservableObject {
         }
         Task {
             if let result = bridge.dispatch(intentJSON: makeIntentJSON(kind: "game_action", payload: payload)) {
-                await MainActor.run {
-                    self.status = "Erro: \(result)"
-                }
+                self.status = self.runtimeErrorSummary(from: result) ?? "Erro: \(result)"
             }
             refreshSnapshot()
         }
@@ -89,10 +91,9 @@ final class TrucoAppStore: ObservableObject {
     }
     
     func closeSession() {
+        guard canCloseSession else { return }
         dispatchIntent(json: makeIntentJSON(kind: "close_session"))
-        DispatchQueue.main.async { [weak self] in
-            self?.events.removeAll()
-        }
+        events.removeAll()
     }
 
     func replayOfflineMatch() {
@@ -102,7 +103,7 @@ final class TrucoAppStore: ObservableObject {
     func dispatchIntent(json: String) {
         Task {
             if let result = bridge.dispatch(intentJSON: json) {
-                status = "Erro: \(result)"
+                status = runtimeErrorSummary(from: result) ?? "Erro: \(result)"
             }
             refreshSnapshot()
             // If mode changed to idle, stop polling
@@ -121,7 +122,7 @@ final class TrucoAppStore: ObservableObject {
             refreshSnapshot()
 
             if let result {
-                status = "Erro: \(result)"
+                status = runtimeErrorSummary(from: result) ?? "Erro: \(result)"
                 return
             }
             status = successStatus
@@ -133,38 +134,55 @@ final class TrucoAppStore: ObservableObject {
         }
     }
 
-    nonisolated private func refreshSnapshot() {
+    private func refreshSnapshot(using bridge: TrucoCoreBridge? = nil) {
+        let bridge = bridge ?? self.bridge
         guard let snapshotStr = bridge.snapshotJSON(),
               let data = snapshotStr.data(using: .utf8),
               let parsed = try? JSONDecoder().decode(SnapshotBundle.self, from: data) else {
             return
         }
-        Task { @MainActor [weak self] in
-            self?.bundle = parsed
-            self?.snapshot = parsed.match
-            self?.mode = parsed.mode
+        bundle = parsed
+        snapshot = parsed.match
+        mode = parsed.mode
+    }
+
+    private func runtimeErrorSummary(from response: String) -> String? {
+        guard let data = response.data(using: .utf8),
+              let runtimeError = try? JSONDecoder().decode(RuntimeErrorSnapshot.self, from: data),
+              let message = runtimeError.message?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !message.isEmpty else {
+            return nil
+        }
+
+        if let code = runtimeError.code?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !code.isEmpty {
+            return "\(code): \(message)"
+        }
+        return message
+    }
+
+    private func startPollingLoop() {
+        let bridge = self.bridge
+        Task.detached { [weak self, bridge] in
+            guard let self else { return }
+            while await self.isPolling {
+                if let eventJsonStr = bridge.pollEventJSON() {
+                    await self.consumePolledEvent(eventJsonStr)
+                }
+                await self.refreshSnapshot(using: bridge)
+                try? await Task.sleep(nanoseconds: 50_000_000) // 50ms
+            }
         }
     }
 
-    nonisolated private func startPollingLoop() {
-        Task.detached { [weak self] in
-            guard let self else { return }
-            while await self.isPolling {
-                if let eventJsonStr = self.bridge.pollEventJSON(),
-                   let data = eventJsonStr.data(using: .utf8),
-                   let event = try? JSONDecoder().decode(AppEvent.self, from: data) {
-                    
-                    Task { @MainActor [weak self] in
-                        guard let self = self else { return }
-                        self.events.append(event)
-                        if self.events.count > 100 {
-                            self.events.removeFirst()
-                        }
-                    }
-                }
-                self.refreshSnapshot()
-                try? await Task.sleep(nanoseconds: 50_000_000) // 50ms
-            }
+    private func consumePolledEvent(_ eventJSON: String) {
+        guard let data = eventJSON.data(using: .utf8),
+              let event = try? JSONDecoder().decode(AppEvent.self, from: data) else {
+            return
+        }
+        events.append(event)
+        if events.count > 100 {
+            events.removeFirst()
         }
     }
 
@@ -182,17 +200,48 @@ final class TrucoAppStore: ObservableObject {
 }
 
 final class TrucoCoreBridge: @unchecked Sendable {
+    private static let requiredCoreAPIVersion = 1
+    private static let requiredSnapshotSchemaVersion = 1
     private let handle: UInt
 
     init() {
         self.handle = UInt(TrucoCoreCreate())
+        guard self.handle != 0 else {
+            fatalError("Failed to initialize the shared Truco runtime.")
+        }
+        validateRuntimeVersion()
     }
 
     deinit {
         TrucoCoreDestroy(self.handle)
     }
 
-    func dispatch(intentJSON: String) -> String? {
+    private func validateRuntimeVersion() {
+        guard let versions = readRuntimeVersions() else {
+            fatalError("The shared Truco runtime did not return version metadata.")
+        }
+
+        guard versions.core_api_version == Self.requiredCoreAPIVersion,
+              versions.snapshot_schema_version == Self.requiredSnapshotSchemaVersion else {
+            fatalError(
+                "Incompatible Truco runtime. Expected core_api=\(Self.requiredCoreAPIVersion), snapshot_schema=\(Self.requiredSnapshotSchemaVersion); " +
+                "found core_api=\(versions.core_api_version ?? -1), snapshot_schema=\(versions.snapshot_schema_version ?? -1)."
+            )
+        }
+    }
+
+    private func readRuntimeVersions() -> CoreVersions? {
+        guard let cString = TrucoCoreVersionsJSON() else {
+            return nil
+        }
+        defer { TrucoCoreFreeString(cString) }
+
+        let json = String(cString: cString)
+        let data = Data(json.utf8)
+        return try? JSONDecoder().decode(CoreVersions.self, from: data)
+    }
+
+    nonisolated func dispatch(intentJSON: String) -> String? {
         let resultCStr = intentJSON.withCString { cStr in
             TrucoCoreDispatchIntentJSON(self.handle, UnsafeMutablePointer(mutating: cStr))
         }
@@ -206,7 +255,7 @@ final class TrucoCoreBridge: @unchecked Sendable {
         return nil
     }
 
-    func snapshotJSON() -> String? {
+    nonisolated func snapshotJSON() -> String? {
         let snapCStr = TrucoCoreSnapshotJSON(self.handle)
         defer {
             if snapCStr != nil { TrucoCoreFreeString(snapCStr) }
@@ -218,7 +267,7 @@ final class TrucoCoreBridge: @unchecked Sendable {
         return nil
     }
 
-    func pollEventJSON() -> String? {
+    nonisolated func pollEventJSON() -> String? {
         let eventCStr = TrucoCorePollEventJSON(self.handle)
         defer {
             if eventCStr != nil { TrucoCoreFreeString(eventCStr) }
@@ -229,4 +278,9 @@ final class TrucoCoreBridge: @unchecked Sendable {
         }
         return nil
     }
+}
+
+private struct RuntimeErrorSnapshot: Codable {
+    let code: String?
+    let message: String?
 }

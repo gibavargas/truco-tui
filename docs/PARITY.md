@@ -1,113 +1,118 @@
 # Client Parity Contract
 
-The shared runtime in `internal/appcore` is the source of truth for all non-TUI clients. The TUI remains the reference UI for behavior, but clients should consume runtime state instead of re-implementing rules locally.
+`internal/appcore` is the authoritative contract for every adapter layer in this repository. Browser and native clients must render `SnapshotBundle`, dispatch `AppIntent`, and react to `AppEvent` without re-implementing game rules, lobby policy, turn ownership, or online session behavior locally.
 
-## Version Contract
+## Runtime Contract
 
 - `core_api_version`: `1`
 - `protocol_version`: `2`
 - `snapshot_schema_version`: `1`
+- Supported locales: `pt-BR`, `en-US`
+- Supported desired roles: `auto`, `partner`, `opponent`
+- Supported modes:
+  - `idle`
+  - `host_lobby`
+  - `client_lobby`
+  - `offline_match`
+  - `host_match`
+  - `client_match`
+- Supported intents:
+  - `set_locale`
+  - `new_offline_game`
+  - `create_host_session`
+  - `join_session`
+  - `start_hosted_match`
+  - `game_action`
+  - `send_chat`
+  - `vote_host`
+  - `request_replacement_invite`
+  - `close_session`
+- Stable event kinds that adapters must understand:
+  - `chat`
+  - `client_joined`
+  - `error`
+  - `failover_promoted`
+  - `failover_rejoined`
+  - `host_created`
+  - `lobby_updated`
+  - `locale_changed`
+  - `match_started`
+  - `match_updated`
+  - `replacement_invite`
+  - `session_closed`
+  - `session_ready`
+  - `system`
 
-Clients must reject incompatible protocol invites and should tolerate additive JSON fields in snapshots and events.
+Clients must tolerate additive JSON fields in snapshots and events. Clients must not assume event queues are replayable after they have been drained by the adapter.
 
-## Supported Locales
+## Snapshot and Error Rules
 
-- `pt-BR`
-- `en-US`
+- `SnapshotBundle` is the rendering contract. Clients should prefer `bundle.ui.actions` and `bundle.ui.lobby_slots` over recomputing actions or affordances from raw match/lobby data.
+- `bundle.connection.last_error` is the canonical runtime error surface for adapter-driven failures.
+- The browser HTTP API must return `error_code` alongside `error` for non-OK responses. Native clients should surface the runtime error `code` and `message` from FFI responses.
+- `close_session` must always return the runtime to `idle`, clear `match` and `lobby`, and emit `session_closed`.
 
-## Supported Intents
+## User Journeys
 
-- `set_locale`
-- `new_offline_game`
-- `create_host_session`
-- `join_session`
-- `start_hosted_match`
-- `game_action`
-- `send_chat`
-- `vote_host`
-- `request_replacement_invite`
-- `close_session`
+### Offline 2-player and 4-player setup
 
-## Snapshot Model
+- Locale selection is available before starting the game.
+- Offline setup accepts player name and player count.
+- Starting an offline match must transition from `idle` to `offline_match`.
+- Starting a match emits `match_updated` and `session_ready`.
+- The local player remains seat `0`; other seats may be CPU-controlled.
 
-Every client should treat `SnapshotBundle` as the rendering contract:
+### Host flow
 
-- `versions`: runtime compatibility metadata
-- `mode`: current screen and flow state
-- `locale`: active locale
-- `match`: full match snapshot when a game exists
-- `lobby`: online session snapshot when in a session
-- `ui`: runtime-derived action and lobby affordance state
-- `connection`: online status, host role, last error, and last consumed event sequence
-- `diagnostics`: event backlog and replay diagnostics
+- Host setup accepts player name, player count, optional `relay_url`, and optional transport selection if exposed by the client.
+- Starting a host session transitions to `host_lobby`, returns a visible invite key, and emits `host_created` and `lobby_updated`.
+- The host can start the match only when runtime preconditions are satisfied.
+- Starting the hosted match transitions to `host_match`, emits `match_started`, and updates the match snapshot for all adapters.
 
-## Mode Mapping
+### Join flow
 
-- `idle`: setup screen
-- `host_lobby`: host lobby
-- `client_lobby`: joined lobby
-- `offline_match`: offline match screen
-- `host_match`: online host match screen
-- `client_match`: online client match screen
+- Join setup accepts invite key, player name, and desired role.
+- Joining a valid session transitions to `client_lobby` first and later to `client_match` when match state arrives.
+- The assigned seat, current host seat, connectivity map, and lobby slots come from the runtime; adapters must not infer them independently.
 
-## Setup Parity Rules
+### Relay flow
 
-- Allow selecting locale before match or session creation.
-- Offline setup must expose player name and player count.
-- Host setup must expose player name, player count, and optional `relay_url`.
-- Join setup must expose invite key, player name, and desired role.
-- Desired roles must support `auto`, `partner`, and `opponent`.
+- Relay-backed invites must use protocol version `2`.
+- Join failures caused by invalid relay URL, bad tickets, expired tickets, auth failures, or incompatible protocol must surface a structured runtime error.
+- Relay and direct sessions share the same runtime modes, lobby shape, and event categories.
 
-## Lobby Parity Rules
+### Chat, host transfer, and replacement invites
 
-- Show the invite key when the local runtime is hosting.
-- Render all seats using runtime-derived lobby slot data.
-- Keep chat available while in the lobby.
-- Show start match only in `host_lobby`.
-- Surface runtime-owned host voting and replacement invite affordances.
-- Expose runtime connection state and the latest error or diagnostics when available.
+- Chat is available in online lobbies and online matches.
+- Offline chat is local-only and still uses the `chat` event category.
+- Host transfer uses `vote_host` and runtime-derived `can_vote_host` affordances from `bundle.ui.lobby_slots`.
+- Replacement invites use `request_replacement_invite`, must respect host/disconnect preconditions, and emit `replacement_invite` when minted successfully.
 
-Lobby slot statuses:
+### Match actions
 
-- `empty`
-- `occupied_online`
-- `occupied_offline`
-- `provisional_cpu`
+- Clients must gate actions using `bundle.ui.actions`:
+  - `play` only when `can_play_card` is true
+  - `truco` only when `can_ask_or_raise` is true
+  - `accept` only when `can_accept` is true
+  - `refuse` only when `can_refuse` is true
+  - leave/close only when `can_close_session` is true
+- Clients must not recompute response state from `PendingRaise*` when `bundle.ui.actions` already answers that question.
 
-Per-seat affordances:
+### Disconnect, reconnect, and host failover
 
-- `can_vote_host`
-- `can_request_replacement`
+- Disconnect and reconnect status must surface through runtime events and `bundle.connection.last_error`.
+- If the host disappears and failover succeeds:
+  - promoted clients emit `failover_promoted` and move to `host_match`
+  - rejoined clients emit `failover_rejoined` and return through `client_lobby` before resuming match updates
+- If failover cannot proceed, the runtime emits `error` with a concrete code such as `failover_unavailable` or `failover_rejoin_failed`.
 
-## Match Parity Rules
+### Session close
 
-- Render both 2-player and 4-player layouts with the local player at the bottom.
-- Keep chat and recent events visible during online matches.
-- Use `ui.actions` to decide which actions are available.
-- Do not recompute turn ownership, team response state, or raise eligibility from raw match state when runtime-derived action flags already exist.
-- Keep host vote and replacement invite actions reachable in online matches when the runtime allows them.
+- Resetting or leaving a session uses `close_session`.
+- After `close_session`, all clients must render setup again from `idle` and must not reuse stale lobby or match data.
 
-Action expectations:
+## Adapter Rules
 
-- `play`: only when `can_play_card` is true
-- `truco`: only when `can_ask_or_raise` is true
-- `accept`: only when `can_accept` is true
-- `refuse`: only when `can_refuse` is true
-- leave or close session: only when `can_close_session` is true
-
-## End-State Behavior
-
-- Offline matches should allow starting another offline match or returning to setup.
-- Online matches should preserve session-aware leave and close flows instead of forcing offline replay behavior.
-
-## Event Categories
-
-- `chat`
-- `system`
-- `replacement_invite`
-- `locale_changed`
-- `match_updated`
-- `lobby_updated`
-- `error`
-
-Clients may style categories differently, but must keep them visible and semantically distinct.
+- Browser HTTP API actions must map one-to-one to runtime intents or runtime snapshot/event retrieval.
+- FFI adapters must preserve runtime JSON semantics: create runtime, dispatch intent, snapshot poll, event poll, versions query, and string cleanup.
+- TUI remains the product reference for interaction quality, but parity for rules and session behavior is owned by `internal/appcore`, not by TUI-specific code.

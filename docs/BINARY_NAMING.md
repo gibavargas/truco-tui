@@ -36,6 +36,7 @@ Shared native libraries used by desktop clients are currently built into `bin/` 
 | Host TUI | `bin/tui/truco-tui-core-$(go env GOOS)-$(go env GOARCH)` | Host platform build via `make build` |
 | Windows TUI x64 | `bin/tui/truco-tui-core-windows-amd64.exe` | Built via `make windows` |
 | Windows TUI ARM64 portable | `bin/tui/truco-tui-core-windows-arm64-portable.exe` | Produced by the Windows packaging flow |
+| WPF portable bundle | `bin/gui/wpf/truco-gui-wpf-windows-amd64-portable` | Legacy Windows GUI portable output |
 | WinUI portable bundle | `bin/gui/winui/truco-gui-winui-windows-amd64-portable` | Portable Windows GUI output |
 
 ## Guidance

@@ -23,6 +23,7 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
     private readonly DispatcherQueue _dispatcherQueue;
     private readonly IStringProvider _stringProvider;
     private CancellationTokenSource? _pollCts;
+    private string? _lastSnapshotJson;
     private bool _disposed;
 
     [ObservableProperty]
@@ -81,6 +82,7 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
     [NotifyPropertyChangedFor(nameof(ShowAskTruco))]
     [NotifyPropertyChangedFor(nameof(CanPlayCards))]
     [NotifyPropertyChangedFor(nameof(VisibilityIfOnlineMatch))]
+    [NotifyPropertyChangedFor(nameof(CanCloseSession))]
     [NotifyPropertyChangedFor(nameof(MatchStatusText))]
     private UIStateSnapshot? uiState;
 
@@ -164,6 +166,12 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
     [NotifyPropertyChangedFor(nameof(CombinedErrorText))]
     private string lastActionError = "";
 
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(VisibilityIfLastActionError))]
+    [NotifyPropertyChangedFor(nameof(VisibilityIfCombinedError))]
+    [NotifyPropertyChangedFor(nameof(CombinedErrorText))]
+    private string lastActionErrorCode = "";
+
     public bool IsPlaying => GameStateHelper.IsPlaying(Snapshot);
     public bool IsNotPlaying => GameStateHelper.IsNotPlaying(Snapshot);
     public bool IsMyTurn => UiState?.Actions?.CanPlayCard == true || UiState?.Actions?.MustRespond == true;
@@ -229,6 +237,7 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
     public bool ShowAskTruco => UiState?.Actions?.CanAskOrRaise == true && UiState?.Actions?.MustRespond != true;
     public bool IsMatchOver => GameStateHelper.IsMatchOver(Snapshot);
     public bool CanPlayCards => UiState?.Actions?.CanPlayCard == true;
+    public bool CanCloseSession => UiState?.Actions?.CanCloseSession == true;
     public int SetupSelectedPlayerCount => SetupNumPlayersIndex == 1 ? 4 : 2;
     public string SetupDesiredRole => SetupDesiredRoleIndex switch
     {
@@ -244,7 +253,9 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
     public string InviteKeyText => string.IsNullOrWhiteSpace(LobbySnapshot?.InviteKey) ? "-" : LobbySnapshot!.InviteKey!;
     public string MatchStatusText => GameStateHelper.GetMatchStatusText(Snapshot, UiState, MyTeamID, _stringProvider);
     public string LobbyStatusText => GameStateHelper.GetLobbyStatusText(LobbySnapshot, ConnectionState);
-    public string CombinedErrorText => !string.IsNullOrWhiteSpace(LastActionError) ? LastActionError : ConnectionErrorText;
+    public string CombinedErrorText => !string.IsNullOrWhiteSpace(LastActionError)
+        ? (string.IsNullOrWhiteSpace(LastActionErrorCode) ? LastActionError : $"{LastActionErrorCode}: {LastActionError}")
+        : ConnectionErrorText;
 
     public string MatchResultText => GameStateHelper.GetMatchResultText(Snapshot, MyTeamID);
 
@@ -313,6 +324,13 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
             {
                 await Task.Delay(GameConstants.PollIntervalMs, ct);
 
+                var snapshotJson = _core.SnapshotJson();
+                if (!string.IsNullOrWhiteSpace(snapshotJson) && !string.Equals(snapshotJson, _lastSnapshotJson, StringComparison.Ordinal))
+                {
+                    _lastSnapshotJson = snapshotJson;
+                    ApplySnapshotJson(snapshotJson);
+                }
+
                 var eventJson = _core.PollEventJson();
                 if (!string.IsNullOrEmpty(eventJson))
                 {
@@ -344,7 +362,12 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
                         }
                     } 
                     catch (Exception) { }
-                    RefreshSnapshot();
+                    var latestSnapshot = _core.SnapshotJson();
+                    if (!string.IsNullOrWhiteSpace(latestSnapshot))
+                    {
+                        _lastSnapshotJson = latestSnapshot;
+                        ApplySnapshotJson(latestSnapshot);
+                    }
                 }
             }
         }
@@ -361,7 +384,12 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
     {
         var json = _core.SnapshotJson();
         if (string.IsNullOrEmpty(json)) return;
+        _lastSnapshotJson = json;
+        ApplySnapshotJson(json);
+    }
 
+    private void ApplySnapshotJson(string json)
+    {
         _dispatcherQueue.TryEnqueue(() =>
         {
             try
@@ -403,21 +431,30 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
             SetLocaleFromSetup();
 
             var name = string.IsNullOrEmpty(SetupPlayerName) ? GameConstants.DefaultPlayerName : SetupPlayerName;
-            string namesJson;
-            string cpusJson;
+            var payload = new NewOfflineGameIntentPayload();
 
             if (SetupSelectedPlayerCount == GameConstants.MaxPlayers)
             {
-                namesJson = $"[\"{name}\",\"{_stringProvider.Get(StringProviderKeys.PlayerCpuRight)}\",\"{_stringProvider.Get(StringProviderKeys.PlayerCpuPartner)}\",\"{_stringProvider.Get(StringProviderKeys.PlayerCpuLeft)}\"]";
-                cpusJson = "[false,true,true,true]";
+                payload.PlayerNames.AddRange(new[]
+                {
+                    name,
+                    _stringProvider.Get(StringProviderKeys.PlayerCpuRight),
+                    _stringProvider.Get(StringProviderKeys.PlayerCpuPartner),
+                    _stringProvider.Get(StringProviderKeys.PlayerCpuLeft),
+                });
+                payload.CpuFlags.AddRange(new[] { false, true, true, true });
             }
             else
             {
-                namesJson = $"[\"{name}\",\"{_stringProvider.Get(StringProviderKeys.PlayerCpuOpponent)}\"]";
-                cpusJson = "[false,true]";
+                payload.PlayerNames.AddRange(new[]
+                {
+                    name,
+                    _stringProvider.Get(StringProviderKeys.PlayerCpuOpponent),
+                });
+                payload.CpuFlags.AddRange(new[] { false, true });
             }
 
-            DispatchIntent($"{{\"kind\":\"{IntentKinds.NewOfflineGame}\",\"payload\":{{\"player_names\":{namesJson},\"cpu_flags\":{cpusJson}}}}}");
+            DispatchIntent(IntentKinds.NewOfflineGame, payload);
             Status = _stringProvider.Format(StringProviderKeys.StatusPlaying, SetupSelectedPlayerCount);
         }
         catch (Exception ex)
@@ -432,34 +469,38 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
     {
         LastActionError = "";
         var name = string.IsNullOrEmpty(SetupPlayerName) ? GameConstants.DefaultPlayerName : SetupPlayerName;
-        int players = SetupSelectedPlayerCount;
         SetLocaleFromSetup();
-        if (!string.IsNullOrWhiteSpace(SetupRelayUrl))
+        DispatchIntent("create_host_session", new CreateHostSessionIntentPayload
         {
-            var safeRelayUrl = SetupRelayUrl.Replace("\\", "\\\\").Replace("\"", "\\\"");
-            DispatchIntent($"{{\"kind\":\"create_host_session\",\"payload\":{{\"host_name\":\"{name}\",\"num_players\":{players},\"relay_url\":\"{safeRelayUrl}\"}}}}");
-            return;
-        }
-        DispatchIntent($"{{\"kind\":\"create_host_session\",\"payload\":{{\"host_name\":\"{name}\",\"num_players\":{players}}}}}");
+            HostName = name,
+            NumPlayers = SetupSelectedPlayerCount,
+            RelayUrl = string.IsNullOrWhiteSpace(SetupRelayUrl) ? null : SetupRelayUrl.Trim(),
+        });
     }
 
     [RelayCommand]
     private void JoinOnlineGame()
     {
-        if (string.IsNullOrEmpty(InviteKeyInput)) return;
+        if (string.IsNullOrWhiteSpace(InviteKeyInput)) return;
         LastActionError = "";
         var name = string.IsNullOrEmpty(SetupPlayerName) ? GameConstants.DefaultPlayerName : SetupPlayerName;
-        var safeKey = InviteKeyInput.Replace("\\", "\\\\").Replace("\"", "\\\"");
         SetLocaleFromSetup();
-        DispatchIntent($"{{\"kind\":\"join_session\",\"payload\":{{\"player_name\":\"{name}\",\"key\":\"{safeKey}\",\"desired_role\":\"{SetupDesiredRole}\"}}}}");
+        DispatchIntent("join_session", new JoinSessionIntentPayload
+        {
+            PlayerName = name,
+            Key = InviteKeyInput.Trim(),
+            DesiredRole = SetupDesiredRole,
+        });
     }
 
     [RelayCommand]
     private void SendChat()
     {
-        if (string.IsNullOrEmpty(ChatMessage)) return;
-        var safeText = ChatMessage.Replace("\"", "\\\"");
-        DispatchIntent($"{{\"kind\":\"send_chat\",\"payload\":{{\"text\":\"{safeText}\"}}}}");
+        if (string.IsNullOrWhiteSpace(ChatMessage)) return;
+        DispatchIntent("send_chat", new SendChatIntentPayload
+        {
+            Text = ChatMessage.Trim(),
+        });
         ChatMessage = "";
     }
 
@@ -468,7 +509,10 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
     {
         if (int.TryParse(seatStr?.ToString(), out int seat))
         {
-            DispatchIntent($"{{\"kind\":\"request_replacement_invite\",\"payload\":{{\"target_seat\":{seat}}}}}");
+            DispatchIntent("request_replacement_invite", new ReplacementInviteIntentPayload
+            {
+                TargetSeat = seat,
+            });
         }
     }
 
@@ -477,20 +521,28 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
     {
         if (int.TryParse(seatStr?.ToString(), out int seat))
         {
-            DispatchIntent($"{{\"kind\":\"vote_host\",\"payload\":{{\"candidate_seat\":{seat}}}}}");
+            DispatchIntent("vote_host", new HostVoteIntentPayload
+            {
+                CandidateSeat = seat,
+            });
         }
     }
 
     [RelayCommand]
     private void StartHostedMatch()
     {
-        DispatchIntent($"{{\"kind\":\"start_hosted_match\"}}");
+        DispatchIntent<object?>("start_hosted_match", null);
     }
 
     [RelayCommand]
     private void LeaveOnlineGame()
     {
-        DispatchIntent($"{{\"kind\":\"close_session\"}}");
+        if (!CanCloseSession)
+        {
+            return;
+        }
+
+        DispatchIntent<object?>("close_session", null);
         ChatEvents.Clear();
         LobbyEventEntries.Clear();
         EventLogEntries.Clear();
@@ -500,10 +552,16 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private void LeaveMatch()
     {
-        DispatchIntent($"{{\"kind\":\"close_session\"}}");
+        if (!CanCloseSession)
+        {
+            return;
+        }
+
+        DispatchIntent<object?>("close_session", null);
         ChatEvents.Clear();
         LobbyEventEntries.Clear();
         EventLogEntries.Clear();
+        MatchLogEntries.Clear();
     }
 
     [RelayCommand]
@@ -528,8 +586,20 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private void BackToSetup()
     {
+        if (!CanCloseSession)
+        {
+            return;
+        }
+
+        DispatchIntent<object?>("close_session", null);
         Snapshot = null;
+        LobbySnapshot = null;
+        UiState = null;
+        ConnectionState = null;
+        DiagnosticsState = null;
         Mode = UiConstants.IdleMode;
+        ChatEvents.Clear();
+        LobbySlots.Clear();
         MatchLogEntries.Clear();
         EventLogEntries.Clear();
         LobbyEventEntries.Clear();
@@ -543,26 +613,39 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
         int idx = Me.Hand.FindIndex(c => c.Rank == card.Rank && c.Suit == card.Suit);
         if (idx >= 0)
         {
-            DispatchIntent($"{{\"kind\":\"{IntentKinds.GameAction}\",\"payload\":{{\"action\":\"{ActionTypes.Play}\",\"card_index\":{idx}}}}}");
+            DispatchIntent(IntentKinds.GameAction, new GameActionIntentPayload
+            {
+                Action = ActionTypes.Play,
+                CardIndex = idx,
+            });
         }
     }
 
     [RelayCommand]
     private void RequestTruco()
     {
-        DispatchIntent($"{{\"kind\":\"{IntentKinds.GameAction}\",\"payload\":{{\"action\":\"{ActionTypes.Truco}\"}}}}");
+        DispatchIntent(IntentKinds.GameAction, new GameActionIntentPayload
+        {
+            Action = ActionTypes.Truco,
+        });
     }
 
     [RelayCommand]
     private void AcceptTruco()
     {
-        DispatchIntent($"{{\"kind\":\"{IntentKinds.GameAction}\",\"payload\":{{\"action\":\"{ActionTypes.Accept}\"}}}}");
+        DispatchIntent(IntentKinds.GameAction, new GameActionIntentPayload
+        {
+            Action = ActionTypes.Accept,
+        });
     }
 
     [RelayCommand]
     private void RefuseTruco()
     {
-        DispatchIntent($"{{\"kind\":\"{IntentKinds.GameAction}\",\"payload\":{{\"action\":\"{ActionTypes.Refuse}\"}}}}");
+        DispatchIntent(IntentKinds.GameAction, new GameActionIntentPayload
+        {
+            Action = ActionTypes.Refuse,
+        });
     }
 
     public void Dispose()
@@ -611,25 +694,6 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
                     CanReplace = slot.CanRequestReplacement,
                 });
             }
-            return;
-        }
-
-        if (LobbySnapshot?.Slots == null) return;
-
-        for (int i = 0; i < LobbySnapshot.Slots.Count; i++)
-        {
-            var connected = LobbySnapshot.ConnectedSeats?.TryGetValue(i.ToString(), out var isConnected) == true && isConnected;
-            LobbySlots.Add(new LobbySlotItem
-            {
-                Seat = i,
-                Label = string.IsNullOrWhiteSpace(LobbySnapshot.Slots[i]) ? "Aguardando..." : LobbySnapshot.Slots[i],
-                IsAssigned = LobbySnapshot.AssignedSeat == i,
-                IsHost = LobbySnapshot.HostSeat == i,
-                IsConnected = connected,
-                IsLocal = LobbySnapshot.AssignedSeat == i,
-                CanVote = !string.IsNullOrWhiteSpace(LobbySnapshot.Slots[i]) && LobbySnapshot.AssignedSeat != i,
-                CanReplace = !connected && !string.IsNullOrWhiteSpace(LobbySnapshot.Slots[i]) && LobbySnapshot.AssignedSeat != i,
-            });
         }
     }
 
@@ -657,14 +721,21 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
     {
         var locale = SetupLocaleIndex == 1 ? GameConstants.SupportedLocales[1] : GameConstants.SupportedLocales[0];
         _stringProvider.SetLocale(locale);
-        DispatchIntent($"{{\"kind\":\"{IntentKinds.SetLocale}\",\"payload\":{{\"locale\":\"{locale}\"}}}}", refresh: false);
+        DispatchIntent(IntentKinds.SetLocale, new SetLocaleIntentPayload
+        {
+            Locale = locale,
+        }, refresh: false);
     }
 
-    private void DispatchIntent(string json, bool refresh = true)
+    private void DispatchIntent<TPayload>(string kind, TPayload? payload, bool refresh = true)
     {
         try
         {
-            var response = _core.Dispatch(json);
+            var response = _core.Dispatch(JsonSerializer.Serialize(new AppIntentEnvelope<TPayload>
+            {
+                Kind = kind,
+                Payload = payload,
+            }, JsonOptions.Default));
             CaptureActionError(response);
             if (refresh)
             {
@@ -674,6 +745,7 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
         catch (Exception ex)
         {
             LastActionError = ex.Message;
+            LastActionErrorCode = "";
             Debug.WriteLine($"Dispatch failed: {ex.Message}");
         }
     }
@@ -683,15 +755,17 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
         if (string.IsNullOrWhiteSpace(response))
         {
             LastActionError = "";
+            LastActionErrorCode = "";
             return;
         }
 
         try
         {
-            using var doc = JsonDocument.Parse(response);
-            if (doc.RootElement.TryGetProperty("error", out var errorElement) && errorElement.ValueKind == JsonValueKind.String)
+            var error = JsonSerializer.Deserialize<AppError>(response, JsonOptions.Default);
+            if (!string.IsNullOrWhiteSpace(error?.Message))
             {
-                LastActionError = errorElement.GetString() ?? "";
+                LastActionError = error.Message ?? "";
+                LastActionErrorCode = error.Code ?? "";
                 return;
             }
         }
@@ -700,6 +774,7 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
         }
 
         LastActionError = "";
+        LastActionErrorCode = "";
     }
 
     private void AppendEvent(AppEvent ev)

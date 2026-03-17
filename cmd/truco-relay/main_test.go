@@ -91,6 +91,7 @@ func startRelayTestServer(t *testing.T) *relayTestServer {
 	mux.HandleFunc("/v2/mint-join-ticket", server.handleMintJoinTicket)
 	mux.HandleFunc("/v2/join-session", server.handleJoinSession)
 	mux.HandleFunc("/v2/publish-authority", server.handlePublishAuthority)
+	mux.HandleFunc("/v2/heartbeat", server.handleHeartbeat)
 	mux.HandleFunc("/v1/heartbeat", server.handleHeartbeat)
 	mux.HandleFunc("/healthz", server.healthz)
 	mux.HandleFunc("/metrics", server.metricsHandler)
