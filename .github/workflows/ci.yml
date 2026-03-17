@@ -38,6 +38,12 @@ jobs:
           go install honnef.co/go/tools/cmd/staticcheck@latest
           staticcheck ./...
 
+      - name: Build Browser Bundle
+        run: make browser
+
+      - name: Validate Artifacts
+        run: make verify-artifacts
+
   linux-native:
     runs-on: ubuntu-latest
     steps:
@@ -97,7 +103,8 @@ jobs:
 
       - name: Build Executable (Client)
         run: |
-          CGO_ENABLED=0 GOOS=${{ matrix.os }} GOARCH=${{ matrix.arch }} go build -ldflags="-s -w" -o bin/truco-tui-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.ext }} ./cmd/truco
+          mkdir -p bin/tui
+          CGO_ENABLED=0 GOOS=${{ matrix.os }} GOARCH=${{ matrix.arch }} go build -ldflags="-s -w" -o bin/tui/truco-tui-core-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.ext }} ./cmd/truco
 
       - name: Build Executable (Relay)
         run: |
@@ -106,5 +113,7 @@ jobs:
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: binaries-tui-${{ matrix.os }}-${{ matrix.arch }}
-          path: bin/truco*
+          name: binaries-core-${{ matrix.os }}-${{ matrix.arch }}
+          path: |
+            bin/tui/truco*
+            bin/truco-relay*

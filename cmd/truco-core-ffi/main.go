@@ -22,36 +22,33 @@ var (
 
 func main() {}
 
-//export TrucoCoreCreate
-func TrucoCoreCreate() C.uintptr_t {
+func createRuntimeHandle() uintptr {
 	rt := appcore.NewRuntime()
 	handleMu.Lock()
 	id := nextHandle
 	nextHandle++
 	runtimes[id] = rt
 	handleMu.Unlock()
-	return C.uintptr_t(id)
+	return id
 }
 
-//export TrucoCoreDestroy
-func TrucoCoreDestroy(handle C.uintptr_t) {
-	rt := getRuntime(uintptr(handle))
+func destroyRuntimeHandle(handle uintptr) {
+	rt := getRuntime(handle)
 	if rt != nil {
 		_ = rt.Close()
 	}
 	handleMu.Lock()
-	delete(runtimes, uintptr(handle))
+	delete(runtimes, handle)
 	handleMu.Unlock()
 }
 
-//export TrucoCoreDispatchIntentJSON
-func TrucoCoreDispatchIntentJSON(handle C.uintptr_t, payload *C.char) *C.char {
-	rt := getRuntime(uintptr(handle))
+func dispatchIntentJSON(handle uintptr, payload string) *C.char {
+	rt := getRuntime(handle)
 	if rt == nil {
 		return encodeError("invalid_handle", "runtime não encontrado")
 	}
 	var intent appcore.AppIntent
-	if err := json.Unmarshal([]byte(C.GoString(payload)), &intent); err != nil {
+	if err := json.Unmarshal([]byte(payload), &intent); err != nil {
 		return encodeError("invalid_json", err.Error())
 	}
 	if err := rt.DispatchIntent(intent); err != nil {
@@ -60,9 +57,8 @@ func TrucoCoreDispatchIntentJSON(handle C.uintptr_t, payload *C.char) *C.char {
 	return nil
 }
 
-//export TrucoCorePollEventJSON
-func TrucoCorePollEventJSON(handle C.uintptr_t) *C.char {
-	rt := getRuntime(uintptr(handle))
+func pollEventJSON(handle uintptr) *C.char {
+	rt := getRuntime(handle)
 	if rt == nil {
 		return encodeError("invalid_handle", "runtime não encontrado")
 	}
@@ -73,9 +69,8 @@ func TrucoCorePollEventJSON(handle C.uintptr_t) *C.char {
 	return mustJSON(ev)
 }
 
-//export TrucoCoreSnapshotJSON
-func TrucoCoreSnapshotJSON(handle C.uintptr_t) *C.char {
-	rt := getRuntime(uintptr(handle))
+func snapshotJSON(handle uintptr) *C.char {
+	rt := getRuntime(handle)
 	if rt == nil {
 		return encodeError("invalid_handle", "runtime não encontrado")
 	}
@@ -86,9 +81,48 @@ func TrucoCoreSnapshotJSON(handle C.uintptr_t) *C.char {
 	return C.CString(s)
 }
 
+func versionsJSON() *C.char {
+	rt := appcore.NewRuntime()
+	defer func() { _ = rt.Close() }()
+	return mustJSON(rt.Versions())
+}
+
+func consumeCString(ptr *C.char) string {
+	if ptr == nil {
+		return ""
+	}
+	defer TrucoCoreFreeString(ptr)
+	return C.GoString(ptr)
+}
+
+//export TrucoCoreCreate
+func TrucoCoreCreate() C.uintptr_t {
+	return C.uintptr_t(createRuntimeHandle())
+}
+
+//export TrucoCoreDestroy
+func TrucoCoreDestroy(handle C.uintptr_t) {
+	destroyRuntimeHandle(uintptr(handle))
+}
+
+//export TrucoCoreDispatchIntentJSON
+func TrucoCoreDispatchIntentJSON(handle C.uintptr_t, payload *C.char) *C.char {
+	return dispatchIntentJSON(uintptr(handle), C.GoString(payload))
+}
+
+//export TrucoCorePollEventJSON
+func TrucoCorePollEventJSON(handle C.uintptr_t) *C.char {
+	return pollEventJSON(uintptr(handle))
+}
+
+//export TrucoCoreSnapshotJSON
+func TrucoCoreSnapshotJSON(handle C.uintptr_t) *C.char {
+	return snapshotJSON(uintptr(handle))
+}
+
 //export TrucoCoreVersionsJSON
 func TrucoCoreVersionsJSON() *C.char {
-	return mustJSON(appcore.NewRuntime().Versions())
+	return versionsJSON()
 }
 
 //export TrucoCoreFreeString

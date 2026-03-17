@@ -748,6 +748,15 @@ func bytesTrimSpace(b []byte) []byte {
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
+	if status >= 400 {
+		if m, ok := v.(map[string]any); ok {
+			if code, ok := m["error"].(string); ok {
+				if _, exists := m["error_code"]; !exists {
+					m["error_code"] = code
+				}
+			}
+		}
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(v)
@@ -818,6 +827,7 @@ func main() {
 	mux.HandleFunc("/v2/mint-join-ticket", server.handleMintJoinTicket)
 	mux.HandleFunc("/v2/join-session", server.handleJoinSession)
 	mux.HandleFunc("/v2/publish-authority", server.handlePublishAuthority)
+	mux.HandleFunc("/v2/heartbeat", server.handleHeartbeat)
 	mux.HandleFunc("/v1/heartbeat", server.handleHeartbeat)
 	mux.HandleFunc("/healthz", server.healthz)
 	mux.HandleFunc("/metrics", server.metricsHandler)

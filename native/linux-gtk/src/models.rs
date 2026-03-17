@@ -258,7 +258,10 @@ impl HandState {
             let power = pc.card.power(manilha_ref);
             if power > best_power {
                 best_power = power;
-                best_id = Some(format!("{}-{}-{}", pc.player_id, pc.card.rank, pc.card.suit));
+                best_id = Some(format!(
+                    "{}-{}-{}",
+                    pc.player_id, pc.card.rank, pc.card.suit
+                ));
                 is_tie = false;
             } else if power == best_power {
                 is_tie = true;

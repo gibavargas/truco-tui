@@ -27,6 +27,25 @@ const (
 	httpTimeout = 5 * time.Second
 )
 
+type RelayHTTPError struct {
+	Status  int
+	Code    string
+	Message string
+}
+
+func (e RelayHTTPError) Error() string {
+	if strings.TrimSpace(e.Code) != "" && strings.TrimSpace(e.Message) != "" {
+		return fmt.Sprintf("relay http status %d (%s): %s", e.Status, e.Code, e.Message)
+	}
+	if strings.TrimSpace(e.Message) != "" {
+		return fmt.Sprintf("relay http status %d: %s", e.Status, e.Message)
+	}
+	if strings.TrimSpace(e.Code) != "" {
+		return fmt.Sprintf("relay http status %d (%s)", e.Status, e.Code)
+	}
+	return fmt.Sprintf("relay http status %d", e.Status)
+}
+
 type ClientSecurity struct {
 	RelaySPKIPin string
 	RootCAs      *x509.CertPool
@@ -67,7 +86,7 @@ func PublishAuthority(relayURL string, sec ClientSecurity, req PublishAuthorityR
 
 func Heartbeat(relayURL string, sec ClientSecurity, req HeartbeatRequest) error {
 	var out map[string]any
-	return postJSON(relayURL, sec, "/v1/heartbeat", req, &out)
+	return postJSON(relayURL, sec, "/v2/heartbeat", req, &out)
 }
 
 func OpenPeerTunnel(ctx context.Context, sec ClientSecurity, quicAddr, sessionID, peerID, credential, targetPeerID string) (net.Conn, error) {
@@ -298,12 +317,17 @@ func postJSON(relayURL string, sec ClientSecurity, path string, req any, out any
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		var apiErr struct {
-			Error string `json:"error"`
+			Error     string `json:"error"`
+			ErrorCode string `json:"error_code"`
 		}
 		if derr := json.NewDecoder(resp.Body).Decode(&apiErr); derr == nil && strings.TrimSpace(apiErr.Error) != "" {
-			return fmt.Errorf("relay http status %d: %s", resp.StatusCode, apiErr.Error)
+			return RelayHTTPError{
+				Status:  resp.StatusCode,
+				Code:    strings.TrimSpace(apiErr.ErrorCode),
+				Message: strings.TrimSpace(apiErr.Error),
+			}
 		}
-		return fmt.Errorf("relay http status %d", resp.StatusCode)
+		return RelayHTTPError{Status: resp.StatusCode}
 	}
 	if out == nil {
 		return nil

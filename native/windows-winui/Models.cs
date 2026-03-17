@@ -6,6 +6,9 @@ namespace TrucoWinUI.Models;
 // Top-level bundle from FFI
 public class SnapshotBundle
 {
+    [JsonPropertyName("versions")]
+    public CoreVersions? Versions { get; set; }
+
     [JsonPropertyName("mode")]
     public string? Mode { get; set; }
     
@@ -227,6 +230,9 @@ public class ConnectionSnapshot
     public bool? IsHost { get; set; }
     [JsonPropertyName("last_error")]
     public AppError? LastError { get; set; }
+
+    [JsonPropertyName("last_event_sequence")]
+    public long LastEventSequence { get; set; }
 }
 
 public class DiagnosticsSnapshot

@@ -324,6 +324,12 @@ func (c *ClientSession) CurrentHostSeat() int {
 	return c.failoverHostSeat
 }
 
+func (c *ClientSession) DesiredRole() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.desiredRole
+}
+
 func (c *ClientSession) GameStarted() bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()

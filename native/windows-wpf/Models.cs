@@ -224,6 +224,8 @@ public class LobbySnapshot
     public int? HostSeat { get; set; }
     [JsonPropertyName("connected_seats")]
     public Dictionary<string, bool>? ConnectedSeats { get; set; }
+    [JsonPropertyName("role")]
+    public string? Role { get; set; }
 }
 
 public class LobbySlotItem

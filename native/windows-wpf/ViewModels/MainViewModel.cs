@@ -6,6 +6,8 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
+using System.Collections.ObjectModel;
+using System.Windows.Media;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using TrucoWPF.Models;
@@ -17,7 +19,9 @@ public partial class MainViewModel : ObservableObject, IDisposable
 {
     private readonly TrucoCoreService _core;
     private readonly IStringProvider _stringProvider;
+    private readonly JsonSerializerOptions _jsonOptions = new(JsonSerializerDefaults.Web);
     private CancellationTokenSource? _pollCts;
+    private string _lastSnapshotJson = string.Empty;
     private bool _disposed;
 
     [ObservableProperty]
@@ -62,14 +66,15 @@ public partial class MainViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private DiagnosticsSnapshot? _diagnosticsState;
 
-    public System.Collections.ObjectModel.ObservableCollection<string> ChatEvents { get; } = new();
-    public System.Collections.ObjectModel.ObservableCollection<LobbySlotItem> LobbySlots { get; } = new();
+    public ObservableCollection<string> ChatEvents { get; } = new();
+    public ObservableCollection<LobbySlotItem> LobbySlots { get; } = new();
 
     public bool IsPlaying => Snapshot?.Players != null;
     public bool IsNotPlaying => !IsPlaying && Mode != "host_lobby" && Mode != "client_lobby";
     public bool IsOnlineLobby => Mode == "host_lobby" || Mode == "client_lobby";
     public bool IsOnlineMatch => Mode == "host_match" || Mode == "client_match";
     public bool IsMyTurn => UiState?.Actions?.CanPlayCard == true || UiState?.Actions?.MustRespond == true;
+    public bool CanCloseSession => UiState?.Actions?.CanCloseSession == true;
 
     public Visibility VisibilityIfNotPlaying => IsNotPlaying ? Visibility.Visible : Visibility.Collapsed;
     public Visibility VisibilityIfOnlineLobby => IsOnlineLobby ? Visibility.Visible : Visibility.Collapsed;
@@ -93,7 +98,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
     
     public string? TrickWinningCardId => Snapshot?.CurrentHand?.WinningCardId;
 
-    public Player? Me => Snapshot?.Players?.FirstOrDefault(p => p.ID == Snapshot.CurrentPlayerIdx);
+    public Player? Me => Snapshot?.Players?.FirstOrDefault(p => p.ID == UiState?.Actions?.LocalPlayerId);
     public Player? TopPlayer => GetPlayerAt(2);
     public Player? RightPlayer => Snapshot?.NumPlayers == 2 ? null : GetPlayerAt(1);
     public Player? LeftPlayer => Snapshot?.NumPlayers == 2 ? null : GetPlayerAt(3);
@@ -135,6 +140,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
     public string ConnectionRoleText => LobbySnapshot?.Role ?? SetupDesiredRole;
     public string ConnectionErrorText => ConnectionState?.LastError?.Message ?? string.Empty;
     public string EventBacklogText => (DiagnosticsState?.EventBacklog ?? 0).ToString();
+    public string RuntimeInfoText => $"FFI core v{_core.Versions.CoreApiVersion} | protocol v{_core.Versions.ProtocolVersion} | snapshot v{_core.Versions.SnapshotSchemaVersion}";
 
     public string RoundText => Snapshot?.CurrentHand?.Round != null 
         ? _stringProvider.Format(StringProviderKeys.RoundFormat, Snapshot.CurrentHand.Round) 
@@ -146,13 +152,14 @@ public partial class MainViewModel : ObservableObject, IDisposable
     {
         _core = new TrucoCoreService();
         _stringProvider = new StringProvider();
+        Status = _stringProvider.Get(StringProviderKeys.StatusWaiting);
         _ = StartPollingAsync();
     }
 
     private Player? GetPlayerAt(int idx)
     {
         if (Snapshot?.Players == null || Snapshot.NumPlayers == null) return null;
-        var local = Snapshot.CurrentPlayerIdx ?? 0;
+        var local = UiState?.Actions?.LocalPlayerId ?? 0;
         return Snapshot.NumPlayers == 2
             ? Snapshot.Players.FirstOrDefault(p => p.ID == ((local + idx) % 2))
             : Snapshot.Players.FirstOrDefault(p => p.ID == ((local + idx) % 4));
@@ -173,16 +180,13 @@ public partial class MainViewModel : ObservableObject, IDisposable
         {
             try
             {
-                var snapshotJson = _core.SnapshotJson();
-                if (!string.IsNullOrEmpty(snapshotJson))
-                {
-                    await Application.Current.Dispatcher.InvokeAsync(() => ProcessSnapshot(snapshotJson));
-                }
+                await RefreshSnapshotAsync();
                 
                 var eventJson = _core.PollEventJson();
                 if (!string.IsNullOrEmpty(eventJson))
                 {
                     await Application.Current.Dispatcher.InvokeAsync(() => ProcessEvent(eventJson));
+                    await RefreshSnapshotAsync();
                 }
                 
                 await Task.Delay(50, _pollCts.Token);
@@ -198,11 +202,23 @@ public partial class MainViewModel : ObservableObject, IDisposable
         }
     }
 
+    private async Task RefreshSnapshotAsync()
+    {
+        var snapshotJson = _core.SnapshotJson();
+        if (string.IsNullOrWhiteSpace(snapshotJson) || string.Equals(snapshotJson, _lastSnapshotJson, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        _lastSnapshotJson = snapshotJson;
+        await Application.Current.Dispatcher.InvokeAsync(() => ProcessSnapshot(snapshotJson));
+    }
+
     private void ProcessSnapshot(string json)
     {
         try
         {
-            var bundle = JsonSerializer.Deserialize<SnapshotBundle>(json);
+            var bundle = JsonSerializer.Deserialize<SnapshotBundle>(json, _jsonOptions);
             if (bundle != null)
             {
                 Snapshot = bundle.Match;
@@ -211,6 +227,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
                 ConnectionState = bundle.Connection;
                 DiagnosticsState = bundle.Diagnostics;
                 Mode = bundle.Mode ?? "idle";
+                _stringProvider.SetLocale(bundle.Locale ?? "pt-BR");
+                Status = ConnectionStatusText;
                 
                 RebuildLobbySlots();
 
@@ -236,6 +254,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
                 OnPropertyChanged(nameof(ShowTrucoActions));
                 OnPropertyChanged(nameof(ShowAskTruco));
                 OnPropertyChanged(nameof(CanPlayCards));
+                OnPropertyChanged(nameof(CanCloseSession));
                 OnPropertyChanged(nameof(AskTrucoLabel));
                 OnPropertyChanged(nameof(TrucoLabel));
                 OnPropertyChanged(nameof(RoundText));
@@ -289,36 +308,6 @@ public partial class MainViewModel : ObservableObject, IDisposable
                     RuntimeStatus = slot.Status
                 });
             }
-            return;
-        }
-
-        if (LobbySnapshot == null || LobbySnapshot.Slots == null || LobbySnapshot.NumPlayers == null)
-            return;
-
-        int size = LobbySnapshot.Slots.Count > LobbySnapshot.NumPlayers.Value 
-            ? LobbySnapshot.Slots.Count 
-            : LobbySnapshot.NumPlayers.Value;
-
-        var hostSeat = LobbySnapshot.HostSeat ?? 0;
-
-        for (int i = 0; i < size; i++)
-        {
-            string label = i < LobbySnapshot.Slots.Count ? LobbySnapshot.Slots[i] : "";
-            bool isAssigned = !string.IsNullOrEmpty(label);
-            bool isHost = isAssigned && (i == hostSeat);
-            bool isConnected = LobbySnapshot.ConnectedSeats?.TryGetValue(i.ToString(), out var connected) == true && connected;
-
-            LobbySlots.Add(new LobbySlotItem
-            {
-                Seat = i + 1,
-                Label = isAssigned ? $"Slot {i + 1}: {label}" : $"Slot {i + 1}: (vaio)",
-                IsAssigned = isAssigned,
-                IsHost = isHost,
-                IsConnected = isConnected,
-                IsLocal = LobbySnapshot.AssignedSeat == i,
-                CanVote = isAssigned && !isHost,
-                CanReplace = isAssigned && !isConnected
-            });
         }
     }
 
@@ -339,7 +328,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
     {
         try
         {
-            var appEvent = JsonSerializer.Deserialize<AppEvent>(json);
+            var appEvent = JsonSerializer.Deserialize<AppEvent>(json, _jsonOptions);
             if (appEvent != null)
             {
                 string? text = null;
@@ -359,9 +348,27 @@ public partial class MainViewModel : ObservableObject, IDisposable
                     var key = payload.HasValue && payload.Value.TryGetProperty("invite_key", out var keyEl) ? keyEl.GetString() : "";
                     text = string.IsNullOrWhiteSpace(key) ? null : $"Link de subs: {key}";
                 }
+                else if (appEvent.Kind == "error")
+                {
+                    text = payload.HasValue && payload.Value.TryGetProperty("message", out var textEl) ? $"erro: {textEl.GetString()}" : null;
+                }
+                else if (appEvent.Kind == "session_closed")
+                {
+                    text = "Sessao encerrada.";
+                }
+                else if (appEvent.Kind == "host_created")
+                {
+                    var key = payload.HasValue && payload.Value.TryGetProperty("invite_key", out var keyEl) ? keyEl.GetString() : "";
+                    text = string.IsNullOrWhiteSpace(key) ? "Sala criada." : $"Sala criada. Convite: {key}";
+                }
+                else if (appEvent.Kind == "match_started")
+                {
+                    text = "Partida iniciada.";
+                }
                 if (!string.IsNullOrWhiteSpace(text))
                 {
                     ChatEvents.Add(text!);
+                    TrimCollection(ChatEvents, 120);
                 }
             }
         }
@@ -379,7 +386,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
             kind = "set_locale",
             payload = new { locale = SetupLocaleIndex == 0 ? "pt-BR" : "en-US" }
         };
-        _core.Dispatch(JsonSerializer.Serialize(localeIntent));
+        DispatchIntent(localeIntent);
 
         var numPlayers = SetupNumPlayers == 1 ? 4 : 2;
         var names = numPlayers == 4
@@ -393,7 +400,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
             kind = "new_offline_game",
             payload = new { player_names = names, cpu_flags = cpuFlags }
         };
-        _core.Dispatch(JsonSerializer.Serialize(gameIntent));
+        DispatchIntent(gameIntent);
         
         Status = _stringProvider.Format(StringProviderKeys.StatusPlaying, numPlayers);
     }
@@ -408,7 +415,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
             kind = "game_action",
             payload = new { action = "play", card_index = Me.Hand.FindIndex(c => c.Rank == card.Rank && c.Suit == card.Suit) }
         };
-        _core.Dispatch(JsonSerializer.Serialize(intent));
+        DispatchIntent(intent);
     }
 
     [RelayCommand]
@@ -419,7 +426,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
             kind = "game_action",
             payload = new { action = "truco" }
         };
-        _core.Dispatch(JsonSerializer.Serialize(intent));
+        DispatchIntent(intent);
     }
 
     [RelayCommand]
@@ -430,7 +437,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
             kind = "game_action",
             payload = new { action = "accept" }
         };
-        _core.Dispatch(JsonSerializer.Serialize(intent));
+        DispatchIntent(intent);
     }
 
     [RelayCommand]
@@ -441,16 +448,32 @@ public partial class MainViewModel : ObservableObject, IDisposable
             kind = "game_action",
             payload = new { action = "refuse" }
         };
-        _core.Dispatch(JsonSerializer.Serialize(intent));
+        DispatchIntent(intent);
     }
 
     [RelayCommand]
     private void BackToSetup()
     {
+        if (!CanCloseSession)
+        {
+            return;
+        }
+
+        DispatchIntent(new { kind = "close_session" });
         Snapshot = null;
+        LobbySnapshot = null;
+        UiState = null;
+        ConnectionState = null;
+        DiagnosticsState = null;
         Mode = "idle";
         _lastTrickSeqViewed = -1;
         ShowTrickEndAnimation = false;
+        InviteKeyInput = string.Empty;
+        ChatMessage = string.Empty;
+        ChatEvents.Clear();
+        LobbySlots.Clear();
+        _lastSnapshotJson = string.Empty;
+        Status = _stringProvider.Get(StringProviderKeys.StatusWaiting);
         OnPropertyChanged(nameof(IsPlaying));
         OnPropertyChanged(nameof(IsNotPlaying));
         OnPropertyChanged(nameof(IsOnlineLobby));
@@ -469,7 +492,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
             payload = new { host_name = name, num_players = numPlayers, relay_url = string.IsNullOrWhiteSpace(SetupRelayUrl) ? null : SetupRelayUrl.Trim() }
         };
         ChatEvents.Clear();
-        _core.Dispatch(JsonSerializer.Serialize(intent));
+        DispatchIntent(intent);
     }
 
     [RelayCommand]
@@ -483,14 +506,14 @@ public partial class MainViewModel : ObservableObject, IDisposable
             payload = new { player_name = name, key = InviteKeyInput.Trim(), desired_role = SetupDesiredRole }
         };
         ChatEvents.Clear();
-        _core.Dispatch(JsonSerializer.Serialize(intent));
+        DispatchIntent(intent);
     }
 
     [RelayCommand]
     private void StartHostedMatch()
     {
         var intent = new { kind = "start_hosted_match" };
-        _core.Dispatch(JsonSerializer.Serialize(intent));
+        DispatchIntent(intent);
     }
 
     [RelayCommand]
@@ -502,7 +525,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
             kind = "send_chat",
             payload = new { text = ChatMessage }
         };
-        _core.Dispatch(JsonSerializer.Serialize(intent));
+        DispatchIntent(intent);
         ChatMessage = string.Empty;
     }
 
@@ -515,7 +538,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
             kind = "vote_host",
             payload = new { candidate_seat = slot.Seat - 1 }
         };
-        _core.Dispatch(JsonSerializer.Serialize(intent));
+        DispatchIntent(intent);
     }
 
     [RelayCommand]
@@ -527,15 +550,66 @@ public partial class MainViewModel : ObservableObject, IDisposable
             kind = "request_replacement_invite",
             payload = new { target_seat = slot.Seat - 1 }
         };
-        _core.Dispatch(JsonSerializer.Serialize(intent));
+        DispatchIntent(intent);
     }
 
     [RelayCommand]
     private void LeaveOnlineGame()
     {
-        var intent = new { kind = "close_session" };
-        _core.Dispatch(JsonSerializer.Serialize(intent));
         BackToSetup();
+    }
+
+    private void DispatchIntent(object intent)
+    {
+        string payload = JsonSerializer.Serialize(intent, _jsonOptions);
+        string? response = _core.Dispatch(payload);
+        if (string.IsNullOrWhiteSpace(response))
+        {
+            Status = ConnectionStatusText;
+            return;
+        }
+
+        try
+        {
+            AppError? error = JsonSerializer.Deserialize<AppError>(response, _jsonOptions);
+            if (!string.IsNullOrWhiteSpace(error?.Message))
+            {
+                Status = FormatRuntimeError(error);
+                ChatEvents.Add($"erro: {FormatRuntimeError(error)}");
+                TrimCollection(ChatEvents, 120);
+                return;
+            }
+        }
+        catch (JsonException)
+        {
+        }
+
+        Status = response;
+    }
+
+    private static string FormatRuntimeError(AppError? error)
+    {
+        var message = error?.Message?.Trim() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(message))
+        {
+            return string.Empty;
+        }
+
+        var code = error?.Code?.Trim();
+        if (!string.IsNullOrWhiteSpace(code))
+        {
+            return $"{code}: {message}";
+        }
+
+        return message;
+    }
+
+    private static void TrimCollection<T>(ObservableCollection<T> collection, int maxItems)
+    {
+        while (collection.Count > maxItems)
+        {
+            collection.RemoveAt(0);
+        }
     }
 
     public void Dispose()

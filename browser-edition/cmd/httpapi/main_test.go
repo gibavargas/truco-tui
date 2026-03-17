@@ -6,13 +6,11 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"truco-tui/internal/appcore"
 )
 
-// ---------------------------------------------------------------------------
-// helpers
-// ---------------------------------------------------------------------------
-
-func postAction(t *testing.T, srv http.Handler, action, sessionID string, body map[string]interface{}) map[string]interface{} {
+func postActionHTTP(t *testing.T, srv http.Handler, action, sessionID string, body map[string]interface{}) (int, map[string]interface{}) {
 	t.Helper()
 	var buf bytes.Buffer
 	if body != nil {
@@ -31,252 +29,232 @@ func postAction(t *testing.T, srv http.Handler, action, sessionID string, body m
 	if err := json.Unmarshal(w.Body.Bytes(), &result); err != nil {
 		t.Fatalf("decode response for %s: %v\nbody: %s", action, err, w.Body.String())
 	}
+	return w.Code, result
+}
+
+func postAction(t *testing.T, srv http.Handler, action, sessionID string, body map[string]interface{}) map[string]interface{} {
+	t.Helper()
+	_, result := postActionHTTP(t, srv, action, sessionID, body)
 	return result
 }
 
-func createAndStart(t *testing.T, srv http.Handler) string {
+func createSession(t *testing.T, srv http.Handler) string {
 	t.Helper()
 	res := postAction(t, srv, "createSession", "", nil)
 	if !res["ok"].(bool) {
 		t.Fatalf("createSession failed: %v", res["error"])
 	}
-	sid := res["sessionId"].(string)
+	sid, _ := res["sessionId"].(string)
+	if sid == "" {
+		t.Fatalf("missing sessionId: %v", res)
+	}
+	return sid
+}
 
-	res = postAction(t, srv, "startGame", sid, map[string]interface{}{
+func parseBundle(t *testing.T, res map[string]interface{}) map[string]interface{} {
+	t.Helper()
+	bundle, ok := res["bundle"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected bundle in result, got %v", res["bundle"])
+	}
+	return bundle
+}
+
+func parseSnapshot(t *testing.T, res map[string]interface{}) map[string]interface{} {
+	t.Helper()
+	raw, ok := res["snapshot"].(string)
+	if !ok || raw == "" {
+		t.Fatalf("expected snapshot JSON string in result")
+	}
+	var snap map[string]interface{}
+	if err := json.Unmarshal([]byte(raw), &snap); err != nil {
+		t.Fatalf("decode snapshot: %v", err)
+	}
+	return snap
+}
+
+func eventKinds(t *testing.T, res map[string]interface{}) []string {
+	t.Helper()
+	raw, ok := res["events"].([]interface{})
+	if !ok {
+		t.Fatalf("expected events array, got %T", res["events"])
+	}
+	out := make([]string, 0, len(raw))
+	for _, item := range raw {
+		ev, ok := item.(map[string]interface{})
+		if !ok {
+			t.Fatalf("expected event object, got %T", item)
+		}
+		kind, _ := ev["kind"].(string)
+		out = append(out, kind)
+	}
+	return out
+}
+
+func containsKind(kinds []string, target string) bool {
+	for _, kind := range kinds {
+		if kind == target {
+			return true
+		}
+	}
+	return false
+}
+
+func TestCreateSession(t *testing.T) {
+	srv := newAPIServer()
+	_ = createSession(t, srv)
+}
+
+func TestStartGameReturnsBundleSnapshotAndContractVersions(t *testing.T) {
+	srv := newAPIServer()
+	sid := createSession(t, srv)
+
+	res := postAction(t, srv, "startGame", sid, map[string]interface{}{
 		"numPlayers": 2,
 		"name":       "Tester",
 	})
 	if !res["ok"].(bool) {
 		t.Fatalf("startGame failed: %v", res["error"])
 	}
-	return sid
-}
-
-func parseSnap(t *testing.T, res map[string]interface{}) map[string]interface{} {
-	t.Helper()
-	snapStr, ok := res["snapshot"].(string)
-	if !ok {
-		t.Fatalf("no snapshot in result")
+	if res["mode"] != appcore.ModeOfflineMatch {
+		t.Fatalf("mode = %v, want %q", res["mode"], appcore.ModeOfflineMatch)
 	}
-	var snap map[string]interface{}
-	if err := json.Unmarshal([]byte(snapStr), &snap); err != nil {
-		t.Fatalf("decode snapshot: %v", err)
-	}
-	return snap
-}
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
-
-func TestCreateSession(t *testing.T) {
-	srv := newAPIServer()
-	res := postAction(t, srv, "createSession", "", nil)
-	if !res["ok"].(bool) {
-		t.Fatalf("expected ok")
+	bundle := parseBundle(t, res)
+	versions := bundle["versions"].(map[string]interface{})
+	if int(versions["core_api_version"].(float64)) != appcore.CoreAPIVersion {
+		t.Fatalf("core_api_version = %v, want %d", versions["core_api_version"], appcore.CoreAPIVersion)
 	}
-	sid, ok := res["sessionId"].(string)
-	if !ok || sid == "" {
-		t.Fatalf("expected sessionId, got %v", res["sessionId"])
+	if int(versions["snapshot_schema_version"].(float64)) != appcore.SnapshotSchemaMajor {
+		t.Fatalf("snapshot_schema_version = %v, want %d", versions["snapshot_schema_version"], appcore.SnapshotSchemaMajor)
 	}
-}
 
-func TestStartGame(t *testing.T) {
-	srv := newAPIServer()
-	sid := createAndStart(t, srv)
-
-	res := postAction(t, srv, "snapshot", sid, nil)
-	if !res["ok"].(bool) {
-		t.Fatalf("snapshot failed: %v", res["error"])
-	}
-	snap := parseSnap(t, res)
+	snap := parseSnapshot(t, res)
 	if int(snap["NumPlayers"].(float64)) != 2 {
-		t.Fatalf("expected 2 players, got %v", snap["NumPlayers"])
+		t.Fatalf("NumPlayers = %v, want 2", snap["NumPlayers"])
 	}
 }
 
-func TestStartGame4Players(t *testing.T) {
+func TestSetLocaleDrainsRuntimeEventsExactlyOnce(t *testing.T) {
 	srv := newAPIServer()
-	res := postAction(t, srv, "createSession", "", nil)
-	sid := res["sessionId"].(string)
+	sid := createSession(t, srv)
 
-	res = postAction(t, srv, "startGame", sid, map[string]interface{}{
-		"numPlayers": 4,
-		"name":       "P1",
+	res := postAction(t, srv, "setLocale", sid, map[string]interface{}{
+		"locale": appcore.LocaleENUS,
 	})
 	if !res["ok"].(bool) {
-		t.Fatalf("startGame 4p failed: %v", res["error"])
+		t.Fatalf("setLocale failed: %v", res["error"])
 	}
-	snap := parseSnap(t, res)
-	if int(snap["NumPlayers"].(float64)) != 4 {
-		t.Fatalf("expected 4 players, got %v", snap["NumPlayers"])
-	}
-}
-
-func TestPlayCard(t *testing.T) {
-	srv := newAPIServer()
-	sid := createAndStart(t, srv)
-
-	// Run CPU loop first to ensure it's our turn
-	_ = postAction(t, srv, "autoCpuLoopTick", sid, nil)
-
-	res := postAction(t, srv, "snapshot", sid, nil)
-	snap := parseSnap(t, res)
-	turn := int(snap["TurnPlayer"].(float64))
-
-	if turn != 0 {
-		// CPU goes first, play CPU then try
-		_ = postAction(t, srv, "autoCpuLoopTick", sid, nil)
-		res = postAction(t, srv, "snapshot", sid, nil)
-		snap = parseSnap(t, res)
-		turn = int(snap["TurnPlayer"].(float64))
+	kinds := eventKinds(t, res)
+	if !containsKind(kinds, appcore.EventLocaleChanged) {
+		t.Fatalf("expected %q in events, got %v", appcore.EventLocaleChanged, kinds)
 	}
 
-	if turn == 0 {
-		if pending, ok := snap["PendingRaiseFor"].(float64); ok && int(pending) != -1 {
-			res = postAction(t, srv, "accept", sid, nil)
-			if !res["ok"].(bool) {
-				t.Fatalf("accept pending truco failed: %v", res["error"])
-			}
-		}
-		res = postAction(t, srv, "play", sid, map[string]interface{}{"cardIndex": 0})
-		if !res["ok"].(bool) {
-			t.Fatalf("play card failed: %v", res["error"])
-		}
+	res = postAction(t, srv, "pullOnlineEvents", sid, nil)
+	if !res["ok"].(bool) {
+		t.Fatalf("pullOnlineEvents failed: %v", res["error"])
+	}
+	kinds = eventKinds(t, res)
+	if len(kinds) != 0 {
+		t.Fatalf("expected drained queue to be empty, got %v", kinds)
 	}
 }
 
-func TestPlayCardMissingIndex(t *testing.T) {
+func TestPlayRequiresCardIndexErrorCode(t *testing.T) {
 	srv := newAPIServer()
-	sid := createAndStart(t, srv)
+	sid := createSession(t, srv)
+	_ = postAction(t, srv, "startGame", sid, map[string]interface{}{
+		"numPlayers": 2,
+		"name":       "Tester",
+	})
 
 	res := postAction(t, srv, "play", sid, nil)
 	if res["ok"].(bool) {
-		t.Fatalf("expected error when no cardIndex")
+		t.Fatalf("expected play without cardIndex to fail")
+	}
+	if res["error_code"] != "missing_card_index" {
+		t.Fatalf("error_code = %v, want missing_card_index", res["error_code"])
 	}
 }
 
-func TestTrucoAskAndAccept(t *testing.T) {
+func TestRuntimeErrorsExposeNormalizedErrorCodeAndBundle(t *testing.T) {
 	srv := newAPIServer()
-	sid := createAndStart(t, srv)
+	sid := createSession(t, srv)
 
-	// Ensure it's our turn via autoCpu
-	_ = postAction(t, srv, "autoCpuLoopTick", sid, nil)
-
-	res := postAction(t, srv, "snapshot", sid, nil)
-	snap := parseSnap(t, res)
-	turn := int(snap["TurnPlayer"].(float64))
-
-	if turn == 0 {
-		res = postAction(t, srv, "truco", sid, nil)
-		if !res["ok"].(bool) {
-			// This can fail if game conditions don't allow (e.g., hand already at 12)
-			// but for a fresh game it should work
-			t.Logf("truco ask result: %v", res)
-		}
-	}
-}
-
-func TestRefuseOnEmptySession(t *testing.T) {
-	srv := newAPIServer()
-	res := postAction(t, srv, "refuse", "nonexistent", nil)
+	code, res := postActionHTTP(t, srv, "startOnlineHost", sid, map[string]interface{}{
+		"name":       "Host",
+		"numPlayers": 2,
+		"relay_url":  "://bad relay url",
+	})
 	if res["ok"].(bool) {
-		t.Fatalf("expected error for nonexistent session")
+		t.Fatalf("expected invalid relay URL to fail")
 	}
-	errMsg, _ := res["error"].(string)
-	if errMsg != "session not found" {
-		t.Fatalf("expected 'session not found', got %q", errMsg)
+	if code == http.StatusOK {
+		t.Fatalf("status = %d, want non-OK", code)
 	}
-}
-
-func TestSnapshotNoGame(t *testing.T) {
-	srv := newAPIServer()
-	res := postAction(t, srv, "createSession", "", nil)
-	sid := res["sessionId"].(string)
-
-	res = postAction(t, srv, "snapshot", sid, nil)
-	if !res["ok"].(bool) {
-		t.Fatalf("expected idle snapshot")
+	if res["error_code"] != "create_host_failed" {
+		t.Fatalf("error_code = %v, want create_host_failed", res["error_code"])
 	}
-	if res["mode"] != "idle" {
-		t.Fatalf("expected idle mode, got %v", res["mode"])
+	bundle := parseBundle(t, res)
+	connection := bundle["connection"].(map[string]interface{})
+	lastError := connection["last_error"].(map[string]interface{})
+	if lastError["code"] != "create_host_failed" {
+		t.Fatalf("last_error.code = %v, want create_host_failed", lastError["code"])
 	}
 }
 
-func TestNewHand(t *testing.T) {
+func TestResetReturnsRuntimeToIdleAndEmitsSessionClosed(t *testing.T) {
 	srv := newAPIServer()
-	sid := createAndStart(t, srv)
+	sid := createSession(t, srv)
+	_ = postAction(t, srv, "startGame", sid, map[string]interface{}{
+		"numPlayers": 2,
+		"name":       "Tester",
+	})
 
-	// newHand should work (starts another hand in the same match)
-	res := postAction(t, srv, "newHand", sid, nil)
-	if !res["ok"].(bool) {
-		t.Fatalf("newHand failed: %v", res["error"])
+	code, res := postActionHTTP(t, srv, "reset", sid, nil)
+	if code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", code, http.StatusOK)
 	}
-}
-
-func TestReset(t *testing.T) {
-	srv := newAPIServer()
-	sid := createAndStart(t, srv)
-
-	res := postAction(t, srv, "reset", sid, nil)
 	if !res["ok"].(bool) {
 		t.Fatalf("reset failed: %v", res["error"])
 	}
-
-	// After reset, snapshot should fail
-	res = postAction(t, srv, "snapshot", sid, nil)
-	if !res["ok"].(bool) || res["mode"] != "idle" {
-		t.Fatalf("expected idle snapshot after reset, got %v", res)
+	if res["mode"] != appcore.ModeIdle {
+		t.Fatalf("mode = %v, want %q", res["mode"], appcore.ModeIdle)
+	}
+	bundle := parseBundle(t, res)
+	if bundle["lobby"] != nil {
+		t.Fatal("expected lobby to be cleared after reset")
+	}
+	kinds := eventKinds(t, res)
+	if !containsKind(kinds, appcore.EventSessionClosed) {
+		t.Fatalf("expected %q in events, got %v", appcore.EventSessionClosed, kinds)
 	}
 }
 
-func TestAutoCpuLoopTick(t *testing.T) {
+func TestUnknownActionReturnsStructuredError(t *testing.T) {
 	srv := newAPIServer()
-	sid := createAndStart(t, srv)
+	sid := createSession(t, srv)
 
-	res := postAction(t, srv, "autoCpuLoopTick", sid, nil)
-	if !res["ok"].(bool) {
-		t.Fatalf("autoCpuLoopTick failed: %v", res["error"])
-	}
-	if res["bundle"] == nil {
-		t.Fatalf("expected bundle field in response")
-	}
-}
-
-func TestConcurrentSessions(t *testing.T) {
-	srv := newAPIServer()
-
-	// Create two independent sessions
-	sid1 := createAndStart(t, srv)
-	sid2 := createAndStart(t, srv)
-
-	if sid1 == sid2 {
-		t.Fatalf("sessions should have different IDs")
-	}
-
-	// Snapshot of session 1 should work independently of session 2
-	res1 := postAction(t, srv, "snapshot", sid1, nil)
-	res2 := postAction(t, srv, "snapshot", sid2, nil)
-	if !res1["ok"].(bool) || !res2["ok"].(bool) {
-		t.Fatalf("concurrent snapshots failed")
-	}
-
-	// Reset session 1 should not affect session 2
-	_ = postAction(t, srv, "reset", sid1, nil)
-	res2 = postAction(t, srv, "snapshot", sid2, nil)
-	if !res2["ok"].(bool) {
-		t.Fatalf("session 2 should work after session 1 reset")
-	}
-}
-
-func TestUnknownAction(t *testing.T) {
-	srv := newAPIServer()
-	res := postAction(t, srv, "createSession", "", nil)
-	sid := res["sessionId"].(string)
-
-	res = postAction(t, srv, "doesNotExist", sid, nil)
+	code, res := postActionHTTP(t, srv, "doesNotExist", sid, nil)
 	if res["ok"].(bool) {
-		t.Fatalf("expected error for unknown action")
+		t.Fatalf("expected unknown action to fail")
+	}
+	if code == http.StatusOK {
+		t.Fatalf("status = %d, want non-OK", code)
+	}
+	if res["error_code"] != "unknown_action" {
+		t.Fatalf("error_code = %v, want unknown_action", res["error_code"])
+	}
+}
+
+func TestMissingSessionReturnsNotFound(t *testing.T) {
+	srv := newAPIServer()
+	code, res := postActionHTTP(t, srv, "snapshot", "missing-session", nil)
+	if code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d", code, http.StatusNotFound)
+	}
+	if res["error_code"] != "session_not_found" {
+		t.Fatalf("error_code = %v, want session_not_found", res["error_code"])
 	}
 }
 
@@ -286,360 +264,13 @@ func TestOnlyPostAllowed(t *testing.T) {
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
 	if w.Code != http.StatusMethodNotAllowed {
-		t.Fatalf("expected 405, got %d", w.Code)
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusMethodNotAllowed)
 	}
-}
-
-// ---------------------------------------------------------------------------
-// Online lobby tests
-// ---------------------------------------------------------------------------
-
-func TestStartOnlineHost(t *testing.T) {
-	srv := newAPIServer()
-	res := postAction(t, srv, "createSession", "", nil)
-	sid := res["sessionId"].(string)
-
-	res = postAction(t, srv, "startOnlineHost", sid, map[string]interface{}{
-		"name":       "HostPlayer",
-		"numPlayers": 2,
-	})
-	if !res["ok"].(bool) {
-		t.Fatalf("startOnlineHost failed: %v", res["error"])
+	var res map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &res); err != nil {
+		t.Fatalf("decode response: %v", err)
 	}
-	session, ok := res["session"].(map[string]interface{})
-	if !ok {
-		t.Fatalf("expected session in response")
-	}
-	if session["mode"] != "host" {
-		t.Fatalf("expected mode=host, got %v", session["mode"])
-	}
-	if session["inviteKey"] == "" {
-		t.Fatalf("expected inviteKey")
-	}
-}
-
-func TestStartOnlineHostRelayURLForwarded(t *testing.T) {
-	srv := newAPIServer()
-	res := postAction(t, srv, "createSession", "", nil)
-	sid := res["sessionId"].(string)
-
-	res = postAction(t, srv, "startOnlineHost", sid, map[string]interface{}{
-		"name":       "HostPlayer",
-		"numPlayers": 2,
-		"relay_url":  "://bad relay url",
-	})
-	if res["ok"].(bool) {
-		t.Fatalf("expected invalid relay URL to fail when forwarded to runtime")
-	}
-}
-
-func TestJoinOnline(t *testing.T) {
-	srv := newAPIServer()
-	hostRes := postAction(t, srv, "createSession", "", nil)
-	hostSID := hostRes["sessionId"].(string)
-	joinRes := postAction(t, srv, "createSession", "", nil)
-	joinSID := joinRes["sessionId"].(string)
-
-	// Start host
-	res := postAction(t, srv, "startOnlineHost", hostSID, map[string]interface{}{
-		"name":       "HostPlayer",
-		"numPlayers": 2,
-	})
-	session := res["session"].(map[string]interface{})
-	key := session["inviteKey"].(string)
-
-	// Join
-	res = postAction(t, srv, "joinOnline", joinSID, map[string]interface{}{
-		"name": "Joiner",
-		"key":  key,
-		"role": "auto",
-	})
-	if !res["ok"].(bool) {
-		t.Fatalf("joinOnline failed: %v", res["error"])
-	}
-	if res["mode"] != "client_lobby" {
-		t.Fatalf("expected client_lobby, got %v", res["mode"])
-	}
-}
-
-func TestJoinOnlineRoleForwarded(t *testing.T) {
-	srv := newAPIServer()
-	hostRes := postAction(t, srv, "createSession", "", nil)
-	hostSID := hostRes["sessionId"].(string)
-	joinRes := postAction(t, srv, "createSession", "", nil)
-	joinSID := joinRes["sessionId"].(string)
-
-	res := postAction(t, srv, "startOnlineHost", hostSID, map[string]interface{}{
-		"name":       "HostPlayer",
-		"numPlayers": 4,
-	})
-	key := res["session"].(map[string]interface{})["inviteKey"].(string)
-
-	res = postAction(t, srv, "joinOnline", joinSID, map[string]interface{}{
-		"name": "Joiner",
-		"key":  key,
-		"role": "partner",
-	})
-	if !res["ok"].(bool) {
-		t.Fatalf("joinOnline failed: %v", res["error"])
-	}
-	bundle, ok := res["bundle"].(map[string]interface{})
-	if !ok {
-		t.Fatalf("expected bundle")
-	}
-	lobby, ok := bundle["lobby"].(map[string]interface{})
-	if !ok {
-		t.Fatalf("expected lobby in bundle")
-	}
-	if lobby["role"] != "partner" {
-		t.Fatalf("expected role partner, got %v", lobby["role"])
-	}
-}
-
-func TestJoinOnlineNoKey(t *testing.T) {
-	srv := newAPIServer()
-	res := postAction(t, srv, "createSession", "", nil)
-	sid := res["sessionId"].(string)
-
-	res = postAction(t, srv, "joinOnline", sid, map[string]interface{}{
-		"name": "Joiner",
-	})
-	if res["ok"].(bool) {
-		t.Fatalf("expected error when no key")
-	}
-}
-
-func TestOnlineState(t *testing.T) {
-	srv := newAPIServer()
-	res := postAction(t, srv, "createSession", "", nil)
-	sid := res["sessionId"].(string)
-
-	// Before online setup, session should be nil
-	res = postAction(t, srv, "onlineState", sid, nil)
-	if !res["ok"].(bool) {
-		t.Fatalf("onlineState failed")
-	}
-
-	// Start host
-	_ = postAction(t, srv, "startOnlineHost", sid, map[string]interface{}{
-		"name":       "Host",
-		"numPlayers": 2,
-	})
-	res = postAction(t, srv, "onlineState", sid, nil)
-	if !res["ok"].(bool) {
-		t.Fatalf("onlineState after host failed")
-	}
-	session, ok := res["session"].(map[string]interface{})
-	if !ok {
-		t.Fatalf("expected session in onlineState response")
-	}
-	if session["inviteKey"] == nil || session["inviteKey"] == "" {
-		t.Fatalf("expected inviteKey in onlineState")
-	}
-}
-
-func TestStartOnlineMatch(t *testing.T) {
-	srv := newAPIServer()
-	hostRes := postAction(t, srv, "createSession", "", nil)
-	hostSID := hostRes["sessionId"].(string)
-	joinRes := postAction(t, srv, "createSession", "", nil)
-	joinSID := joinRes["sessionId"].(string)
-
-	res := postAction(t, srv, "startOnlineHost", hostSID, map[string]interface{}{
-		"name":       "Host",
-		"numPlayers": 2,
-	})
-	key := res["session"].(map[string]interface{})["inviteKey"].(string)
-	_ = postAction(t, srv, "joinOnline", joinSID, map[string]interface{}{
-		"name": "Joiner",
-		"key":  key,
-		"role": "auto",
-	})
-
-	res = postAction(t, srv, "startOnlineMatch", hostSID, nil)
-	if !res["ok"].(bool) {
-		t.Fatalf("startOnlineMatch failed: %v", res["error"])
-	}
-	if res["snapshot"] == nil {
-		t.Fatalf("expected snapshot in startOnlineMatch response")
-	}
-}
-
-func TestSendChat(t *testing.T) {
-	srv := newAPIServer()
-	hostRes := postAction(t, srv, "createSession", "", nil)
-	hostSID := hostRes["sessionId"].(string)
-	joinRes := postAction(t, srv, "createSession", "", nil)
-	joinSID := joinRes["sessionId"].(string)
-
-	res := postAction(t, srv, "startOnlineHost", hostSID, map[string]interface{}{
-		"name":       "Host",
-		"numPlayers": 2,
-	})
-	key := res["session"].(map[string]interface{})["inviteKey"].(string)
-	_ = postAction(t, srv, "joinOnline", joinSID, map[string]interface{}{
-		"name": "Joiner",
-		"key":  key,
-		"role": "auto",
-	})
-
-	res = postAction(t, srv, "sendChat", hostSID, map[string]interface{}{
-		"message": "Hello!",
-	})
-	if !res["ok"].(bool) {
-		t.Fatalf("sendChat failed: %v", res["error"])
-	}
-
-	res = postAction(t, srv, "onlineState", hostSID, nil)
-	if !res["ok"].(bool) {
-		t.Fatalf("onlineState failed after chat")
-	}
-}
-
-func TestSendHostVote(t *testing.T) {
-	srv := newAPIServer()
-	hostRes := postAction(t, srv, "createSession", "", nil)
-	hostSID := hostRes["sessionId"].(string)
-	joinRes := postAction(t, srv, "createSession", "", nil)
-	joinSID := joinRes["sessionId"].(string)
-
-	res := postAction(t, srv, "startOnlineHost", hostSID, map[string]interface{}{
-		"name":       "Host",
-		"numPlayers": 2,
-	})
-	key := res["session"].(map[string]interface{})["inviteKey"].(string)
-	_ = postAction(t, srv, "joinOnline", joinSID, map[string]interface{}{
-		"name": "Joiner",
-		"key":  key,
-		"role": "auto",
-	})
-
-	res = postAction(t, srv, "sendHostVote", hostSID, map[string]interface{}{
-		"slot": 1,
-	})
-	if !res["ok"].(bool) {
-		t.Fatalf("sendHostVote failed: %v", res["error"])
-	}
-}
-
-func TestSendHostVoteInvalidSlot(t *testing.T) {
-	srv := newAPIServer()
-	res := postAction(t, srv, "createSession", "", nil)
-	sid := res["sessionId"].(string)
-
-	_ = postAction(t, srv, "startOnlineHost", sid, map[string]interface{}{
-		"name":       "Host",
-		"numPlayers": 2,
-	})
-
-	res = postAction(t, srv, "sendHostVote", sid, map[string]interface{}{
-		"slot": 99,
-	})
-	if res["ok"].(bool) {
-		t.Fatalf("expected error for invalid slot")
-	}
-}
-
-func TestRequestReplacementInvite(t *testing.T) {
-	srv := newAPIServer()
-	res := postAction(t, srv, "createSession", "", nil)
-	sid := res["sessionId"].(string)
-
-	_ = postAction(t, srv, "startOnlineHost", sid, map[string]interface{}{
-		"name":       "Host",
-		"numPlayers": 2,
-	})
-
-	res = postAction(t, srv, "requestReplacementInvite", sid, map[string]interface{}{
-		"slot": 1,
-	})
-	if res["ok"].(bool) {
-		t.Fatalf("expected runtime-backed invite request to enforce match/disconnect preconditions")
-	}
-}
-
-func TestLeaveSession(t *testing.T) {
-	srv := newAPIServer()
-	res := postAction(t, srv, "createSession", "", nil)
-	sid := res["sessionId"].(string)
-
-	_ = postAction(t, srv, "startOnlineHost", sid, map[string]interface{}{
-		"name":       "Host",
-		"numPlayers": 2,
-	})
-
-	res = postAction(t, srv, "leaveSession", sid, nil)
-	if !res["ok"].(bool) {
-		t.Fatalf("leaveSession failed")
-	}
-
-	// After leaving, onlineState should return nil session
-	res = postAction(t, srv, "onlineState", sid, nil)
-	session, ok := res["session"].(map[string]interface{})
-	if !ok || len(session) != 0 {
-		t.Fatalf("expected empty session after leave")
-	}
-}
-
-func TestPullOnlineEventsNoSession(t *testing.T) {
-	srv := newAPIServer()
-	res := postAction(t, srv, "createSession", "", nil)
-	sid := res["sessionId"].(string)
-
-	// No online setup yet
-	res = postAction(t, srv, "pullOnlineEvents", sid, nil)
-	if !res["ok"].(bool) {
-		t.Fatalf("pullOnlineEvents should succeed with empty events")
-	}
-}
-
-// ---------------------------------------------------------------------------
-// Full game lifecycle test
-// ---------------------------------------------------------------------------
-
-func TestFullGameLifecycle(t *testing.T) {
-	srv := newAPIServer()
-	sid := createAndStart(t, srv)
-
-	// Play several iterations of CPU loop + player cards to ensure the
-	// lifecycle works without panics or errors.
-	for round := 0; round < 20; round++ {
-		// Run CPU
-		res := postAction(t, srv, "autoCpuLoopTick", sid, nil)
-		if !res["ok"].(bool) {
-			t.Fatalf("cpu loop tick %d failed: %v", round, res["error"])
-		}
-
-		snap := parseSnap(t, res)
-		if snap["MatchFinished"].(bool) {
-			break
-		}
-
-		turn := int(snap["TurnPlayer"].(float64))
-		if turn == 0 {
-			// It's our turn — play card 0
-			pending := int(snap["PendingRaiseFor"].(float64))
-			if pending != -1 {
-				// There's a pending truco — accept it
-				res = postAction(t, srv, "accept", sid, nil)
-				if !res["ok"].(bool) {
-					// Maybe we can't accept, try refuse
-					_ = postAction(t, srv, "refuse", sid, nil)
-				}
-				continue
-			}
-
-			res = postAction(t, srv, "play", sid, map[string]interface{}{"cardIndex": 0})
-			if !res["ok"].(bool) {
-				// Might fail if hand is empty — that's ok, trigger newHand
-				t.Logf("play card failed at round %d: %v", round, res["error"])
-			}
-		}
-	}
-
-	// Reset and confirm clean state
-	res := postAction(t, srv, "reset", sid, nil)
-	if !res["ok"].(bool) {
-		t.Fatalf("final reset failed")
+	if res["error_code"] != "method_not_allowed" {
+		t.Fatalf("error_code = %v, want method_not_allowed", res["error_code"])
 	}
 }

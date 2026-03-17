@@ -29,7 +29,9 @@ echo "Compiling Go HTTP API server..."
 go build -o "$API_BIN" ./browser-edition/cmd/httpapi
 
 echo "Copying PHP files..."
-cp -r "$PHP_DIR"/* "$DIST_DIR/"
+cp -a "$PHP_DIR"/. "$DIST_DIR/"
+
+"$ROOT_DIR/scripts/validate-browser-dist.sh"
 
 echo "Build complete."
 echo "  API binary: $API_BIN"

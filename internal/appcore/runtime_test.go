@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
+	"truco-tui/internal/netp2p"
 	"truco-tui/internal/truco"
 )
 
@@ -20,13 +21,13 @@ func TestRuntimeOfflineSeededSnapshotAndActions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Marshal payload: %v", err)
 	}
-	if err := rt.DispatchIntent(AppIntent{Kind: "new_offline_game", Payload: payload}); err != nil {
+	if err := rt.DispatchIntent(AppIntent{Kind: IntentNewOfflineGame, Payload: payload}); err != nil {
 		t.Fatalf("Dispatch new_offline_game: %v", err)
 	}
 
 	state := rt.SnapshotBundle()
-	if state.Mode != "offline_match" {
-		t.Fatalf("mode = %q, want offline_match", state.Mode)
+	if state.Mode != ModeOfflineMatch {
+		t.Fatalf("mode = %q, want %s", state.Mode, ModeOfflineMatch)
 	}
 	if state.Match == nil {
 		t.Fatal("match snapshot is nil")
@@ -42,10 +43,10 @@ func TestRuntimeOfflineSeededSnapshotAndActions(t *testing.T) {
 		if !ok {
 			break
 		}
-		if ev.Kind == "match_updated" {
+		if ev.Kind == EventMatchUpdated {
 			foundMatchUpdate = true
 		}
-		if ev.Kind == "session_ready" {
+		if ev.Kind == EventSessionReady {
 			foundSessionReady = true
 		}
 	}
@@ -91,7 +92,7 @@ func TestRuntimeSnapshotIncludesDerivedActionState(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Marshal payload: %v", err)
 	}
-	if err := rt.DispatchIntent(AppIntent{Kind: "new_offline_game", Payload: payload}); err != nil {
+	if err := rt.DispatchIntent(AppIntent{Kind: IntentNewOfflineGame, Payload: payload}); err != nil {
 		t.Fatalf("Dispatch new_offline_game: %v", err)
 	}
 
@@ -120,7 +121,7 @@ func TestRuntimeSnapshotIncludesLobbySlotParityState(t *testing.T) {
 	}
 
 	rt := NewRuntime()
-	rt.mode = "host_match"
+	rt.mode = ModeHostMatch
 	rt.game = game
 	rt.localSeat = 0
 	rt.lobby = &LobbySnapshot{
@@ -150,6 +151,78 @@ func TestRuntimeSnapshotIncludesLobbySlotParityState(t *testing.T) {
 	}
 	if !target.IsProvisionalCPU {
 		t.Fatal("expected provisional CPU marker on disconnected seat")
+	}
+}
+
+func TestRuntimeCloseSessionReturnsToIdleAndEmitsEvent(t *testing.T) {
+	rt := NewRuntime()
+	defer func() { _ = rt.Close() }()
+
+	payload, err := json.Marshal(NewOfflineGamePayload{
+		PlayerNames: []string{"Ana", "CPU-2"},
+		CPUFlags:    []bool{false, true},
+	})
+	if err != nil {
+		t.Fatalf("Marshal payload: %v", err)
+	}
+	if err := rt.DispatchIntent(AppIntent{Kind: IntentNewOfflineGame, Payload: payload}); err != nil {
+		t.Fatalf("Dispatch new_offline_game: %v", err)
+	}
+	if err := rt.DispatchIntent(AppIntent{Kind: IntentCloseSession}); err != nil {
+		t.Fatalf("Dispatch close_session: %v", err)
+	}
+
+	state := rt.SnapshotBundle()
+	if state.Mode != ModeIdle {
+		t.Fatalf("mode = %q, want %q", state.Mode, ModeIdle)
+	}
+	if state.Match != nil {
+		t.Fatal("expected match snapshot to be cleared")
+	}
+	if state.Lobby != nil {
+		t.Fatal("expected lobby snapshot to be cleared")
+	}
+
+	foundSessionClosed := false
+	for {
+		ev, ok := rt.PollEvent()
+		if !ok {
+			break
+		}
+		if ev.Kind == EventSessionClosed {
+			foundSessionClosed = true
+		}
+	}
+	if !foundSessionClosed {
+		t.Fatal("expected session_closed event")
+	}
+}
+
+func TestRuntimeClientLobbyPreservesDesiredRoleAcrossRefresh(t *testing.T) {
+	rt := NewRuntime()
+
+	rt.mode = ModeClientLobby
+	rt.lobby = &LobbySnapshot{
+		Role:         DesiredRolePartner,
+		Slots:        []string{"Ana", "CPU-2"},
+		AssignedSeat: 1,
+		NumPlayers:   2,
+		Started:      false,
+		HostSeat:     0,
+		ConnectedSeats: map[int]bool{
+			0: true,
+			1: true,
+		},
+	}
+	rt.client = &netp2p.ClientSession{}
+
+	rt.updateClientLobbyLocked()
+
+	if rt.lobby == nil {
+		t.Fatal("expected lobby snapshot to remain available")
+	}
+	if rt.lobby.Role != DesiredRolePartner {
+		t.Fatalf("role = %q, want %q", rt.lobby.Role, DesiredRolePartner)
 	}
 }
 

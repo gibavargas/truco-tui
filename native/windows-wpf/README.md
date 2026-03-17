@@ -32,10 +32,30 @@ Portable single-file build:
 dotnet publish native/windows-wpf/TrucoWPF.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o bin/gui/wpf/truco-gui-wpf-windows-amd64-portable
 ```
 
+Client-specific helper:
+
+```bash
+native\windows-wpf\build-portable.bat
+```
+
 ## Project Layout
 
 - `Models.cs`: snapshot and view models
-- `Services/TrucoCoreService.cs`: native bridge and DLL extraction
+- `Services/TrucoCoreService.cs`: native bridge and portable DLL probing
 - `Services/StringProvider.cs`: localization resources
 - `ViewModels/MainViewModel.cs`: application state and commands
 - `MainWindow.xaml`: main layout
+- `build-portable.bat`: WPF portable packaging flow
+
+## Portable Runtime Layout
+
+The WPF client now loads the shared runtime from app-local paths instead of extracting it to a temp folder.
+At startup it checks, in order:
+
+- `TRUCO_CORE_LIB`
+- `<app>\truco-core-ffi.dll`
+- `<app>\lib\truco-core-ffi.dll`
+- `<cwd>\bin\truco-core-ffi.dll`
+- `<cwd>\native\windows-wpf\lib\truco-core-ffi.dll`
+
+Portable publishes place the Go runtime at `lib\truco-core-ffi.dll` inside the bundle so the application can be copied as a self-contained directory.

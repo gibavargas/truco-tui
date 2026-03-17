@@ -46,6 +46,12 @@ Build the terminal client for the current host:
 make build
 ```
 
+Build the relay binary for the current host:
+
+```bash
+make build-relay
+```
+
 Run tests:
 
 ```bash
@@ -62,6 +68,12 @@ Package the browser edition:
 
 ```bash
 make browser
+```
+
+Validate generated artifacts and browser packaging:
+
+```bash
+make verify-artifacts
 ```
 
 Build the shared macOS FFI library:
@@ -95,6 +107,7 @@ make flatpak-linux
 ## Binary Naming
 
 All produced binaries follow [docs/BINARY_NAMING.md](docs/BINARY_NAMING.md).
+Release checks live in [docs/RELEASE_CHECKLIST.md](docs/RELEASE_CHECKLIST.md).
 
 ## Multiplayer Overview
 
@@ -162,5 +175,6 @@ Online chat commands:
 
 - `docs/PARITY.md`: behavior contract for browser and native clients
 - `docs/BINARY_NAMING.md`: artifact naming and output locations
+- `docs/RELEASE_CHECKLIST.md`: pre-release validation and smoke checks
 - `browser-edition/README.md`: browser client workflow
 - `native/README.md`: native client overview
