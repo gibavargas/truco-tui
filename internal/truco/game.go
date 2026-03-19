@@ -31,6 +31,14 @@ type PlayedCard struct {
 	Card     Card
 }
 
+// TrickPile mantém o monte de uma vaza já resolvida.
+type TrickPile struct {
+	Winner int
+	Team   int
+	Round  int
+	Cards  []PlayedCard
+}
+
 // HandState mantém o estado da mão atual.
 type HandState struct {
 	Vira            Card
@@ -55,6 +63,8 @@ type Snapshot struct {
 	Players          []Player
 	NumPlayers       int
 	CurrentHand      HandState
+	LastTrickCards   []PlayedCard
+	TrickPiles       []TrickPile
 	MatchPoints      map[int]int
 	TurnPlayer       int
 	CurrentTeamTurn  int
@@ -93,6 +103,8 @@ type Game struct {
 	lastTrickWinner int
 	lastTrickTie    bool
 	lastTrickRound  int
+	lastTrickCards  []PlayedCard
+	trickPiles      []TrickPile
 }
 
 func NewGame(playerNames []string, cpuFlags []bool) (*Game, error) {
@@ -161,6 +173,7 @@ func NewGameFromSnapshot(s Snapshot) (*Game, error) {
 		lastTrickWinner: s.LastTrickWinner,
 		lastTrickTie:    s.LastTrickTie,
 		lastTrickRound:  s.LastTrickRound,
+		trickPiles:      append([]TrickPile(nil), s.TrickPiles...),
 	}
 	copy(g.players, s.Players)
 	for i := range g.players {
@@ -211,6 +224,8 @@ func (g *Game) StartNewHand() {
 func (g *Game) startHandLocked(dealer int) {
 	deck := NewDeck()
 	deck.Shuffle(g.rng)
+	g.lastTrickCards = nil
+	g.trickPiles = nil
 
 	for i := range g.players {
 		g.players[i].Hand = g.players[i].Hand[:0]
@@ -327,6 +342,7 @@ func (g *Game) PlayCard(playerID, handIndex int) error {
 
 func (g *Game) resolveTrickLocked() {
 	roundNum := g.hand.Round
+	g.lastTrickCards = append([]PlayedCard(nil), g.hand.RoundCards...)
 	best := g.hand.RoundCards[0]
 	isTie := false
 
@@ -351,6 +367,12 @@ func (g *Game) resolveTrickLocked() {
 		g.lastTrickTie = false
 		g.lastTrickRound = roundNum
 		g.lastTrickSeq++
+		g.trickPiles = append(g.trickPiles, TrickPile{
+			Winner: best.PlayerID,
+			Team:   team,
+			Round:  roundNum,
+			Cards:  append([]PlayedCard(nil), g.hand.RoundCards...),
+		})
 		g.hand.RoundStart = best.PlayerID
 		g.hand.Turn = best.PlayerID
 		g.addLogLocked(fmt.Sprintf("Vaza %d: %s venceu.", g.hand.Round, g.players[winnerIdx].Name))
@@ -606,6 +628,8 @@ func (g *Game) Snapshot(forPlayer int) Snapshot {
 		Players:          players,
 		NumPlayers:       g.numPlayers,
 		CurrentHand:      g.hand,
+		LastTrickCards:   append([]PlayedCard(nil), g.lastTrickCards...),
+		TrickPiles:       append([]TrickPile(nil), g.trickPiles...),
 		MatchPoints:      map[int]int{0: g.points[0], 1: g.points[1]},
 		TurnPlayer:       g.hand.Turn,
 		CurrentTeamTurn:  currTeam,

@@ -7,7 +7,7 @@ namespace TrucoWinUI.Services;
 public sealed class TrucoCoreService : IDisposable
 {
     private const int RequiredCoreApiVersion = 1;
-    private const int RequiredSnapshotSchemaVersion = 1;
+    private const int RequiredSnapshotSchemaVersion = 2;
 
     private static readonly Lazy<NativeBindings> Bindings = new(NativeBindings.Load, true);
 

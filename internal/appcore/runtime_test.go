@@ -111,6 +111,47 @@ func TestRuntimeSnapshotIncludesDerivedActionState(t *testing.T) {
 	}
 }
 
+func TestRuntimeSnapshotBundlePreservesTrickPiles(t *testing.T) {
+	rt := NewRuntime()
+	defer func() { _ = rt.Close() }()
+
+	game, err := truco.NewGame([]string{"A", "B"}, []bool{false, false})
+	if err != nil {
+		t.Fatalf("NewGame: %v", err)
+	}
+
+	gameState := game.Snapshot(0)
+	gameState.LastTrickCards = []truco.PlayedCard{
+		{PlayerID: 0, Card: truco.Card{Rank: "3", Suit: "Paus"}},
+		{PlayerID: 1, Card: truco.Card{Rank: "2", Suit: "Paus"}},
+	}
+	gameState.LastTrickWinner = 0
+	gameState.TrickPiles = []truco.TrickPile{
+		{
+			Winner: 0,
+			Team:   0,
+			Round:  1,
+			Cards:  append([]truco.PlayedCard(nil), gameState.LastTrickCards...),
+		},
+	}
+
+	rt.match = ptrMatch(gameState)
+
+	state := rt.SnapshotBundle()
+	if state.Match == nil {
+		t.Fatal("match snapshot is nil")
+	}
+	if got := len(state.Match.TrickPiles); got != 1 {
+		t.Fatalf("TrickPiles len = %d, want 1", got)
+	}
+	if got := len(state.Match.TrickPiles[0].Cards); got != 2 {
+		t.Fatalf("TrickPiles[0].Cards len = %d, want 2", got)
+	}
+	if got := len(state.Match.LastTrickCards); got != 2 {
+		t.Fatalf("LastTrickCards len = %d, want 2", got)
+	}
+}
+
 func TestRuntimeSnapshotIncludesLobbySlotParityState(t *testing.T) {
 	game, err := truco.NewGame([]string{"Host", "Guest"}, []bool{false, false})
 	if err != nil {

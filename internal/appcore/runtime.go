@@ -971,6 +971,12 @@ func cloneMatchSnapshot(in truco.Snapshot) truco.Snapshot {
 	}
 	out.CurrentHand.RoundCards = append([]truco.PlayedCard(nil), in.CurrentHand.RoundCards...)
 	out.CurrentHand.TrickResults = append([]int(nil), in.CurrentHand.TrickResults...)
+	out.LastTrickCards = append([]truco.PlayedCard(nil), in.LastTrickCards...)
+	out.TrickPiles = make([]truco.TrickPile, len(in.TrickPiles))
+	for i, pile := range in.TrickPiles {
+		out.TrickPiles[i] = pile
+		out.TrickPiles[i].Cards = append([]truco.PlayedCard(nil), pile.Cards...)
+	}
 	if in.CurrentHand.TrickWins != nil {
 		out.CurrentHand.TrickWins = make(map[int]int, len(in.CurrentHand.TrickWins))
 		for k, v := range in.CurrentHand.TrickWins {

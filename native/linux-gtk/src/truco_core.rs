@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 const REQUIRED_CORE_API_VERSION: i32 = 1;
-const REQUIRED_SNAPSHOT_SCHEMA_VERSION: i32 = 1;
+const REQUIRED_SNAPSHOT_SCHEMA_VERSION: i32 = 2;
 
 struct CoreInstance {
     handle: usize,

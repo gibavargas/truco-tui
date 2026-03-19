@@ -35,6 +35,9 @@ public class StringProvider : IStringProvider
             ["player.cpu.right"] = "CPU-Direita",
             ["player.cpu.partner"] = "CPU-Parceiro",
             ["player.cpu.left"] = "CPU-Esquerda",
+            ["seat.partner"] = "Parceiro",
+            ["seat.opponent"] = "Adversário",
+            ["seat.you"] = "Você",
             ["stake.1"] = "1",
             ["stake.3"] = "T",
             ["stake.6"] = "6",
@@ -67,6 +70,9 @@ public class StringProvider : IStringProvider
             ["player.cpu.right"] = "CPU-Right",
             ["player.cpu.partner"] = "CPU-Partner",
             ["player.cpu.left"] = "CPU-Left",
+            ["seat.partner"] = "Partner",
+            ["seat.opponent"] = "Opponent",
+            ["seat.you"] = "You",
             ["stake.1"] = "1",
             ["stake.3"] = "T",
             ["stake.6"] = "6",
@@ -131,6 +137,9 @@ public static class StringProviderKeys
     public const string PlayerCpuRight = "player.cpu.right";
     public const string PlayerCpuPartner = "player.cpu.partner";
     public const string PlayerCpuLeft = "player.cpu.left";
+    public const string SeatPartner = "seat.partner";
+    public const string SeatOpponent = "seat.opponent";
+    public const string SeatYou = "seat.you";
     public const string TeamUs = "team.us";
     public const string TeamThem = "team.them";
 }

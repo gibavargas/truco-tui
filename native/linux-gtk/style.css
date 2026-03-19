@@ -207,6 +207,7 @@ window {
 
 .team-badge-us,
 .team-badge-them,
+.team-role-pill,
 .ladder-active,
 .ladder-dim {
   border-radius: 999px;
@@ -223,6 +224,12 @@ window {
 .team-badge-them {
   background: rgba(230, 144, 65, 0.18);
   color: #f6ba71;
+}
+
+.team-role-pill {
+  background: rgba(255, 255, 255, 0.08);
+  color: #f5f1e8;
+  padding: 4px 10px;
 }
 
 .ladder-active {

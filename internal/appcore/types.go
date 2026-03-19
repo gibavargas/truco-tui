@@ -8,7 +8,7 @@ import (
 
 const (
 	CoreAPIVersion      = 1
-	SnapshotSchemaMajor = 1
+	SnapshotSchemaMajor = 2
 )
 
 const (

@@ -320,6 +320,41 @@ func (m UIModel) renderFlightRow(width int, compact bool) string {
 	return strings.Join(lines, "\n")
 }
 
+func (m UIModel) renderTrickPiles(playerID int, compact bool) string {
+	s := m.snapshot
+	if playerID < 0 || len(s.TrickPiles) == 0 {
+		return ""
+	}
+
+	matched := make([]truco.TrickPile, 0, len(s.TrickPiles))
+	for _, pile := range s.TrickPiles {
+		if pile.Winner == playerID {
+			matched = append(matched, pile)
+		}
+	}
+	if len(matched) == 0 {
+		return ""
+	}
+
+	rows := []string{
+		lipgloss.NewStyle().
+			Foreground(lgYellow).
+			Bold(true).
+			Render("MONTE"),
+	}
+	for _, pile := range matched {
+		count := len(pile.Cards)
+		if count < 1 {
+			count = 1
+		}
+		if count > 4 {
+			count = 4
+		}
+		rows = append(rows, renderMiniHand(count, compact))
+	}
+	return lipgloss.JoinVertical(lipgloss.Center, rows...)
+}
+
 func relativePosition(playerID, localPlayerID int, players []truco.Player) string {
 	n := len(players)
 	if n <= 0 {
