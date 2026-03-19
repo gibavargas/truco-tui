@@ -3848,6 +3848,58 @@ label {
   margin-top: 2px;
 }
 
+.board-seat-monte {
+  display: grid;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.board-seat-monte-label {
+  color: var(--accent);
+  font-size: 0.66rem;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.board-seat-monte-stack {
+  display: flex;
+  align-items: flex-start;
+}
+
+.board-seat-monte-stack-multi {
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.board-seat-monte-pile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.board-seat-monte-round {
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 0.55rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.board-seat-monte-pile-stack {
+  display: flex;
+  align-items: flex-start;
+}
+
+.board-seat-monte-back {
+  margin-left: -8px;
+}
+
+.board-seat-monte-back:first-child {
+  margin-left: 0;
+}
+
 .board-center {
   inset: 156px 28px 24px 170px;
   display: grid;

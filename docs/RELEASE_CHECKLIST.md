@@ -44,5 +44,6 @@ Use this checklist before cutting a release or sharing build artifacts outside l
 ## Version Touchpoints
 
 - Verify runtime contract compatibility via `TrucoCoreVersionsJSON`
+- If `SnapshotBundle`/`truco.Snapshot` changed, bump `snapshot_schema_version`, rebuild every FFI artifact, and confirm native clients reject stale runtimes
 - Verify relay protocol version stays aligned with invite/session code
 - Record any public runtime contract changes in `docs/PARITY.md`

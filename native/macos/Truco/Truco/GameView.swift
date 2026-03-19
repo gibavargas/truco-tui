@@ -16,6 +16,40 @@ struct GameView: View {
         let seatID = (localID + offset) % count
         return players.first(where: { $0.playerID == seatID })
     }
+
+    private func trickPiles(for snap: MatchSnapshot, playerID: Int) -> [TrickPile] {
+        (snap.TrickPiles ?? []).filter { ($0.Winner ?? -1) == playerID }
+    }
+
+    fileprivate enum SeatRelation {
+        case partner
+        case opponent
+
+        var label: String {
+            switch self {
+            case .partner:
+                return "(PARCEIRO)"
+            case .opponent:
+                return "(ADVERSÁRIO)"
+            }
+        }
+
+        var tint: Color {
+            switch self {
+            case .partner:
+                return .green
+            case .opponent:
+                return .orange
+            }
+        }
+    }
+
+    private func seatRelation(for player: Player, localPlayerID: Int, localTeam: Int) -> SeatRelation {
+        if player.playerID == localPlayerID {
+            return .partner
+        }
+        return player.Team == localTeam ? .partner : .opponent
+    }
     
     private func raiseLabel(for stake: Int) -> String {
         switch stake {
@@ -34,7 +68,10 @@ struct GameView: View {
             let connection = store.bundle?.connection
             let diagnostics = store.bundle?.diagnostics
             let isOnline = store.mode == "host_match" || store.mode == "client_match"
-            let localTeam = actions?.local_team ?? snap.Players?.first(where: { $0.playerID == snap.CurrentPlayerIdx })?.Team ?? 0
+            let localPlayer = snap.Players?.first(where: { $0.playerID == snap.CurrentPlayerIdx })
+            let localTeam = actions?.local_team ?? localPlayer?.Team ?? 0
+            let lastTrickCards = snap.LastTrickCards ?? []
+            let showLastTrickMonte = !lastTrickCards.isEmpty
             ZStack {
                 // Background wood panels
                 HStack(spacing: 0) {
@@ -93,11 +130,10 @@ struct GameView: View {
                 
                 // HUD
                 VStack {
-                    HStack {
+                    HStack(alignment: .top) {
                         ScoreView(teamName: "Nós", points: snap.teamScore.us)
                         Spacer()
-                        StakeBadge(stake: snap.CurrentHand?.Stake ?? 1)
-                        Spacer()
+                        StakeInfoView(stake: snap.CurrentHand?.Stake ?? 1)
                         ScoreView(teamName: "Eles", points: snap.teamScore.them)
                     }
                     .padding(.horizontal, 50)
@@ -141,15 +177,23 @@ struct GameView: View {
                         Spacer()
                         LogView(logs: snap.Logs ?? [])
                     }
-                    .padding(.top, 148)
-                    .padding(.trailing, 50)
+                    .padding(.top, 176)
+                    .padding(.trailing, 44)
                     Spacer()
                 }
                 
                 // Players & Center Table
                 VStack(spacing: 0) {
                     if let opponent = seatPlayer(snap, offset: snap.NumPlayers == 4 ? 2 : 1) {
-                        OpponentView(player: opponent)
+                        OpponentView(
+                            player: opponent,
+                            relation: seatRelation(
+                                for: opponent,
+                                localPlayerID: localPlayer?.playerID ?? opponent.playerID,
+                                localTeam: localTeam
+                            ),
+                            trickPiles: trickPiles(for: snap, playerID: opponent.playerID)
+                        )
                             .padding(.top, 96)
                     }
                     
@@ -157,6 +201,11 @@ struct GameView: View {
                     
                     if let center = snap.CurrentHand {
                         CenterTableView(hand: center, players: snap.Players ?? [])
+                    }
+
+                    if showLastTrickMonte && snap.LastTrickTie == true {
+                        MontePileView(title: "EMPATE", count: lastTrickCards.count)
+                            .padding(.top, 10)
                     }
                     
                     Spacer()
@@ -196,7 +245,11 @@ struct GameView: View {
                                 .padding(.top, 10)
                             }
                             
-                            PlayerHandView(player: me, isMyTurn: actions?.can_play_card == true)
+                            PlayerHandView(
+                                player: me,
+                                isMyTurn: actions?.can_play_card == true,
+                                trickPiles: trickPiles(for: snap, playerID: me.playerID)
+                            )
                         }
                         .padding(.bottom, 60)
                     }
@@ -205,14 +258,32 @@ struct GameView: View {
                 if snap.NumPlayers == 4 {
                     HStack {
                         if let left = seatPlayer(snap, offset: 3) {
-                            SideOpponentView(player: left)
-                                .frame(maxWidth: 120)
+                            SideOpponentView(
+                                player: left,
+                                relation: seatRelation(
+                                    for: left,
+                                    localPlayerID: localPlayer?.playerID ?? left.playerID,
+                                    localTeam: localTeam
+                                ),
+                                labelOnTrailingSide: true,
+                                trickPiles: trickPiles(for: snap, playerID: left.playerID)
+                            )
+                                .frame(maxWidth: 150)
                                 .padding(.leading, 48)
                         }
                         Spacer()
                         if let right = seatPlayer(snap, offset: 1) {
-                            SideOpponentView(player: right)
-                                .frame(maxWidth: 120)
+                            SideOpponentView(
+                                player: right,
+                                relation: seatRelation(
+                                    for: right,
+                                    localPlayerID: localPlayer?.playerID ?? right.playerID,
+                                    localTeam: localTeam
+                                ),
+                                labelOnTrailingSide: false,
+                                trickPiles: trickPiles(for: snap, playerID: right.playerID)
+                            )
+                                .frame(maxWidth: 150)
                                 .padding(.trailing, 48)
                         }
                     }
@@ -463,20 +534,20 @@ struct GameView: View {
         
         trickAnimOffset = .zero
         showingTrickEndAnimation = false
-        
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-            withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+            withAnimation(.spring(response: 0.55, dampingFraction: 0.78)) {
                 showingTrickEndAnimation = true
             }
             
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
-                withAnimation(.easeIn(duration: 0.4)) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.55) {
+                withAnimation(.easeIn(duration: 0.55)) {
                     trickAnimOffset = target
                 }
             }
             
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.8) {
-                withAnimation(.easeOut(duration: 0.2)) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+                withAnimation(.easeOut(duration: 0.35)) {
                     showingTrickEndAnimation = false
                 }
             }
@@ -596,6 +667,27 @@ private struct StakeBadge: View {
     }
 }
 
+private struct StakeInfoView: View {
+    let stake: Int
+
+    var body: some View {
+        VStack(alignment: .trailing, spacing: 6) {
+            StakeBadge(stake: stake)
+
+            if stake > 1 {
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text("Rodada trucada")
+                    Text("tá valendo 6, 9, 12 etc.")
+                }
+                .font(.caption2.weight(.semibold))
+                .foregroundColor(.white.opacity(0.72))
+                .multilineTextAlignment(.trailing)
+                .frame(maxWidth: 180, alignment: .trailing)
+            }
+        }
+    }
+}
+
 private struct LogView: View {
     let logs: [String]
     
@@ -611,7 +703,7 @@ private struct LogView: View {
         .padding(12)
         .background(Color.black.opacity(0.3))
         .cornerRadius(12)
-        .frame(maxWidth: 280)
+        .frame(maxWidth: 250)
     }
 }
 
@@ -705,43 +797,190 @@ private struct CenterTableView: View {
 
 private struct OpponentView: View {
     let player: Player
+    let relation: GameView.SeatRelation
+    let trickPiles: [TrickPile]
     
     var body: some View {
-        VStack(spacing: 16) {
-            Text(player.Name.uppercased())
-                .font(.subheadline.bold())
-                .foregroundColor(.white)
-                .tracking(1)
-                .padding(.horizontal, 20)
-                .padding(.vertical, 6)
-                .background(Color.black.opacity(0.5))
-                .clipShape(Capsule())
-            
-            HStack(spacing: -24) {
-                ForEach(0..<(player.Hand?.count ?? 3), id: \.self) { _ in
-                    CardView(card: Card(Rank: "", Suit: ""), isFaceUp: false)
-                        .shadow(color: .black.opacity(0.3), radius: 4, x: -2, y: 3)
+        VStack(spacing: 10) {
+            HStack(alignment: .center, spacing: 14) {
+                playerBadge(alignment: .center)
+
+                if !trickPiles.isEmpty {
+                    TrickPilesView(piles: trickPiles)
+                }
+
+                HStack(spacing: -24) {
+                    ForEach(0..<(player.Hand?.count ?? 3), id: \.self) { _ in
+                        CardView(card: Card(Rank: "", Suit: ""), isFaceUp: false)
+                            .shadow(color: .black.opacity(0.3), radius: 4, x: -2, y: 3)
+                    }
                 }
             }
         }
+    }
+
+    @ViewBuilder
+    private func playerBadge(alignment: HorizontalAlignment) -> some View {
+        VStack(alignment: alignment, spacing: 6) {
+            HStack(spacing: 6) {
+                Text(player.Name.uppercased())
+                    .font(.subheadline.bold())
+                    .foregroundColor(.white)
+                    .tracking(1)
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 6)
+                    .background(Color.black.opacity(0.5))
+                    .clipShape(Capsule())
+
+                if player.CPU == true {
+                    Text("CPU")
+                        .font(.caption2.bold())
+                        .foregroundColor(.yellow)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.black.opacity(0.55))
+                        .clipShape(Capsule())
+                }
+            }
+
+            relationBadge()
+        }
+    }
+
+    @ViewBuilder
+    private func relationBadge() -> some View {
+        Text(relation.label)
+            .font(.caption2.weight(.bold))
+            .foregroundColor(relation.tint)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 4)
+            .background(relation.tint.opacity(0.14))
+            .clipShape(Capsule())
     }
 }
 
 private struct SideOpponentView: View {
     let player: Player
+    let relation: GameView.SeatRelation
+    let labelOnTrailingSide: Bool
+    let trickPiles: [TrickPile]
 
     var body: some View {
-        VStack(spacing: 14) {
-            Text(player.Name.uppercased())
-                .font(.caption.bold())
-                .foregroundColor(.white.opacity(0.85))
-                .rotationEffect(.degrees(90))
-
-            VStack(spacing: -20) {
-                ForEach(0..<(player.Hand?.count ?? 3), id: \.self) { _ in
-                    CardView(card: Card(Rank: "", Suit: ""), isFaceUp: false)
-                        .frame(width: 60, height: 88)
+        HStack(alignment: .center, spacing: 12) {
+            if labelOnTrailingSide {
+                cardStack
+                if !trickPiles.isEmpty {
+                    TrickPilesView(piles: trickPiles)
                 }
+                playerBadge(alignment: .leading)
+            } else {
+                playerBadge(alignment: .trailing)
+                if !trickPiles.isEmpty {
+                    TrickPilesView(piles: trickPiles)
+                }
+                cardStack
+            }
+        }
+    }
+
+    private var cardStack: some View {
+        VStack(spacing: -20) {
+            ForEach(0..<(player.Hand?.count ?? 3), id: \.self) { _ in
+                CardView(card: Card(Rank: "", Suit: ""), isFaceUp: false)
+                    .frame(width: 60, height: 88)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func playerBadge(alignment: HorizontalAlignment) -> some View {
+        VStack(alignment: alignment, spacing: 6) {
+            HStack(spacing: 6) {
+                Text(player.Name.uppercased())
+                    .font(.caption.bold())
+                    .foregroundColor(.white.opacity(0.88))
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(Color.black.opacity(0.55))
+                    .clipShape(Capsule())
+
+                if player.CPU == true {
+                    Text("CPU")
+                        .font(.caption2.bold())
+                        .foregroundColor(.yellow)
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 3)
+                        .background(Color.black.opacity(0.55))
+                        .clipShape(Capsule())
+                }
+            }
+
+            Text(relation.label)
+                .font(.caption2.weight(.bold))
+                .foregroundColor(relation.tint)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 4)
+                .background(relation.tint.opacity(0.14))
+                .clipShape(Capsule())
+        }
+    }
+}
+
+private struct MontePileView: View {
+    let title: String
+    let count: Int
+
+    var body: some View {
+        VStack(spacing: 6) {
+            Text(title)
+                .font(.caption2.bold())
+                .foregroundColor(.yellow.opacity(0.9))
+                .tracking(1.5)
+            HStack(spacing: -12) {
+                ForEach(0..<max(1, min(count, 4)), id: \.self) { _ in
+                    CardView(card: Card(Rank: "", Suit: ""), isFaceUp: false)
+                        .frame(width: 34, height: 50)
+                }
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(Color.black.opacity(0.25))
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+}
+
+private struct TrickPilesView: View {
+    let piles: [TrickPile]
+
+    var body: some View {
+        VStack(spacing: 6) {
+            Text("MONTE")
+                .font(.caption2.bold())
+                .foregroundColor(.yellow.opacity(0.9))
+                .tracking(1.5)
+
+            HStack(alignment: .center, spacing: 8) {
+                ForEach(Array(piles.enumerated()), id: \.offset) { _, pile in
+                    TrickPileMiniView(count: pile.Cards?.count ?? 0)
+                }
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(Color.black.opacity(0.25))
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+}
+
+private struct TrickPileMiniView: View {
+    let count: Int
+
+    var body: some View {
+        HStack(spacing: -10) {
+            ForEach(0..<max(1, min(count, 4)), id: \.self) { _ in
+                CardView(card: Card(Rank: "", Suit: ""), isFaceUp: false)
+                    .frame(width: 26, height: 38)
             }
         }
     }
@@ -750,12 +989,17 @@ private struct SideOpponentView: View {
 private struct PlayerHandView: View {
     let player: Player
     let isMyTurn: Bool
+    let trickPiles: [TrickPile]
     @EnvironmentObject var store: TrucoAppStore
     
     @State private var hoveredCard: String?
     
     var body: some View {
         VStack(spacing: 20) {
+            if !trickPiles.isEmpty {
+                TrickPilesView(piles: trickPiles)
+            }
+
             if isMyTurn {
                 Text("SUA VEZ")
                     .font(.caption.bold())

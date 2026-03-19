@@ -182,6 +182,10 @@ pub struct GameSnapshot {
     pub current_team_turn: Option<i32>,
     #[serde(rename = "CurrentHand")]
     pub current_hand: Option<HandState>,
+    #[serde(rename = "LastTrickCards")]
+    pub last_trick_cards: Option<Vec<PlayedCard>>,
+    #[serde(rename = "TrickPiles")]
+    pub trick_piles: Option<Vec<TrickPile>>,
     #[serde(rename = "Players")]
     pub players: Option<Vec<Player>>,
     #[serde(rename = "Logs")]
@@ -210,6 +214,18 @@ pub struct GameSnapshot {
     pub last_trick_tie: Option<bool>,
     #[serde(rename = "LastTrickRound")]
     pub last_trick_round: Option<i32>,
+}
+
+#[derive(Deserialize, Debug, Clone, Default)]
+pub struct TrickPile {
+    #[serde(rename = "Winner")]
+    pub winner: Option<i32>,
+    #[serde(rename = "Team")]
+    pub team: Option<i32>,
+    #[serde(rename = "Round")]
+    pub round: Option<i32>,
+    #[serde(rename = "Cards")]
+    pub cards: Option<Vec<PlayedCard>>,
 }
 
 #[derive(Deserialize, Debug, Clone, Default)]
@@ -362,7 +378,7 @@ mod tests {
     #[test]
     fn parses_snapshot_bundle_with_versions() {
         let input = r#"{
-          "versions":{"core_api_version":1,"protocol_version":2,"snapshot_schema_version":1},
+          "versions":{"core_api_version":1,"protocol_version":2,"snapshot_schema_version":2},
           "mode":"idle",
           "locale":"pt-BR",
           "connection":{"status":"idle","is_online":false,"is_host":false},
@@ -371,6 +387,6 @@ mod tests {
         let bundle = SnapshotBundle::from_json(input).expect("bundle");
         let versions = bundle.versions.expect("versions");
         assert_eq!(versions.core_api_version, 1);
-        assert_eq!(versions.snapshot_schema_version, 1);
+        assert_eq!(versions.snapshot_schema_version, 2);
     }
 }

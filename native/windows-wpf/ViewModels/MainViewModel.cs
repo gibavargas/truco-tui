@@ -102,6 +102,20 @@ public partial class MainViewModel : ObservableObject, IDisposable
     public Player? TopPlayer => GetPlayerAt(2);
     public Player? RightPlayer => Snapshot?.NumPlayers == 2 ? null : GetPlayerAt(1);
     public Player? LeftPlayer => Snapshot?.NumPlayers == 2 ? null : GetPlayerAt(3);
+    public int LastTrickWinnerPlayerID => Snapshot?.LastTrickWinner ?? -1;
+    public bool HasLastTrickMonte => (Snapshot?.LastTrickCards?.Count ?? 0) > 0 && LastTrickWinnerPlayerID >= 0;
+    public List<TrickPile> TopPlayerTrickPiles => GetTrickPilesFor(TopPlayer);
+    public List<TrickPile> RightPlayerTrickPiles => GetTrickPilesFor(RightPlayer);
+    public List<TrickPile> LeftPlayerTrickPiles => GetTrickPilesFor(LeftPlayer);
+    public List<TrickPile> MeTrickPiles => GetTrickPilesFor(Me);
+    public bool TopPlayerHasMonte => TopPlayerTrickPiles.Count > 0;
+    public bool RightPlayerHasMonte => RightPlayerTrickPiles.Count > 0;
+    public bool LeftPlayerHasMonte => LeftPlayerTrickPiles.Count > 0;
+    public bool MeHasMonte => MeTrickPiles.Count > 0;
+    public string TopPlayerRoleText => GetSeatRelationText(TopPlayer);
+    public string RightPlayerRoleText => GetSeatRelationText(RightPlayer);
+    public string LeftPlayerRoleText => GetSeatRelationText(LeftPlayer);
+    public string MeRoleText => GetSeatRelationText(Me);
 
     public int UsPoints => GetTeamPoints(0);
     public int ThemPoints => GetTeamPoints(1);
@@ -147,6 +161,10 @@ public partial class MainViewModel : ObservableObject, IDisposable
         : "";
 
     public Visibility LeftPlayerVisibility => LeftPlayer != null ? Visibility.Visible : Visibility.Collapsed;
+    public Visibility TopPlayerMonteVisibility => TopPlayerHasMonte ? Visibility.Visible : Visibility.Collapsed;
+    public Visibility RightPlayerMonteVisibility => RightPlayerHasMonte ? Visibility.Visible : Visibility.Collapsed;
+    public Visibility LeftPlayerMonteVisibility => LeftPlayerHasMonte ? Visibility.Visible : Visibility.Collapsed;
+    public Visibility MeMonteVisibility => MeHasMonte ? Visibility.Visible : Visibility.Collapsed;
 
     public MainViewModel()
     {
@@ -171,6 +189,27 @@ public partial class MainViewModel : ObservableObject, IDisposable
         return team == 0 
             ? (Snapshot.MatchPoints.TryGetValue("0", out var us) ? us : 0)
             : (Snapshot.MatchPoints.TryGetValue("1", out var them) ? them : 0);
+    }
+
+    private List<TrickPile> GetTrickPilesFor(Player? player)
+    {
+        if (player == null || Snapshot?.TrickPiles == null)
+        {
+            return new List<TrickPile>();
+        }
+
+        return Snapshot.TrickPiles
+            .Where(p => p.Winner == player.ID)
+            .ToList();
+    }
+
+    private string GetSeatRelationText(Player? player)
+    {
+        if (player == null) return string.Empty;
+        if (Me != null && player.ID == Me.ID) return _stringProvider.Get(StringProviderKeys.SeatYou);
+        return player.Team == MyTeamID
+            ? _stringProvider.Get(StringProviderKeys.SeatPartner)
+            : _stringProvider.Get(StringProviderKeys.SeatOpponent);
     }
 
     private async Task StartPollingAsync()
@@ -249,6 +288,20 @@ public partial class MainViewModel : ObservableObject, IDisposable
                 OnPropertyChanged(nameof(TopPlayer));
                 OnPropertyChanged(nameof(RightPlayer));
                 OnPropertyChanged(nameof(LeftPlayer));
+                OnPropertyChanged(nameof(LastTrickWinnerPlayerID));
+                OnPropertyChanged(nameof(HasLastTrickMonte));
+                OnPropertyChanged(nameof(TopPlayerTrickPiles));
+                OnPropertyChanged(nameof(RightPlayerTrickPiles));
+                OnPropertyChanged(nameof(LeftPlayerTrickPiles));
+                OnPropertyChanged(nameof(MeTrickPiles));
+                OnPropertyChanged(nameof(TopPlayerHasMonte));
+                OnPropertyChanged(nameof(RightPlayerHasMonte));
+                OnPropertyChanged(nameof(LeftPlayerHasMonte));
+                OnPropertyChanged(nameof(MeHasMonte));
+                OnPropertyChanged(nameof(TopPlayerRoleText));
+                OnPropertyChanged(nameof(RightPlayerRoleText));
+                OnPropertyChanged(nameof(LeftPlayerRoleText));
+                OnPropertyChanged(nameof(MeRoleText));
                 OnPropertyChanged(nameof(UsPoints));
                 OnPropertyChanged(nameof(ThemPoints));
                 OnPropertyChanged(nameof(ShowTrucoActions));
@@ -259,6 +312,10 @@ public partial class MainViewModel : ObservableObject, IDisposable
                 OnPropertyChanged(nameof(TrucoLabel));
                 OnPropertyChanged(nameof(RoundText));
                 OnPropertyChanged(nameof(LeftPlayerVisibility));
+                OnPropertyChanged(nameof(TopPlayerMonteVisibility));
+                OnPropertyChanged(nameof(RightPlayerMonteVisibility));
+                OnPropertyChanged(nameof(LeftPlayerMonteVisibility));
+                OnPropertyChanged(nameof(MeMonteVisibility));
                 OnPropertyChanged(nameof(TrickWinningCardId));
                 OnPropertyChanged(nameof(ConnectionStatusText));
                 OnPropertyChanged(nameof(ConnectionModeText));
@@ -479,6 +536,14 @@ public partial class MainViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(IsOnlineLobby));
         OnPropertyChanged(nameof(VisibilityIfNotPlaying));
         OnPropertyChanged(nameof(VisibilityIfOnlineLobby));
+        OnPropertyChanged(nameof(TopPlayerTrickPiles));
+        OnPropertyChanged(nameof(RightPlayerTrickPiles));
+        OnPropertyChanged(nameof(LeftPlayerTrickPiles));
+        OnPropertyChanged(nameof(MeTrickPiles));
+        OnPropertyChanged(nameof(TopPlayerHasMonte));
+        OnPropertyChanged(nameof(RightPlayerHasMonte));
+        OnPropertyChanged(nameof(LeftPlayerHasMonte));
+        OnPropertyChanged(nameof(MeHasMonte));
     }
 
     [RelayCommand]

@@ -71,6 +71,8 @@ public class GameSnapshot
     public int? TurnPlayer { get; set; }
     public int? CurrentTeamTurn { get; set; }
     public HandState? CurrentHand { get; set; }
+    public List<PlayedCard>? LastTrickCards { get; set; }
+    public List<TrickPile>? TrickPiles { get; set; }
     public List<Player>? Players { get; set; }
     public List<string>? Logs { get; set; }
     public int? WinnerTeam { get; set; }
@@ -159,6 +161,21 @@ public class PlayedCard
 {
     public int PlayerID { get; set; }
     public Card? Card { get; set; }
+}
+
+public class TrickPile
+{
+    [JsonPropertyName("Winner")]
+    public int? Winner { get; set; }
+
+    [JsonPropertyName("Team")]
+    public int? Team { get; set; }
+
+    [JsonPropertyName("Round")]
+    public int? Round { get; set; }
+
+    [JsonPropertyName("Cards")]
+    public List<PlayedCard>? Cards { get; set; }
 }
 
 public class Card

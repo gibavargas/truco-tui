@@ -91,3 +91,37 @@ func TestFFIRuntimeLifecycleProducesSnapshotAndEvents(t *testing.T) {
 		t.Fatal("expected session_ready event")
 	}
 }
+
+func TestFFISnapshotJSONIncludesTrickPilesField(t *testing.T) {
+	handle := createRuntimeHandle()
+	defer destroyRuntimeHandle(handle)
+
+	intent := map[string]any{
+		"kind": appcore.IntentNewOfflineGame,
+		"payload": map[string]any{
+			"player_names": []string{"Ana", "CPU-2"},
+			"cpu_flags":    []bool{false, true},
+			"seed_lo":      7,
+			"seed_hi":      9,
+		},
+	}
+	b, err := json.Marshal(intent)
+	if err != nil {
+		t.Fatalf("marshal intent: %v", err)
+	}
+	if got := dispatchIntentJSON(handle, string(b)); got != nil {
+		t.Fatalf("dispatch returned error: %s", consumeCString(got))
+	}
+
+	var raw map[string]any
+	if err := json.Unmarshal([]byte(consumeCString(snapshotJSON(handle))), &raw); err != nil {
+		t.Fatalf("unmarshal snapshot: %v", err)
+	}
+	match, ok := raw["match"].(map[string]any)
+	if !ok {
+		t.Fatal("match snapshot missing")
+	}
+	if _, ok := match["TrickPiles"]; !ok {
+		t.Fatal("expected TrickPiles field in FFI snapshot JSON")
+	}
+}

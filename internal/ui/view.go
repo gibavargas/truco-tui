@@ -644,13 +644,19 @@ func (m UIModel) renderOpponentPlayer(p *truco.Player, turnID, nameMax int, comp
 	}
 	roleInfo := deriveSeatRoles(m.snapshot, localIdx, m.isOnline)[p.ID]
 	roleLine := keyHintStyle.Render(strings.Join(m.roleBadgeLabels(roleInfo), " · "))
+	pile := m.renderTrickPiles(p.ID, compact)
 	if compact {
-		if compactInline {
-			return lipgloss.JoinHorizontal(lipgloss.Left, label, " ", roleLine, " ", hand)
+		rows := []string{label, roleLine, hand}
+		if pile != "" {
+			rows = append(rows, pile)
 		}
-		return lipgloss.JoinVertical(lipgloss.Left, label, roleLine, hand)
+		return lipgloss.JoinVertical(lipgloss.Left, rows...)
 	}
-	return boxStyle.Render(lipgloss.JoinVertical(lipgloss.Center, label, roleLine, hand))
+	rows := []string{label, roleLine, hand}
+	if pile != "" {
+		rows = append(rows, pile)
+	}
+	return boxStyle.Render(lipgloss.JoinVertical(lipgloss.Center, rows...))
 }
 
 func (m UIModel) renderCenter(w int, turnName string, compact bool) string {
@@ -820,6 +826,7 @@ func (m UIModel) renderBottomPlayer(localIdx int, turnID int, compact bool) stri
 	}
 	nameLabel := nameStyle.Render(nameText)
 	roleLine := keyHintStyle.Render(strings.Join(m.roleBadgeLabels(deriveSeatRoles(m.snapshot, localIdx, m.isOnline)[me.ID]), " · "))
+	pile := m.renderTrickPiles(me.ID, compact)
 
 	if compact {
 		rows := []string{handRow}
@@ -828,9 +835,20 @@ func (m UIModel) renderBottomPlayer(localIdx int, turnID int, compact bool) stri
 		}
 		rows = append(rows, nameLabel)
 		rows = append(rows, roleLine)
+		if pile != "" {
+			rows = append(rows, pile)
+		}
 		return lipgloss.JoinVertical(lipgloss.Center, rows...)
 	}
-	return boxStyle.Render(lipgloss.JoinVertical(lipgloss.Center, handRow, idxRow, nameLabel, roleLine))
+	rows := []string{handRow}
+	if idxRow != "" {
+		rows = append(rows, idxRow)
+	}
+	rows = append(rows, nameLabel, roleLine)
+	if pile != "" {
+		rows = append(rows, pile)
+	}
+	return boxStyle.Render(lipgloss.JoinVertical(lipgloss.Center, rows...))
 }
 
 // ── Cards ───────────────────────────────────────────────────────────────────

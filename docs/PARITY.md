@@ -6,7 +6,7 @@
 
 - `core_api_version`: `1`
 - `protocol_version`: `2`
-- `snapshot_schema_version`: `1`
+- `snapshot_schema_version`: `2`
 - Supported locales: `pt-BR`, `en-US`
 - Supported desired roles: `auto`, `partner`, `opponent`
 - Supported modes:
@@ -44,6 +44,7 @@
   - `system`
 
 Clients must tolerate additive JSON fields in snapshots and events. Clients must not assume event queues are replayable after they have been drained by the adapter.
+Any change to the runtime JSON contract must bump `snapshot_schema_version` and the native adapters' required schema constant in the same change, so stale FFI libraries fail fast instead of rendering partial state.
 
 ## Snapshot and Error Rules
 

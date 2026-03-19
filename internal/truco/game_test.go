@@ -212,6 +212,60 @@ func TestCheckHandEndAllTieUsesRoundStarterTeam(t *testing.T) {
 	}
 }
 
+func TestTrickPilesPersistAcrossResolvedTricks(t *testing.T) {
+	g := &Game{
+		players: []Player{
+			{ID: 0, Name: "p1", Team: 0},
+			{ID: 1, Name: "p2", Team: 1},
+		},
+		numPlayers: 2,
+		hand: HandState{
+			Manilha:      "-",
+			RoundStart:   0,
+			TrickWins:    map[int]int{0: 0, 1: 0},
+			TrickResults: []int{},
+		},
+		lastTrickWinner: -1,
+		lastTrickTeam:   -1,
+	}
+
+	g.hand.RoundCards = []PlayedCard{
+		{PlayerID: 0, Card: Card{Rank: "3", Suit: "Paus"}},
+		{PlayerID: 1, Card: Card{Rank: "2", Suit: "Paus"}},
+	}
+	g.resolveTrickLocked()
+
+	if got := len(g.trickPiles); got != 1 {
+		t.Fatalf("trickPiles len after first trick = %d, want 1", got)
+	}
+	if got := g.trickPiles[0].Winner; got != 0 {
+		t.Fatalf("first pile winner = %d, want 0", got)
+	}
+	if got := len(g.trickPiles[0].Cards); got != 2 {
+		t.Fatalf("first pile card count = %d, want 2", got)
+	}
+
+	g.hand.RoundCards = []PlayedCard{
+		{PlayerID: 1, Card: Card{Rank: "3", Suit: "Copas"}},
+		{PlayerID: 0, Card: Card{Rank: "2", Suit: "Copas"}},
+	}
+	g.resolveTrickLocked()
+
+	snap := g.Snapshot(0)
+	if got := len(snap.TrickPiles); got != 2 {
+		t.Fatalf("snapshot.TrickPiles len = %d, want 2", got)
+	}
+	if got := snap.TrickPiles[0].Winner; got != 0 {
+		t.Fatalf("snapshot first pile winner = %d, want 0", got)
+	}
+	if got := snap.TrickPiles[1].Winner; got != 1 {
+		t.Fatalf("snapshot second pile winner = %d, want 1", got)
+	}
+	if got := len(snap.TrickPiles[0].Cards); got != 2 {
+		t.Fatalf("snapshot first pile card count = %d, want 2", got)
+	}
+}
+
 func TestPlayCardRejectsOutOfTurn(t *testing.T) {
 	names := []string{"p1", "p2"}
 	cpus := []bool{false, false}

@@ -31,6 +31,12 @@ func cloneSnapshot(in truco.Snapshot) truco.Snapshot {
 			out.CurrentHand.TrickWins[k] = v
 		}
 	}
+	out.LastTrickCards = append([]truco.PlayedCard(nil), in.LastTrickCards...)
+	out.TrickPiles = make([]truco.TrickPile, len(in.TrickPiles))
+	for i, pile := range in.TrickPiles {
+		out.TrickPiles[i] = pile
+		out.TrickPiles[i].Cards = append([]truco.PlayedCard(nil), pile.Cards...)
+	}
 
 	if in.MatchPoints != nil {
 		out.MatchPoints = make(map[int]int, len(in.MatchPoints))
@@ -172,6 +178,24 @@ func RotateFailoverSnapshot(in truco.Snapshot, pivot int) (truco.Snapshot, error
 	for i, rc := range in.CurrentHand.RoundCards {
 		out.CurrentHand.RoundCards[i] = rc
 		out.CurrentHand.RoundCards[i].PlayerID = remapPlayer(rc.PlayerID)
+	}
+	out.LastTrickCards = make([]truco.PlayedCard, len(in.LastTrickCards))
+	for i, rc := range in.LastTrickCards {
+		out.LastTrickCards[i] = rc
+		out.LastTrickCards[i].PlayerID = remapPlayer(rc.PlayerID)
+	}
+	out.TrickPiles = make([]truco.TrickPile, len(in.TrickPiles))
+	for i, pile := range in.TrickPiles {
+		out.TrickPiles[i] = pile
+		out.TrickPiles[i].Winner = remapPlayer(pile.Winner)
+		out.TrickPiles[i].Cards = make([]truco.PlayedCard, len(pile.Cards))
+		for j, rc := range pile.Cards {
+			out.TrickPiles[i].Cards[j] = rc
+			out.TrickPiles[i].Cards[j].PlayerID = remapPlayer(rc.PlayerID)
+		}
+	}
+	if in.LastTrickWinner >= 0 {
+		out.LastTrickWinner = remapPlayer(in.LastTrickWinner)
 	}
 	if in.CurrentPlayerIdx >= 0 {
 		out.CurrentPlayerIdx = rotateSeat(in.CurrentPlayerIdx, pivot, n)

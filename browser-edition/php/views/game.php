@@ -40,6 +40,8 @@ $turnPlayerName = (string) ($turnPlayerObj['Name'] ?? '?');
 $raiseRequester = (int) ($hand['RaiseRequester'] ?? -1);
 $raiseRequesterName = (string) (($playersByID[$raiseRequester]['Name'] ?? '') ?: $turnPlayerName);
 $roundCards = $hand['RoundCards'] ?? [];
+$lastTrickCards = $snap['LastTrickCards'] ?? [];
+$trickPiles = $snap['TrickPiles'] ?? [];
 $trickWins = $hand['TrickWins'] ?? [];
 $team1Tricks = (int) ($trickWins[0] ?? $trickWins['0'] ?? 0);
 $team2Tricks = (int) ($trickWins[1] ?? $trickWins['1'] ?? 0);
@@ -121,6 +123,7 @@ $manilhaLabel = htmlspecialchars((string) ($hand['Manilha'] ?? '-'));
 
 $showTurnActions = !$matchFinished && $turnPlayer === $myID && !$canAccept;
 $showResponseActions = !$matchFinished && $canAccept;
+$showLastTrickMonte = !empty($lastTrickCards) && $lastTrickWinnerID >= 0;
 $boardState = 'waiting-turn';
 if ($matchFinished) {
     $boardState = 'round-end';
@@ -243,6 +246,7 @@ $hierarchyText = $locale === 'en-US'
             $isTurn = $playerID === $turnPlayer;
             $isPartner = !$isSelf && $team === $myTeam;
             $seatRole = $isSelf ? tr('game_you_label') : ($isPartner ? tr('game_partner_label') : tr('game_opponent_label'));
+            $playerTrickPiles = array_values(array_filter($trickPiles, fn($pile) => (int) ($pile['Winner'] ?? -1) === $playerID));
             ?>
             <div class="board-seat board-seat-<?= $pos ?> <?= $isTurn ? 'is-turn' : '' ?> <?= $isSelf ? 'is-self' : ($isPartner ? 'is-partner' : 'is-opponent') ?>">
                 <div class="board-seat-badge team-<?= $teamNum ?>"><?= htmlspecialchars(strtoupper(substr((string) ($p['Name'] ?? '?'), 0, 1))) ?></div>
@@ -259,6 +263,24 @@ $hierarchyText = $locale === 'en-US'
                             <?php for ($i = 0; $i < $cardCount; $i++): ?>
                                 <span class="tiny-back"></span>
                             <?php endfor; ?>
+                        </div>
+                    <?php endif; ?>
+                    <?php if (!empty($playerTrickPiles)): ?>
+                        <div class="board-seat-monte" aria-label="Montes ganhos pelo jogador">
+                            <span class="board-seat-monte-label">MONTE</span>
+                            <div class="board-seat-monte-stack board-seat-monte-stack-multi" aria-hidden="true">
+                                <?php foreach ($playerTrickPiles as $pileIndex => $pile): ?>
+                                    <?php $pileCards = $pile['Cards'] ?? []; ?>
+                                    <div class="board-seat-monte-pile">
+                                        <span class="board-seat-monte-round">Vaza <?= htmlspecialchars((string) ((int) ($pile['Round'] ?? ($pileIndex + 1)))) ?></span>
+                                        <div class="board-seat-monte-pile-stack">
+                                            <?php foreach (array_slice($pileCards, 0, 4) as $idx => $_card): ?>
+                                                <span class="tiny-back board-seat-monte-back board-seat-monte-back-<?= $idx ?>"></span>
+                                            <?php endforeach; ?>
+                                        </div>
+                                    </div>
+                                <?php endforeach; ?>
+                            </div>
                         </div>
                     <?php endif; ?>
                 </div>

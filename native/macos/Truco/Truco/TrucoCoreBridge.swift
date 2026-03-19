@@ -201,7 +201,7 @@ final class TrucoAppStore: ObservableObject {
 
 final class TrucoCoreBridge: @unchecked Sendable {
     private static let requiredCoreAPIVersion = 1
-    private static let requiredSnapshotSchemaVersion = 1
+    private static let requiredSnapshotSchemaVersion = 2
     private let handle: UInt
 
     init() {

@@ -150,6 +150,8 @@ struct MatchSnapshot: Codable {
     let Players: [Player]?
     let NumPlayers: Int?
     let CurrentHand: HandState?
+    let LastTrickCards: [PlayedCard]?
+    let TrickPiles: [TrickPile]?
     let MatchPoints: [String: Int]?   // Go map[int]int serializes as {"0":0,"1":0}
     let TurnPlayer: Int?
     let CurrentTeamTurn: Int?
@@ -173,6 +175,13 @@ struct MatchSnapshot: Codable {
         let them = MatchPoints?["1"] ?? 0
         return (us, them)
     }
+}
+
+struct TrickPile: Codable {
+    let Winner: Int?
+    let Team: Int?
+    let Round: Int?
+    let Cards: [PlayedCard]?
 }
 
 // MARK: - Hand State (matches Go truco.HandState)

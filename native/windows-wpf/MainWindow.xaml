@@ -321,6 +321,7 @@
             <!-- Top Player -->
             <StackPanel Grid.Row="0" Grid.Column="1" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,10,0,0">
                 <TextBlock Text="{Binding TopPlayer.Name}" FontSize="16" FontWeight="Bold" Foreground="LightGray" HorizontalAlignment="Center"/>
+                <TextBlock Text="{Binding TopPlayerRoleText}" FontSize="12" Foreground="Gold" HorizontalAlignment="Center" Margin="0,4,0,0"/>
                 <ItemsControl ItemsSource="{Binding TopPlayer.Hand}" Margin="0,10,0,0">
                     <ItemsControl.ItemsPanel>
                         <ItemsPanelTemplate>
@@ -337,12 +338,43 @@
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
+                <StackPanel Visibility="{Binding TopPlayerMonteVisibility}" HorizontalAlignment="Center" Margin="0,10,0,0">
+                    <TextBlock Text="MONTE" FontSize="11" FontWeight="Bold" Foreground="Gold" HorizontalAlignment="Center" Margin="0,0,0,4"/>
+                    <ItemsControl ItemsSource="{Binding TopPlayerTrickPiles}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <StackPanel Orientation="Horizontal"/>
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <StackPanel Margin="0,0,8,0">
+                                    <TextBlock Text="{Binding Round, StringFormat=Vaza {0}}" FontSize="9" FontWeight="Bold" Foreground="LightGray" HorizontalAlignment="Center" Margin="0,0,0,3"/>
+                                    <ItemsControl ItemsSource="{Binding Cards}">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate>
+                                                <StackPanel Orientation="Horizontal"/>
+                                            </ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Border Width="22" Height="32" Background="#113e25" CornerRadius="4"
+                                                        BorderBrush="#88FFFFFF" BorderThickness="1" Margin="-8,0,0,0"/>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
             </StackPanel>
 
             <!-- Left Player -->
             <StackPanel Grid.Row="1" Grid.Column="0" HorizontalAlignment="Left" VerticalAlignment="Center" 
                         Visibility="{Binding LeftPlayerVisibility}" Margin="10,0,0,0">
                 <TextBlock Text="{Binding LeftPlayer.Name}" FontSize="14" FontWeight="Bold" Foreground="LightGray"/>
+                <TextBlock Text="{Binding LeftPlayerRoleText}" FontSize="11" Foreground="Gold" Margin="0,2,0,4"/>
                 <ItemsControl ItemsSource="{Binding LeftPlayer.Hand}">
                     <ItemsControl.ItemsPanel>
                         <ItemsPanelTemplate>
@@ -359,11 +391,42 @@
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
+                <StackPanel Visibility="{Binding LeftPlayerMonteVisibility}" Margin="0,8,0,0">
+                    <TextBlock Text="MONTE" FontSize="10" FontWeight="Bold" Foreground="Gold" HorizontalAlignment="Left" Margin="0,0,0,4"/>
+                    <ItemsControl ItemsSource="{Binding LeftPlayerTrickPiles}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <StackPanel Orientation="Vertical"/>
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <StackPanel Margin="0,0,0,6">
+                                    <TextBlock Text="{Binding Round, StringFormat=Vaza {0}}" FontSize="8" FontWeight="Bold" Foreground="LightGray" HorizontalAlignment="Left" Margin="0,0,0,2"/>
+                                    <ItemsControl ItemsSource="{Binding Cards}">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate>
+                                                <StackPanel Orientation="Vertical"/>
+                                            </ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Border Width="26" Height="18" Background="#113e25" CornerRadius="3"
+                                                        BorderBrush="#88FFFFFF" BorderThickness="1" Margin="0,-10,0,0"/>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
             </StackPanel>
 
             <!-- Right Player -->
             <StackPanel Grid.Row="1" Grid.Column="2" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,10,0">
                 <TextBlock Text="{Binding RightPlayer.Name}" FontSize="14" FontWeight="Bold" Foreground="LightGray"/>
+                <TextBlock Text="{Binding RightPlayerRoleText}" FontSize="11" Foreground="Gold" Margin="0,2,0,4" HorizontalAlignment="Right"/>
                 <ItemsControl ItemsSource="{Binding RightPlayer.Hand}">
                     <ItemsControl.ItemsPanel>
                         <ItemsPanelTemplate>
@@ -380,6 +443,36 @@
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
+                <StackPanel Visibility="{Binding RightPlayerMonteVisibility}" Margin="0,8,0,0">
+                    <TextBlock Text="MONTE" FontSize="10" FontWeight="Bold" Foreground="Gold" HorizontalAlignment="Right" Margin="0,0,0,4"/>
+                    <ItemsControl ItemsSource="{Binding RightPlayerTrickPiles}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <StackPanel Orientation="Vertical"/>
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <StackPanel Margin="0,0,0,6">
+                                    <TextBlock Text="{Binding Round, StringFormat=Vaza {0}}" FontSize="8" FontWeight="Bold" Foreground="LightGray" HorizontalAlignment="Right" Margin="0,0,0,2"/>
+                                    <ItemsControl ItemsSource="{Binding Cards}">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate>
+                                                <StackPanel Orientation="Vertical"/>
+                                            </ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Border Width="26" Height="18" Background="#113e25" CornerRadius="3"
+                                                        BorderBrush="#88FFFFFF" BorderThickness="1" Margin="0,-10,0,0"/>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
             </StackPanel>
 
             <!-- Center - Table -->
@@ -549,33 +642,65 @@
             </StackPanel>
 
             <!-- My Cards (Bottom) -->
-            <ItemsControl Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="3" 
-                          ItemsSource="{Binding Me.Hand}"
-                          HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,20">
-                <ItemsControl.ItemsPanel>
-                    <ItemsPanelTemplate>
-                        <StackPanel Orientation="Horizontal"/>
-                    </ItemsPanelTemplate>
-                </ItemsControl.ItemsPanel>
-                <ItemsControl.ItemTemplate>
-                    <DataTemplate>
-                        <Button Command="{Binding DataContext.PlayCardCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                CommandParameter="{Binding}"
-                                IsEnabled="{Binding DataContext.CanPlayCards, RelativeSource={RelativeSource AncestorType=Window}}"
-                                Background="Transparent" BorderThickness="0" Cursor="Hand" Margin="10,0,0,0">
-                            <Border Width="90" Height="130" Background="White" CornerRadius="8" 
-                                    BorderBrush="Gray" BorderThickness="2">
-                                <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
-                                    <TextBlock Text="{Binding Rank}" FontSize="28" FontWeight="Bold" 
-                                               Foreground="{Binding ColorBrush}" HorizontalAlignment="Center"/>
-                                    <TextBlock Text="{Binding SuitSymbol}" FontSize="24" 
-                                               Foreground="{Binding ColorBrush}" HorizontalAlignment="Center"/>
+            <StackPanel Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="3"
+                        HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,20">
+                <TextBlock Text="{Binding MeRoleText}" FontSize="12" FontWeight="Bold" Foreground="Gold" HorizontalAlignment="Center" Margin="0,0,0,6"/>
+                <StackPanel Visibility="{Binding MeMonteVisibility}" HorizontalAlignment="Center" Margin="0,0,0,10">
+                    <TextBlock Text="MONTE" FontSize="11" FontWeight="Bold" Foreground="Gold" HorizontalAlignment="Center" Margin="0,0,0,4"/>
+                    <ItemsControl ItemsSource="{Binding MeTrickPiles}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <StackPanel Orientation="Horizontal"/>
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <StackPanel Margin="0,0,8,0">
+                                    <TextBlock Text="{Binding Round, StringFormat=Vaza {0}}" FontSize="9" FontWeight="Bold" Foreground="LightGray" HorizontalAlignment="Center" Margin="0,0,0,3"/>
+                                    <ItemsControl ItemsSource="{Binding Cards}">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate>
+                                                <StackPanel Orientation="Horizontal"/>
+                                            </ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Border Width="22" Height="32" Background="#113e25" CornerRadius="4"
+                                                        BorderBrush="#88FFFFFF" BorderThickness="1" Margin="-8,0,0,0"/>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
                                 </StackPanel>
-                            </Border>
-                        </Button>
-                    </DataTemplate>
-                </ItemsControl.ItemTemplate>
-            </ItemsControl>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+                <ItemsControl ItemsSource="{Binding Me.Hand}">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <StackPanel Orientation="Horizontal"/>
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Button Command="{Binding DataContext.PlayCardCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                    CommandParameter="{Binding}"
+                                    IsEnabled="{Binding DataContext.CanPlayCards, RelativeSource={RelativeSource AncestorType=Window}}"
+                                    Background="Transparent" BorderThickness="0" Cursor="Hand" Margin="10,0,0,0">
+                                <Border Width="90" Height="130" Background="White" CornerRadius="8" 
+                                        BorderBrush="Gray" BorderThickness="2">
+                                    <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                                        <TextBlock Text="{Binding Rank}" FontSize="28" FontWeight="Bold" 
+                                                   Foreground="{Binding ColorBrush}" HorizontalAlignment="Center"/>
+                                        <TextBlock Text="{Binding SuitSymbol}" FontSize="24" 
+                                                   Foreground="{Binding ColorBrush}" HorizontalAlignment="Center"/>
+                                    </StackPanel>
+                                </Border>
+                            </Button>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </StackPanel>
 
             <!-- Game Chat Overlay -->
             <StackPanel Grid.Row="2" Grid.Column="2" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,20,20" Width="300"

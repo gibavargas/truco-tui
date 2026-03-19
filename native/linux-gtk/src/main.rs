@@ -888,11 +888,14 @@ fn update_game_ui(
         let top_offset = if n == 4 { 2 } else { 1 };
         let top_id = (local_idx + top_offset) % n as i32;
         if let Some(top) = players.iter().find(|p| p.id == top_id) {
+            let top_piles = trick_piles_for_player(snapshot, top.id);
             render_opponent(
                 &opp_box,
                 top,
                 snapshot.turn_player == Some(top.id),
                 false,
+                my_team,
+                &top_piles,
                 snapshot,
             );
         }
@@ -900,21 +903,27 @@ fn update_game_ui(
         if n == 4 {
             let right_id = (local_idx + 1) % 4;
             if let Some(right) = players.iter().find(|p| p.id == right_id) {
+                let right_piles = trick_piles_for_player(snapshot, right.id);
                 render_opponent(
                     &right_box,
                     right,
                     snapshot.turn_player == Some(right.id),
                     true,
+                    my_team,
+                    &right_piles,
                     snapshot,
                 );
             }
             let left_id = (local_idx + 3) % 4;
             if let Some(left) = players.iter().find(|p| p.id == left_id) {
+                let left_piles = trick_piles_for_player(snapshot, left.id);
                 render_opponent(
                     &left_box,
                     left,
                     snapshot.turn_player == Some(left.id),
                     true,
+                    my_team,
+                    &left_piles,
                     snapshot,
                 );
             }
@@ -923,7 +932,7 @@ fn update_game_ui(
 
     let center_box = window.center_box();
     clear_box(&center_box);
-    if let Some(hand) = &snapshot.current_hand {
+        if let Some(hand) = &snapshot.current_hand {
         let vira_stack = gtk::Box::new(gtk::Orientation::Vertical, 8);
         vira_stack.append(&gtk::Label::new(Some("VIRA")));
         if let Some(vira) = &hand.vira {
@@ -1050,6 +1059,11 @@ fn update_game_ui(
             name_row.append(&team_lbl);
             bottom_box.append(&name_row);
 
+            let my_piles = trick_piles_for_player(snapshot, me.id);
+            if !my_piles.is_empty() {
+                bottom_box.append(&monte_piles_widget(&my_piles, gtk::Align::Center));
+            }
+
             let my_hand = gtk::Box::new(gtk::Orientation::Horizontal, 16);
             if let Some(cards) = &me.hand {
                 for (idx, c) in cards.iter().enumerate() {
@@ -1074,6 +1088,8 @@ fn render_opponent(
     player: &models::Player,
     is_turn: bool,
     vertical_cards: bool,
+    my_team: i32,
+    trick_piles: &[models::TrickPile],
     snap: &GameSnapshot,
 ) {
     let badge = role_badge_for(player.id, snap);
@@ -1113,6 +1129,18 @@ fn render_opponent(
     });
     container.append(&team_lbl);
 
+    let relation_lbl = gtk::Label::new(Some(if player.team == my_team {
+        if player.id == snap.current_player_idx.unwrap_or(-1) {
+            "Você"
+        } else {
+            "Parceiro"
+        }
+    } else {
+        "Adversário"
+    }));
+    relation_lbl.add_css_class("team-role-pill");
+    container.append(&relation_lbl);
+
     let count = player.hand.as_ref().map(|h| h.len()).unwrap_or(3);
     let hand_box = gtk::Box::new(
         if vertical_cards {
@@ -1126,6 +1154,55 @@ fn render_opponent(
         hand_box.append(&create_card_widget(None));
     }
     container.append(&hand_box);
+
+    if !trick_piles.is_empty() {
+        container.append(&monte_piles_widget(trick_piles, gtk::Align::Center));
+    }
+}
+
+fn monte_piles_widget(piles: &[models::TrickPile], align: gtk::Align) -> gtk::Box {
+    let label = gtk::Label::new(Some("MONTE"));
+    label.add_css_class("team-role-pill");
+    let stacks = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    stacks.set_halign(gtk::Align::Center);
+
+    for pile in piles {
+        let pile_box = gtk::Box::new(gtk::Orientation::Vertical, 4);
+        pile_box.set_halign(gtk::Align::Center);
+
+        let round_lbl = gtk::Label::new(Some(&format!("Vaza {}", pile.round.unwrap_or(0).max(1))));
+        round_lbl.add_css_class("team-role-pill");
+        pile_box.append(&round_lbl);
+
+        let stack = gtk::Box::new(gtk::Orientation::Horizontal, -10);
+        let shown = pile.cards.as_ref().map(|c| c.len()).unwrap_or(0).max(1).min(4);
+        for _ in 0..shown {
+            let card = create_card_widget(None);
+            card.set_size_request(28, 40);
+            stack.append(&card);
+        }
+        pile_box.append(&stack);
+        stacks.append(&pile_box);
+    }
+    let outer = gtk::Box::new(gtk::Orientation::Vertical, 6);
+    outer.set_halign(align);
+    outer.append(&label);
+    outer.append(&stacks);
+    outer
+}
+
+fn trick_piles_for_player(snapshot: &GameSnapshot, player_id: i32) -> Vec<models::TrickPile> {
+    snapshot
+        .trick_piles
+        .as_ref()
+        .map(|piles| {
+            piles
+                .iter()
+                .filter(|pile| pile.winner == Some(player_id))
+                .cloned()
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 fn role_badge_for(player_id: i32, snap: &GameSnapshot) -> Option<String> {
