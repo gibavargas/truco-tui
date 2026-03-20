@@ -7,9 +7,66 @@ struct GameView: View {
     @State private var lastTrickSeqViewed: Int = -1
     @State private var showingTrickEndAnimation = false
     @State private var trickAnimOffset: CGSize = .zero
+    @State private var trickAnimProgress: CGFloat = 0
     @State private var trickWinnerTeam: Int = -1
     @State private var trickTie: Bool = false
     @State private var chatMessage = ""
+
+    fileprivate enum TrickPilePlacement {
+        case top
+        case bottom
+        case leading
+        case trailing
+
+        var panelSize: CGSize {
+            switch self {
+            case .top, .bottom:
+                return CGSize(width: 248, height: 132)
+            case .leading, .trailing:
+                return CGSize(width: 132, height: 248)
+            }
+        }
+
+        var cardSize: CGSize {
+            switch self {
+            case .top, .bottom:
+                return CGSize(width: 58, height: 84)
+            case .leading, .trailing:
+                return CGSize(width: 54, height: 78)
+            }
+        }
+
+        func offset(for index: Int, count: Int) -> CGSize {
+            let step = CGFloat(index)
+            let total = CGFloat(max(count - 1, 1))
+            switch self {
+            case .top:
+                return CGSize(width: (step - total / 2) * 42, height: step * 11)
+            case .bottom:
+                return CGSize(width: (step - total / 2) * 42, height: step * -11)
+            case .leading:
+                return CGSize(width: step * 11, height: (step - total / 2) * 42)
+            case .trailing:
+                return CGSize(width: step * -11, height: (step - total / 2) * 42)
+            }
+        }
+
+        func rotation(for index: Int, count: Int) -> Double {
+            let step = Double(index)
+            let total = Double(max(count - 1, 1))
+            let bias = step - total / 2
+            switch self {
+            case .top:
+                return bias * 5.5
+            case .bottom:
+                return bias * -5.5
+            case .leading:
+                return bias * 4.5
+            case .trailing:
+                return bias * -4.5
+            }
+        }
+    }
 
     private func seatPlayer(_ snap: MatchSnapshot, offset: Int) -> Player? {
         guard let players = snap.Players, let localID = snap.CurrentPlayerIdx, let count = snap.NumPlayers else { return nil }
@@ -18,7 +75,16 @@ struct GameView: View {
     }
 
     private func trickPiles(for snap: MatchSnapshot, playerID: Int) -> [TrickPile] {
-        (snap.TrickPiles ?? []).filter { ($0.Winner ?? -1) == playerID }
+        (snap.TrickPiles ?? [])
+            .filter { ($0.Winner ?? -1) == playerID }
+            .sorted {
+                let leftRound = $0.Round ?? Int.max
+                let rightRound = $1.Round ?? Int.max
+                if leftRound == rightRound {
+                    return ($0.Cards?.count ?? 0) < ($1.Cards?.count ?? 0)
+                }
+                return leftRound < rightRound
+            }
     }
 
     fileprivate enum SeatRelation {
@@ -192,7 +258,8 @@ struct GameView: View {
                                 localPlayerID: localPlayer?.playerID ?? opponent.playerID,
                                 localTeam: localTeam
                             ),
-                            trickPiles: trickPiles(for: snap, playerID: opponent.playerID)
+                            trickPiles: trickPiles(for: snap, playerID: opponent.playerID),
+                            placement: .top
                         )
                             .padding(.top, 96)
                     }
@@ -248,7 +315,8 @@ struct GameView: View {
                             PlayerHandView(
                                 player: me,
                                 isMyTurn: actions?.can_play_card == true,
-                                trickPiles: trickPiles(for: snap, playerID: me.playerID)
+                                trickPiles: trickPiles(for: snap, playerID: me.playerID),
+                                placement: .bottom
                             )
                         }
                         .padding(.bottom, 60)
@@ -266,7 +334,8 @@ struct GameView: View {
                                     localTeam: localTeam
                                 ),
                                 labelOnTrailingSide: true,
-                                trickPiles: trickPiles(for: snap, playerID: left.playerID)
+                                trickPiles: trickPiles(for: snap, playerID: left.playerID),
+                                placement: .leading
                             )
                                 .frame(maxWidth: 150)
                                 .padding(.leading, 48)
@@ -281,7 +350,8 @@ struct GameView: View {
                                     localTeam: localTeam
                                 ),
                                 labelOnTrailingSide: false,
-                                trickPiles: trickPiles(for: snap, playerID: right.playerID)
+                                trickPiles: trickPiles(for: snap, playerID: right.playerID),
+                                placement: .trailing
                             )
                                 .frame(maxWidth: 150)
                                 .padding(.trailing, 48)
@@ -446,43 +516,18 @@ struct GameView: View {
                 // Trick end animation overlay
                 if showingTrickEndAnimation {
                     ZStack {
-                        // Cards gathering and flying
-                        if !trickTie {
-                            ZStack {
-                                ForEach(0..<4, id: \.self) { i in
-                                    CardView(card: Card(Rank: "", Suit: ""), isFaceUp: false)
-                                        .rotationEffect(.degrees(Double(i * 12 - 18)))
-                                        .offset(x: CGFloat(i * 6 - 9), y: CGFloat(i * -4))
-                                }
-                            }
-                            .offset(trickAnimOffset)
-                            .opacity(trickAnimOffset == .zero ? 1 : 0)
-                            .scaleEffect(trickAnimOffset == .zero ? 1 : 0.4)
-                            .padding(.top, 100) // Start closer to the center table
-                            .zIndex(1)
-                        }
-                        
-                        // Emoji message in the center
-                        VStack {
-                            if trickTie {
-                                Text("😐").font(.system(size: 80))
-                                Text("EMPATE!").font(.title.weight(.heavy)).foregroundColor(.white)
-                            } else if let myPlayer = snap.Players?.first(where: { $0.playerID == snap.CurrentPlayerIdx }), trickWinnerTeam == myPlayer.Team {
-                                Text("🎉").font(.system(size: 80))
-                                Text("VOCÊ VENCEU A VAZA!").font(.title.weight(.heavy)).foregroundColor(.green)
-                            } else {
-                                Text("😢").font(.system(size: 80))
-                                Text("ELES VENCERAM").font(.title.weight(.heavy)).foregroundColor(.red)
-                            }
-                        }
-                        .padding(24)
-                        .background(Color.black.opacity(0.85))
-                        .cornerRadius(24)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 24)
-                                .stroke(Color.white.opacity(0.2), lineWidth: 2)
+                        TrickTravelDeckView(
+                            offset: trickAnimOffset,
+                            progress: trickAnimProgress,
+                            tie: trickTie
                         )
-                        .shadow(radius: 20)
+                        .zIndex(1)
+
+                        TrickResultToast(
+                            localTeam: localTeam,
+                            winnerTeam: trickWinnerTeam,
+                            tie: trickTie
+                        )
                         .zIndex(10)
                     }
                     .zIndex(100)
@@ -533,20 +578,22 @@ struct GameView: View {
         }
         
         trickAnimOffset = .zero
+        trickAnimProgress = 0
         showingTrickEndAnimation = false
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
             withAnimation(.spring(response: 0.55, dampingFraction: 0.78)) {
                 showingTrickEndAnimation = true
+                trickAnimProgress = 1
             }
             
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.55) {
-                withAnimation(.easeIn(duration: 0.55)) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.75) {
+                withAnimation(.easeInOut(duration: 0.95)) {
                     trickAnimOffset = target
                 }
             }
             
-            DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.15) {
                 withAnimation(.easeOut(duration: 0.35)) {
                     showingTrickEndAnimation = false
                 }
@@ -676,8 +723,8 @@ private struct StakeInfoView: View {
 
             if stake > 1 {
                 VStack(alignment: .trailing, spacing: 2) {
-                    Text("Rodada trucada")
-                    Text("tá valendo 6, 9, 12 etc.")
+                    Text("APOSTA EM CURSO")
+                    Text("valor da mão: 6, 9, 12...")
                 }
                 .font(.caption2.weight(.semibold))
                 .foregroundColor(.white.opacity(0.72))
@@ -799,14 +846,13 @@ private struct OpponentView: View {
     let player: Player
     let relation: GameView.SeatRelation
     let trickPiles: [TrickPile]
+    let placement: GameView.TrickPilePlacement
     
     var body: some View {
         VStack(spacing: 10) {
             HStack(alignment: .center, spacing: 14) {
-                playerBadge(alignment: .center)
-
                 if !trickPiles.isEmpty {
-                    TrickPilesView(piles: trickPiles)
+                    TrickPilesView(piles: trickPiles, placement: placement)
                 }
 
                 HStack(spacing: -24) {
@@ -815,6 +861,8 @@ private struct OpponentView: View {
                             .shadow(color: .black.opacity(0.3), radius: 4, x: -2, y: 3)
                     }
                 }
+
+                playerBadge(alignment: .center)
             }
         }
     }
@@ -864,20 +912,19 @@ private struct SideOpponentView: View {
     let relation: GameView.SeatRelation
     let labelOnTrailingSide: Bool
     let trickPiles: [TrickPile]
+    let placement: GameView.TrickPilePlacement
 
     var body: some View {
         HStack(alignment: .center, spacing: 12) {
+            if !trickPiles.isEmpty {
+                TrickPilesView(piles: trickPiles, placement: placement)
+            }
+
             if labelOnTrailingSide {
                 cardStack
-                if !trickPiles.isEmpty {
-                    TrickPilesView(piles: trickPiles)
-                }
                 playerBadge(alignment: .leading)
             } else {
                 playerBadge(alignment: .trailing)
-                if !trickPiles.isEmpty {
-                    TrickPilesView(piles: trickPiles)
-                }
                 cardStack
             }
         }
@@ -950,39 +997,180 @@ private struct MontePileView: View {
     }
 }
 
-private struct TrickPilesView: View {
-    let piles: [TrickPile]
+private struct TrickTravelDeckView: View {
+    let offset: CGSize
+    let progress: CGFloat
+    let tie: Bool
 
     var body: some View {
-        VStack(spacing: 6) {
-            Text("MONTE")
-                .font(.caption2.bold())
-                .foregroundColor(.yellow.opacity(0.9))
-                .tracking(1.5)
+        ZStack {
+            ForEach(0..<3, id: \.self) { index in
+                let lead = CGFloat(index)
+                let driftX = (lead - 1) * 22
+                let driftY = lead * -8
+                let scale = 1 - lead * 0.05
+                let opacity = tie ? 0.42 : 0.82
 
-            HStack(alignment: .center, spacing: 8) {
-                ForEach(Array(piles.enumerated()), id: \.offset) { _, pile in
-                    TrickPileMiniView(count: pile.Cards?.count ?? 0)
-                }
+                CardView(card: Card(Rank: "", Suit: ""), isFaceUp: false)
+                    .frame(width: 84, height: 120)
+                    .rotationEffect(.degrees(Double((lead - 1) * 7 + progress * 12)))
+                    .offset(
+                        x: driftX + offset.width * progress,
+                        y: driftY + offset.height * progress
+                    )
+                    .scaleEffect(scale + progress * 0.08)
+                    .opacity(opacity)
+                    .shadow(color: .black.opacity(0.35), radius: 12, x: 0, y: 6)
             }
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
-        .background(Color.black.opacity(0.25))
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(Color.white.opacity(0.12), lineWidth: 1)
+        )
     }
 }
 
-private struct TrickPileMiniView: View {
-    let count: Int
+private struct TrickResultToast: View {
+    let localTeam: Int
+    let winnerTeam: Int
+    let tie: Bool
 
     var body: some View {
-        HStack(spacing: -10) {
-            ForEach(0..<max(1, min(count, 4)), id: \.self) { _ in
-                CardView(card: Card(Rank: "", Suit: ""), isFaceUp: false)
-                    .frame(width: 26, height: 38)
+        VStack(spacing: 10) {
+            if tie {
+                Text("EMPATE")
+                    .font(.caption.bold())
+                    .foregroundColor(.white.opacity(0.8))
+                    .tracking(2)
+                Text("😐")
+                    .font(.system(size: 54))
+            } else if winnerTeam == localTeam {
+                Text("VOCÊ VENCEU")
+                    .font(.headline.weight(.heavy))
+                    .foregroundColor(.green)
+                    .tracking(1.5)
+                Text("a vaza")
+                    .font(.caption.bold())
+                    .foregroundColor(.white.opacity(0.8))
+            } else {
+                Text("ELES VENCERAM")
+                    .font(.headline.weight(.heavy))
+                    .foregroundColor(.red)
+                    .tracking(1.5)
+                Text("a vaza")
+                    .font(.caption.bold())
+                    .foregroundColor(.white.opacity(0.8))
             }
         }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 14)
+        .background(.black.opacity(0.82))
+        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .stroke(Color.white.opacity(0.14), lineWidth: 1)
+        )
+        .shadow(color: .black.opacity(0.3), radius: 20, x: 0, y: 10)
+        .offset(y: 8)
+    }
+}
+
+private struct TrickPilesView: View {
+    let piles: [TrickPile]
+    let placement: GameView.TrickPilePlacement
+
+    var body: some View {
+        ZStack {
+            ForEach(Array(piles.enumerated()), id: \.offset) { index, pile in
+                TrickPileCardView(
+                    sequence: index + 1,
+                    count: pile.Cards?.count ?? 0,
+                    placement: placement
+                )
+                .offset(placement.offset(for: index, count: piles.count))
+                .rotationEffect(.degrees(placement.rotation(for: index, count: piles.count)))
+                .transition(.scale.combined(with: .opacity))
+                .zIndex(Double(index))
+            }
+        }
+        .frame(width: placement.panelSize.width, height: placement.panelSize.height)
+        .padding(8)
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            Color.black.opacity(0.42),
+                            Color.black.opacity(0.18),
+                            Color.green.opacity(0.08)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(Color.white.opacity(0.08), lineWidth: 1)
+        )
+    }
+}
+
+private struct TrickPileCardView: View {
+    let sequence: Int
+    let count: Int
+    let placement: GameView.TrickPilePlacement
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Text("\(sequence)")
+                    .font(.caption2.weight(.black))
+                    .foregroundColor(.black)
+                    .frame(width: 18, height: 18)
+                    .background(Color.yellow)
+                    .clipShape(Circle())
+
+                Spacer(minLength: 0)
+
+                Text("\(count)")
+                    .font(.caption2.weight(.bold))
+                    .foregroundColor(.white.opacity(0.88))
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Color.white.opacity(0.08))
+                    .clipShape(Capsule())
+            }
+
+            ZStack {
+                ForEach(0..<max(1, min(count, 4)), id: \.self) { index in
+                    CardView(card: Card(Rank: "", Suit: ""), isFaceUp: false)
+                        .frame(width: placement.cardSize.width, height: placement.cardSize.height)
+                        .offset(x: CGFloat(index) * 5, y: CGFloat(index) * -4)
+                        .rotationEffect(.degrees(Double(index) * 2.5))
+                        .shadow(color: .black.opacity(0.25), radius: 4, x: 0, y: 2)
+                }
+            }
+        }
+        .padding(10)
+        .frame(width: placement.cardSize.width + 34, height: placement.cardSize.height + 42)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            Color.white.opacity(0.08),
+                            Color.white.opacity(0.02)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(Color.yellow.opacity(0.26), lineWidth: 1)
+        )
     }
 }
 
@@ -990,46 +1178,50 @@ private struct PlayerHandView: View {
     let player: Player
     let isMyTurn: Bool
     let trickPiles: [TrickPile]
+    let placement: GameView.TrickPilePlacement
     @EnvironmentObject var store: TrucoAppStore
     
     @State private var hoveredCard: String?
     
     var body: some View {
-        VStack(spacing: 20) {
+        HStack(alignment: .bottom, spacing: 18) {
             if !trickPiles.isEmpty {
-                TrickPilesView(piles: trickPiles)
+                TrickPilesView(piles: trickPiles, placement: placement)
+                    .padding(.bottom, 12)
             }
 
-            if isMyTurn {
-                Text("SUA VEZ")
-                    .font(.caption.bold())
-                    .foregroundColor(Color(red: 0.35, green: 0.21, blue: 0.12))
-                    .tracking(1.5)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 6)
-                    .background(Color.yellow)
-                    .clipShape(Capsule())
-                    .shadow(color: .yellow.opacity(0.4), radius: 8)
-            }
-            
-            HStack(spacing: 16) {
-                if let hand = player.Hand {
-                    ForEach(Array(hand.enumerated()), id: \.element) { index, card in
-                        CardView(card: card)
-                            .offset(y: hoveredCard == card.Rank + card.Suit ? -30 : 0)
-                            .animation(.interactiveSpring(response: 0.3, dampingFraction: 0.6), value: hoveredCard)
-                            .onHover { isHovered in
-                                if isHovered && isMyTurn {
-                                    hoveredCard = card.Rank + card.Suit
-                                } else if hoveredCard == card.Rank + card.Suit {
-                                    hoveredCard = nil
+            VStack(spacing: 20) {
+                if isMyTurn {
+                    Text("SUA VEZ")
+                        .font(.caption.bold())
+                        .foregroundColor(Color(red: 0.35, green: 0.21, blue: 0.12))
+                        .tracking(1.5)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 6)
+                        .background(Color.yellow)
+                        .clipShape(Capsule())
+                        .shadow(color: .yellow.opacity(0.4), radius: 8)
+                }
+                
+                HStack(spacing: 16) {
+                    if let hand = player.Hand {
+                        ForEach(Array(hand.enumerated()), id: \.element) { index, card in
+                            CardView(card: card)
+                                .offset(y: hoveredCard == card.Rank + card.Suit ? -30 : 0)
+                                .animation(.interactiveSpring(response: 0.3, dampingFraction: 0.6), value: hoveredCard)
+                                .onHover { isHovered in
+                                    if isHovered && isMyTurn {
+                                        hoveredCard = card.Rank + card.Suit
+                                    } else if hoveredCard == card.Rank + card.Suit {
+                                        hoveredCard = nil
+                                    }
                                 }
-                            }
-                            .onTapGesture {
-                                if isMyTurn {
-                                    store.dispatchGameAction(action: "play", cardIndex: index)
+                                .onTapGesture {
+                                    if isMyTurn {
+                                        store.dispatchGameAction(action: "play", cardIndex: index)
+                                    }
                                 }
-                            }
+                        }
                     }
                 }
             }
