@@ -18,6 +18,7 @@
     <PublishSingleFile>false</PublishSingleFile>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
     <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <ApplicationIcon>Assets\truco.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>
@@ -26,6 +27,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Content Include="Assets\truco.ico" Condition="Exists('Assets\truco.ico')">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      <Link>truco.ico</Link>
+    </Content>
     <Content Include="..\..\bin\truco-core-ffi.dll" Condition="Exists('..\..\bin\truco-core-ffi.dll')">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
