@@ -15,10 +15,18 @@ $mode = $bundle['mode'] ?? 'offline_match';
 $isOnline = strpos($mode, 'host_') === 0 || strpos($mode, 'client_') === 0;
 $lobby = $bundle['lobby'] ?? [];
 $ui = $bundle['ui'] ?? [];
+$connection = $bundle['connection'] ?? [];
+$diagnostics = $bundle['diagnostics'] ?? [];
 $slotStates = $ui['lobby_slots'] ?? [];
 $actions = $ui['actions'] ?? [];
 $locale = $_SESSION['locale'] ?? 'pt-BR';
 $runtimeStateValid = (bool) ($_SESSION['runtime_state_valid'] ?? true);
+$connectionStatus = (string) ($connection['status'] ?? $mode);
+$roleLabel = trim((string) ($lobby['role'] ?? ''));
+$eventFeedLines = [];
+foreach (array_reverse(array_slice($events, -12)) as $ev) {
+    $eventFeedLines[] = '[' . substr((string) ($ev['timestamp'] ?? ''), 11, 8) . '] ' . formatEventLine($ev);
+}
 
 $playersByID = [];
 $seatByID = [];
@@ -51,6 +59,7 @@ $lastTrickRound = (int) ($snap['LastTrickRound'] ?? 0);
 $lastTrickTie = (bool) ($snap['LastTrickTie'] ?? false);
 $lastTrickWinnerID = (int) ($snap['LastTrickWinner'] ?? -1);
 $lastTrickWinnerName = (string) (($playersByID[$lastTrickWinnerID]['Name'] ?? '') ?: '?');
+$lastTrickSeq = (int) ($snap['LastTrickSeq'] ?? 0);
 $latestLog = trim((string) (count($logs) > 0 ? $logs[count($logs) - 1] : tr('status_ready')));
 $recentLogs = array_reverse(array_slice($logs, -3));
 $recentEvents = [];
@@ -156,16 +165,26 @@ if (!$runtimeStateValid) {
     $boardState .= ' state-runtime-stale';
 }
 
-$hierarchyText = $locale === 'en-US'
-    ? '1. Your hand. 2. Current trick. 3. Turn and truco pressure. 4. Team score.'
-    : '1. Sua mão. 2. Vaza atual. 3. Turno e pressão do truco. 4. Placar da dupla.';
 ?>
-<section class="panel game-panel game-panel-board game-shell state-<?= htmlspecialchars($boardState) ?>">
+<section class="panel game-panel game-panel-board game-shell state-<?= htmlspecialchars($boardState) ?>"
+    data-last-trick-seq="<?= $lastTrickSeq ?>"
+    data-last-trick-team="<?= (int) ($snap['LastTrickTeam'] ?? -1) ?>"
+    data-last-trick-winner="<?= $lastTrickWinnerID ?>"
+    data-last-trick-tie="<?= $lastTrickTie ? '1' : '0' ?>"
+    data-last-trick-round="<?= $lastTrickRound ?>"
+    data-last-trick-round-label="<?= htmlspecialchars(tr('game_trick_round_label', max(1, $lastTrickRound))) ?>"
+    data-local-player-id="<?= $myID ?>"
+    data-num-players="<?= $numPlayers ?>"
+    data-trick-toast-win="<?= htmlspecialchars(tr('game_trick_toast_win')) ?>"
+    data-trick-toast-loss="<?= htmlspecialchars(tr('game_trick_toast_loss')) ?>"
+    data-trick-toast-tie="<?= htmlspecialchars(tr('game_trick_toast_tie')) ?>"
+    data-trick-toast-caption="<?= htmlspecialchars(tr('game_trick_toast_caption')) ?>"
+>
     <div class="game-topline">
         <div class="game-head-copy">
             <span class="section-kicker"><?= $isOnline ? tr('game_kicker_online') : tr('game_kicker_offline') ?></span>
             <h2><?= $isOnline ? tr('game_title_online') : tr('game_title_offline') ?></h2>
-            <p class="game-head-note"><?= htmlspecialchars($hierarchyText) ?></p>
+            <p class="game-head-note"><?= htmlspecialchars($locale === 'en-US' ? 'Hand, flip, truco, and score in one frame.' : 'Mão, vira, truco e placar no mesmo quadro.') ?></p>
         </div>
 
         <div class="game-topline-actions">
@@ -182,69 +201,71 @@ $hierarchyText = $locale === 'en-US'
         </div>
     </div>
 
-    <div class="board-hud board-zone board-zone-hud">
-        <section class="hud-team <?= $myTeam === 0 ? 'friendly' : 'enemy' ?>">
-            <div class="hud-team-top">
-                <span class="hud-label"><?= tr('team1') ?></span>
-                <span class="team-link <?= $myTeam === 0 ? 'ally' : 'enemy' ?>"><?= $myTeam === 0 ? tr('game_you_label') . ' + ' . tr('game_partner_label') : tr('game_opponent_label') ?></span>
-            </div>
-            <strong class="hud-score"><?= $team1Score ?></strong>
-            <div class="hud-tricks">
-                <?php for ($i = 0; $i < 3; $i++): ?>
-                    <span class="hud-trick <?= $i < $team1Tricks ? 'won' : '' ?>"></span>
-                <?php endfor; ?>
-            </div>
-        </section>
-
-        <section class="hud-center">
-            <div class="hud-round-row">
-                <span class="hud-chip"><?= tr('game_round_label', $roundNumber) ?></span>
-                <span class="hud-chip stake-chip"><?= tr('game_stake_value', $stake) ?></span>
-                <?php if ($pendingFor !== -1): ?>
-                    <span class="hud-chip hot"><?= strtoupper(raiseLabel($pendingTo ?: 3, $locale)) ?></span>
-                <?php endif; ?>
-            </div>
-
-            <div class="hud-stake-track" aria-label="<?= tr('game_stake_ladder_label') ?>">
-                <?php foreach ($stakeSteps as $step): ?>
-                    <span class="track-step <?= $step === $stake ? 'current' : ($step < $stake ? 'past' : ($step === $pendingTo ? 'pending' : '')) ?>">
-                        <span class="track-dot"></span>
-                        <small><?= $step ?></small>
-                    </span>
-                <?php endforeach; ?>
-            </div>
-
-            <div class="hud-status-block">
-                <strong class="hud-status-title"><?= htmlspecialchars($heroText) ?></strong>
-                <span class="hud-status"><?= htmlspecialchars($statusText) ?></span>
-            </div>
-        </section>
-
-        <section class="hud-team <?= $myTeam === 1 ? 'friendly' : 'enemy' ?>">
-            <div class="hud-team-top">
-                <span class="hud-label"><?= tr('team2') ?></span>
-                <span class="team-link <?= $myTeam === 1 ? 'ally' : 'enemy' ?>"><?= $myTeam === 1 ? tr('game_you_label') . ' + ' . tr('game_partner_label') : tr('game_opponent_label') ?></span>
-            </div>
-            <strong class="hud-score"><?= $team2Score ?></strong>
-            <div class="hud-tricks">
-                <?php for ($i = 0; $i < 3; $i++): ?>
-                    <span class="hud-trick <?= $i < $team2Tricks ? 'won' : '' ?>"></span>
-                <?php endfor; ?>
-            </div>
-        </section>
-    </div>
-
     <div class="board-stage players-<?= $numPlayers ?> board-zone board-zone-table">
+        <div class="board-hud board-zone board-zone-hud">
+            <section class="hud-team <?= $myTeam === 0 ? 'friendly' : 'enemy' ?>">
+                <div class="hud-team-top">
+                    <span class="hud-label"><?= tr('team1') ?></span>
+                    <span class="team-link <?= $myTeam === 0 ? 'ally' : 'enemy' ?>"><?= $myTeam === 0 ? tr('game_you_label') . ' + ' . tr('game_partner_label') : tr('game_opponent_label') ?></span>
+                </div>
+                <strong class="hud-score"><?= $team1Score ?></strong>
+                <div class="hud-tricks">
+                    <?php for ($i = 0; $i < 3; $i++): ?>
+                        <span class="hud-trick <?= $i < $team1Tricks ? 'won' : '' ?>"></span>
+                    <?php endfor; ?>
+                </div>
+            </section>
+
+            <section class="hud-center">
+                <div class="hud-round-row">
+                    <span class="hud-chip"><?= tr('game_round_label', $roundNumber) ?></span>
+                    <span class="hud-chip stake-chip"><?= tr('game_stake_value', $stake) ?></span>
+                    <?php if ($pendingFor !== -1): ?>
+                        <span class="hud-chip hot"><?= strtoupper(raiseLabel($pendingTo ?: 3, $locale)) ?></span>
+                    <?php endif; ?>
+                </div>
+
+                <div class="hud-stake-track" aria-label="<?= tr('game_stake_ladder_label') ?>">
+                    <?php foreach ($stakeSteps as $step): ?>
+                        <span class="track-step <?= $step === $stake ? 'current' : ($step < $stake ? 'past' : ($step === $pendingTo ? 'pending' : '')) ?>">
+                            <span class="track-dot"></span>
+                            <small><?= $step ?></small>
+                        </span>
+                    <?php endforeach; ?>
+                </div>
+
+                <div class="hud-status-block">
+                    <strong class="hud-status-title"><?= htmlspecialchars($heroText) ?></strong>
+                    <span class="hud-status"><?= htmlspecialchars($statusText) ?></span>
+                </div>
+            </section>
+
+            <section class="hud-team <?= $myTeam === 1 ? 'friendly' : 'enemy' ?>">
+                <div class="hud-team-top">
+                    <span class="hud-label"><?= tr('team2') ?></span>
+                    <span class="team-link <?= $myTeam === 1 ? 'ally' : 'enemy' ?>"><?= $myTeam === 1 ? tr('game_you_label') . ' + ' . tr('game_partner_label') : tr('game_opponent_label') ?></span>
+                </div>
+                <strong class="hud-score"><?= $team2Score ?></strong>
+                <div class="hud-tricks">
+                    <?php for ($i = 0; $i < 3; $i++): ?>
+                        <span class="hud-trick <?= $i < $team2Tricks ? 'won' : '' ?>"></span>
+                    <?php endfor; ?>
+                </div>
+            </section>
+        </div>
+
         <aside class="table-legend">
-            <div class="legend-grid">
-                <div class="legend-card">
+            <div class="legend-grid legend-grid-table">
+                <div class="legend-card deck-card">
+                    <span class="info-kicker"><?= tr('game_deck_label') ?></span>
+                    <div class="meta-card meta-card-back"><?= renderCardBack(true) ?></div>
+                    <strong><?= tr('game_round_label', $roundNumber) ?></strong>
+                </div>
+                <div class="legend-card vira-card">
                     <span class="info-kicker"><?= tr('vira') ?></span>
                     <div class="meta-card"><?= !empty($hand['Vira']) ? renderCard($hand['Vira'], true) : '' ?></div>
                     <strong><?= htmlspecialchars($viraLabel) ?></strong>
-                </div>
-                <div class="legend-card">
-                    <span class="info-kicker"><?= tr('manilha') ?></span>
-                    <strong class="meta-rank"><?= $manilhaLabel ?></strong>
+                    <span class="meta-sub"><?= tr('manilha') ?> <?= $manilhaLabel ?></span>
                 </div>
             </div>
         </aside>
@@ -268,7 +289,9 @@ $hierarchyText = $locale === 'en-US'
             $seatRole = $isSelf ? tr('game_you_label') : ($isPartner ? tr('game_partner_label') : tr('game_opponent_label'));
             $playerTrickPiles = array_values(array_filter($trickPiles, fn($pile) => (int) ($pile['Winner'] ?? -1) === $playerID));
             ?>
-            <div class="board-seat board-seat-<?= $pos ?> <?= $isTurn ? 'is-turn' : '' ?> <?= $isSelf ? 'is-self' : ($isPartner ? 'is-partner' : 'is-opponent') ?>">
+            <div class="board-seat board-seat-<?= $pos ?> <?= $isTurn ? 'is-turn' : '' ?> <?= $isSelf ? 'is-self' : ($isPartner ? 'is-partner' : 'is-opponent') ?>"
+                data-player-id="<?= $playerID ?>"
+                data-team="<?= $team ?>">
                 <div class="board-seat-badge team-<?= $teamNum ?>"><?= htmlspecialchars(strtoupper(substr((string) ($p['Name'] ?? '?'), 0, 1))) ?></div>
                 <div class="board-seat-info">
                     <div class="seat-headline">
@@ -352,6 +375,19 @@ $hierarchyText = $locale === 'en-US'
                     <strong><?= htmlspecialchars($lastTrickText) ?></strong>
                 </div>
             <?php endif; ?>
+        </div>
+
+        <div class="trick-overlay" data-trick-overlay role="status" aria-live="polite" aria-atomic="true" aria-hidden="true">
+            <div class="trick-overlay-deck" data-trick-overlay-deck>
+                <div class="trick-overlay-card"><?= renderCardBack(true) ?></div>
+                <div class="trick-overlay-card"><?= renderCardBack(true) ?></div>
+                <div class="trick-overlay-card"><?= renderCardBack(true) ?></div>
+            </div>
+            <div class="trick-overlay-toast" data-trick-overlay-toast>
+                <span class="trick-overlay-kicker" data-trick-overlay-kicker></span>
+                <strong data-trick-overlay-title></strong>
+                <span data-trick-overlay-caption><?= htmlspecialchars(tr('game_trick_toast_caption')) ?></span>
+            </div>
         </div>
     </div>
 
@@ -465,12 +501,38 @@ $hierarchyText = $locale === 'en-US'
     </div>
 
     <?php if ($isOnline): ?>
-        <details class="table-sidecar">
+        <details class="table-sidecar online-emphasis" open>
             <summary><?= tr('game_table_online') ?></summary>
 
             <div class="table-ops sidecar-grid">
-                <section class="side-block">
-                    <h3><?= tr('lobby_events_title') ?></h3>
+                <section class="side-block side-block-diagnostics">
+                    <h3><?= tr('game_online_panel_title') ?></h3>
+                    <div class="connection-grid">
+                        <div><span><?= tr('connection_status') ?></span><strong><?= htmlspecialchars($connectionStatus) ?></strong></div>
+                        <div><span><?= tr('connection_mode') ?></span><strong><?= !empty($connection['is_online']) ? tr('connection_online') : tr('connection_offline') ?></strong></div>
+                        <?php if ($roleLabel !== ''): ?>
+                            <div><span><?= tr('connection_role') ?></span><strong><?= htmlspecialchars($roleLabel) ?></strong></div>
+                        <?php endif; ?>
+                        <div><span><?= tr('connection_backlog') ?></span><strong><?= (int) ($diagnostics['event_backlog'] ?? 0) ?></strong></div>
+                        <?php if (!empty($connection['last_error']['message'])): ?>
+                            <div class="connection-error"><span><?= tr('connection_error') ?></span><strong><?= htmlspecialchars((string) $connection['last_error']['message']) ?></strong></div>
+                        <?php endif; ?>
+                    </div>
+                </section>
+
+                <section class="side-block side-block-pulse side-log">
+                    <h3><?= tr('game_online_pulse_title') ?></h3>
+                    <pre id="game-events" class="event-feed" data-focus-target="game-events" tabindex="-1" role="log" aria-live="polite" aria-atomic="false"><?php
+                        if (empty($eventFeedLines)) {
+                            echo htmlspecialchars(tr('lobby_events_empty'));
+                        } else {
+                            echo htmlspecialchars(implode("\n", $eventFeedLines));
+                        }
+                    ?></pre>
+                </section>
+
+                <section class="side-block side-block-controls">
+                    <h3><?= tr('game_online_controls_title') ?></h3>
                     <div class="action-row compact-row">
                         <?php foreach (($lobby['slots'] ?? []) as $idx => $slotName): ?>
                             <?php $slotState = $slotStates[$idx] ?? []; ?>
@@ -490,10 +552,6 @@ $hierarchyText = $locale === 'en-US'
                             <?php endif; ?>
                         <?php endforeach; ?>
                     </div>
-                </section>
-
-                <section class="side-block chat-block">
-                    <h3><?= tr('lobby_chat_send') ?></h3>
                     <form method="post" action="index.php" class="lobby-chat-row" data-ajax="true">
                         <input type="hidden" name="action" value="sendChat">
                         <input name="message" class="field" type="text" autocomplete="off" placeholder="<?= tr('chat_placeholder') ?>">
