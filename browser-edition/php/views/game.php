@@ -167,6 +167,8 @@ if (!$runtimeStateValid) {
 
 ?>
 <section class="panel game-panel game-panel-board game-shell state-<?= htmlspecialchars($boardState) ?>"
+    data-mode="<?= htmlspecialchars($mode) ?>"
+    data-match-finished="<?= $matchFinished ? '1' : '0' ?>"
     data-last-trick-seq="<?= $lastTrickSeq ?>"
     data-last-trick-team="<?= (int) ($snap['LastTrickTeam'] ?? -1) ?>"
     data-last-trick-winner="<?= $lastTrickWinnerID ?>"

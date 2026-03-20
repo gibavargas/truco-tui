@@ -8,9 +8,12 @@
   const uiState = window.__trucoBrowserUI || (window.__trucoBrowserUI = {
     lastTrickSeq: null,
     trickTimers: [],
+    autoRefreshTimer: null,
+    autoRefreshInFlight: false,
     lastFocusTarget: 'auto',
     motionReduced: motionQuery.matches,
   });
+  const AUTO_REFRESH_DELAY_MS = 850;
 
   const syncMotionPreference = () => {
     uiState.motionReduced = motionQuery.matches;
@@ -41,10 +44,8 @@
     try {
       const payload = await submitAjaxForm(form);
       if (payload && payload.viewHtml) {
-        clearTrickTimers();
-        viewRoot.innerHTML = payload.viewHtml;
-        syncUiModeButtons();
-        syncTrickPresentation();
+        replaceView(payload.viewHtml);
+        syncAutoRefresh();
         restoreFocus(focusTarget);
       } else {
         throw new Error('Empty AJAX response');
@@ -85,6 +86,7 @@
 
   syncUiModeButtons();
   syncTrickPresentation();
+  syncAutoRefresh();
   uiState.syncTrickPresentation = syncTrickPresentation;
   uiState.startTrickAnimation = startTrickAnimation;
   uiState.clearTrickTimers = clearTrickTimers;
@@ -93,6 +95,10 @@
     const method = (form.method || 'POST').toUpperCase();
     const action = form.getAttribute('action') || window.location.pathname;
     const submission = new FormData(form);
+    return submitAjaxRequest(method, action, submission);
+  }
+
+  async function submitAjaxRequest(method, action, submission) {
     submission.set('ajax', '1');
     const url = new URL(action, window.location.origin);
     url.searchParams.set('ajax', '1');
@@ -120,6 +126,68 @@
     }
 
     return payload;
+  }
+
+  function replaceView(viewHtml) {
+    clearTrickTimers();
+    viewRoot.innerHTML = viewHtml;
+    syncUiModeButtons();
+    syncTrickPresentation();
+  }
+
+  function currentGamePanel() {
+    return viewRoot.querySelector('.game-panel[data-mode]');
+  }
+
+  function shouldAutoRefresh() {
+    const gamePanel = currentGamePanel();
+    if (!gamePanel) return false;
+    if (gamePanel.dataset.mode !== 'offline_match') return false;
+    if (gamePanel.dataset.matchFinished === '1') return false;
+    if (viewRoot.querySelector('form[data-busy="1"]')) return false;
+    return true;
+  }
+
+  function clearAutoRefreshTimer() {
+    if (uiState.autoRefreshTimer !== null) {
+      window.clearTimeout(uiState.autoRefreshTimer);
+      uiState.autoRefreshTimer = null;
+    }
+  }
+
+  function syncAutoRefresh() {
+    clearAutoRefreshTimer();
+    if (!shouldAutoRefresh()) {
+      return;
+    }
+    uiState.autoRefreshTimer = window.setTimeout(() => {
+      uiState.autoRefreshTimer = null;
+      void refreshOfflineGame();
+    }, AUTO_REFRESH_DELAY_MS);
+  }
+
+  async function refreshOfflineGame() {
+    if (uiState.autoRefreshInFlight) {
+      syncAutoRefresh();
+      return;
+    }
+    if (!shouldAutoRefresh()) {
+      return;
+    }
+
+    uiState.autoRefreshInFlight = true;
+    try {
+      const payload = await submitAjaxRequest('POST', window.location.pathname, new FormData());
+      if (payload && payload.viewHtml) {
+        replaceView(payload.viewHtml);
+      }
+    } catch (error) {
+      showRuntimeNotice(error, true);
+      console.error('Offline auto-refresh failed', error);
+    } finally {
+      uiState.autoRefreshInFlight = false;
+      syncAutoRefresh();
+    }
   }
 
   function applyUiMode(mode) {
