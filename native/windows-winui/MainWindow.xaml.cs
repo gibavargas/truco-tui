@@ -1,7 +1,9 @@
+using System;
+using Microsoft.UI;
+using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
-using Microsoft.UI.Xaml.Input;
-using Microsoft.UI.Xaml.Media.Animation;
+using WinRT.Interop;
 
 namespace TrucoWinUI;
 
@@ -9,22 +11,24 @@ public sealed partial class MainWindow : Window
 {
     public MainWindow()
     {
-        this.InitializeComponent();
-    }
-    
-    private void Card_PointerEntered(object sender, PointerRoutedEventArgs e)
-    {
-        if (sender is FrameworkElement element && element.Parent is FrameworkElement parentBtn && parentBtn.Resources.TryGetValue("PointerEnteredStoryboard", out var res) && res is Storyboard sb)
-        {
-            sb.Begin();
-        }
+        InitializeComponent();
+        Closed += OnClosed;
+        ResizeWindow(1400, 900);
     }
 
-    private void Card_PointerExited(object sender, PointerRoutedEventArgs e)
+    private void ResizeWindow(int width, int height)
     {
-        if (sender is FrameworkElement element && element.Parent is FrameworkElement parentBtn && parentBtn.Resources.TryGetValue("PointerExitedStoryboard", out var res) && res is Storyboard sb)
+        IntPtr hwnd = WindowNative.GetWindowHandle(this);
+        WindowId windowId = Microsoft.UI.Win32Interop.GetWindowIdFromWindow(hwnd);
+        AppWindow appWindow = AppWindow.GetFromWindowId(windowId);
+        appWindow.Resize(new Windows.Graphics.SizeInt32(width, height));
+    }
+
+    private void OnClosed(object sender, WindowEventArgs args)
+    {
+        if (Content is FrameworkElement element && element.DataContext is IDisposable disposable)
         {
-            sb.Begin();
+            disposable.Dispose();
         }
     }
 }

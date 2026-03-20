@@ -22,6 +22,16 @@ go.work
 # Browser edition build output
 browser-edition/dist/
 
+# .NET / WinUI
+.dotnet-home/
+.nuget/
+.cache/
+native/windows-winui/bin/
+native/windows-winui/obj/
+native/windows-winui/.vs/
+native/windows-winui/truco-core-ffi.h
+*.log
+
 # OS
 .DS_Store
 Thumbs.db
