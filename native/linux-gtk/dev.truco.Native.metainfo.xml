@@ -6,10 +6,16 @@
   <metadata_license>MIT</metadata_license>
   <project_license>MIT</project_license>
   <developer_name>Projeto de TUI</developer_name>
+  <icon type="stock">dev.truco.Native</icon>
   <description>
     <p>Truco Paulista is a Linux-native libadwaita client backed by the shared Go runtime used across the project.</p>
     <p>It supports offline matches, online lobbies, chat, reconnection-aware sessions, and the full Truco Paulista gameplay loop.</p>
   </description>
   <launchable type="desktop-id">dev.truco.Native.desktop</launchable>
+  <categories>
+    <category>Game</category>
+    <category>CardGame</category>
+    <category>GTK</category>
+  </categories>
   <content_rating type="oars-1.1"/>
 </component>
