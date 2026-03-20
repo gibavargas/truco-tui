@@ -18,6 +18,7 @@ $ui = $bundle['ui'] ?? [];
 $slotStates = $ui['lobby_slots'] ?? [];
 $actions = $ui['actions'] ?? [];
 $locale = $_SESSION['locale'] ?? 'pt-BR';
+$runtimeStateValid = (bool) ($_SESSION['runtime_state_valid'] ?? true);
 
 $playersByID = [];
 $seatByID = [];
@@ -70,6 +71,13 @@ $canTruco = (bool) ($actions['can_ask_or_raise'] ?? false);
 $canAccept = (bool) ($actions['can_accept'] ?? false);
 $canRefuse = (bool) ($actions['can_refuse'] ?? false);
 
+if (!$runtimeStateValid) {
+    $canPlayCard = false;
+    $canTruco = false;
+    $canAccept = false;
+    $canRefuse = false;
+}
+
 $stakeSteps = [1, 3, 6, 9, 12];
 $nextStake = $stake;
 $nextRaisePreview = $pendingTo ?: $stake;
@@ -96,16 +104,26 @@ if ($matchFinished) {
 
 if ($pendingFor !== -1 && $pendingFor === $myTeam) {
     $heroText = strtoupper(raiseLabel($pendingTo ?: 3, $locale));
-    $heroSubtext = tr('game_center_pending_you', raiseLabel($pendingTo ?: 3, $locale));
+    $heroSubtext = $raiseRequester === $myID
+        ? tr('game_response_called_by_you', raiseLabel($nextRaisePreview, $locale))
+        : tr('game_response_called_by', $raiseRequesterName, raiseLabel($nextRaisePreview, $locale));
 } elseif ($pendingFor !== -1) {
     $heroText = strtoupper(raiseLabel($pendingTo ?: 3, $locale));
-    $heroSubtext = tr('game_center_pending_other', $raiseRequesterName, raiseLabel($pendingTo ?: 3, $locale));
+    $heroSubtext = $raiseRequester === $myID
+        ? tr('game_response_called_by_you', raiseLabel($nextRaisePreview, $locale))
+        : tr('game_response_called_by', $raiseRequesterName, raiseLabel($nextRaisePreview, $locale));
 } elseif ($turnPlayer === $myID) {
     $heroText = tr('game_hand_ready');
     $heroSubtext = tr('game_center_turn_you');
 } else {
     $heroText = tr('game_hand_wait');
     $heroSubtext = tr('game_center_turn_other', $turnPlayerName);
+}
+
+if (!$runtimeStateValid) {
+    $statusText = tr('game_runtime_stale_copy');
+    $heroText = tr('game_runtime_stale_title');
+    $heroSubtext = tr('game_runtime_stale_copy');
 }
 
 $lastTrickText = '';
@@ -121,8 +139,8 @@ if (!empty($hand['Vira'])) {
 }
 $manilhaLabel = htmlspecialchars((string) ($hand['Manilha'] ?? '-'));
 
-$showTurnActions = !$matchFinished && $turnPlayer === $myID && !$canAccept;
-$showResponseActions = !$matchFinished && $canAccept;
+$showTurnActions = $runtimeStateValid && !$matchFinished && $turnPlayer === $myID && !$canAccept;
+$showResponseActions = $runtimeStateValid && !$matchFinished && $canAccept;
 $showLastTrickMonte = !empty($lastTrickCards) && $lastTrickWinnerID >= 0;
 $boardState = 'waiting-turn';
 if ($matchFinished) {
@@ -133,6 +151,9 @@ if ($matchFinished) {
     $boardState = 'player-turn';
 } elseif ($lastTrickRound > 0 && empty($roundCards)) {
     $boardState = 'trick-resolved';
+}
+if (!$runtimeStateValid) {
+    $boardState .= ' state-runtime-stale';
 }
 
 $hierarchyText = $locale === 'en-US'
@@ -148,9 +169,9 @@ $hierarchyText = $locale === 'en-US'
         </div>
 
         <div class="game-topline-actions">
-            <div class="ui-mode-toggle" role="group" aria-label="UI mode">
-                <button type="button" class="btn btn-neutral btn-mini ui-mode-btn" data-ui-mode="wireframe">Esquema</button>
-                <button type="button" class="btn btn-neutral btn-mini ui-mode-btn" data-ui-mode="polished">Mesa</button>
+            <div class="ui-mode-toggle" role="group" aria-label="<?= tr('ui_mode_label') ?>">
+                <button type="button" class="btn btn-neutral btn-mini ui-mode-btn" data-ui-mode="wireframe"><?= tr('ui_mode_wireframe') ?></button>
+                <button type="button" class="btn btn-neutral btn-mini ui-mode-btn" data-ui-mode="polished"><?= tr('ui_mode_polished') ?></button>
             </div>
             <?php if ($isOnline): ?>
                 <form method="post" action="index.php" data-ajax="true">
@@ -178,13 +199,13 @@ $hierarchyText = $locale === 'en-US'
         <section class="hud-center">
             <div class="hud-round-row">
                 <span class="hud-chip"><?= tr('game_round_label', $roundNumber) ?></span>
-                <span class="hud-chip stake-chip">Vale <?= $stake ?></span>
+                <span class="hud-chip stake-chip"><?= tr('game_stake_value', $stake) ?></span>
                 <?php if ($pendingFor !== -1): ?>
                     <span class="hud-chip hot"><?= strtoupper(raiseLabel($pendingTo ?: 3, $locale)) ?></span>
                 <?php endif; ?>
             </div>
 
-            <div class="hud-stake-track" aria-label="Truco escalation">
+            <div class="hud-stake-track" aria-label="<?= tr('game_stake_ladder_label') ?>">
                 <?php foreach ($stakeSteps as $step): ?>
                     <span class="track-step <?= $step === $stake ? 'current' : ($step < $stake ? 'past' : ($step === $pendingTo ? 'pending' : '')) ?>">
                         <span class="track-dot"></span>
@@ -215,7 +236,6 @@ $hierarchyText = $locale === 'en-US'
 
     <div class="board-stage players-<?= $numPlayers ?> board-zone board-zone-table">
         <aside class="table-legend">
-            <div class="legend-chip legend-chip-primary"><?= htmlspecialchars($hierarchyText) ?></div>
             <div class="legend-grid">
                 <div class="legend-card">
                     <span class="info-kicker"><?= tr('vira') ?></span>
@@ -229,7 +249,7 @@ $hierarchyText = $locale === 'en-US'
             </div>
         </aside>
 
-        <div class="table-callout <?= $showResponseActions ? 'hot' : '' ?>">
+        <div class="table-callout <?= $showResponseActions ? 'hot' : '' ?>" data-focus-target="board-callout" tabindex="-1" role="status" aria-live="polite" aria-atomic="true">
             <span class="section-kicker"><?= tr('status_title') ?></span>
             <strong><?= htmlspecialchars($heroText) ?></strong>
             <span><?= htmlspecialchars($heroSubtext) ?></span>
@@ -254,7 +274,7 @@ $hierarchyText = $locale === 'en-US'
                     <div class="seat-headline">
                         <strong><?= htmlspecialchars((string) ($p['Name'] ?? '?')) ?></strong>
                         <?php if ($isTurn): ?>
-                            <span class="seat-turn-pill">VEZ</span>
+                            <span class="seat-turn-pill"><?= tr('game_turn_badge') ?></span>
                         <?php endif; ?>
                     </div>
                     <span><?= $seatRole ?><?= !empty($p['CPU']) ? ' · ' . tr('cpu_tag') : '' ?></span>
@@ -266,13 +286,13 @@ $hierarchyText = $locale === 'en-US'
                         </div>
                     <?php endif; ?>
                     <?php if (!empty($playerTrickPiles)): ?>
-                        <div class="board-seat-monte" aria-label="Montes ganhos pelo jogador">
-                            <span class="board-seat-monte-label">MONTE</span>
+                        <div class="board-seat-monte" aria-label="<?= tr('game_monte_label') ?>">
+                            <span class="board-seat-monte-label"><?= tr('game_monte_label') ?></span>
                             <div class="board-seat-monte-stack board-seat-monte-stack-multi" aria-hidden="true">
                                 <?php foreach ($playerTrickPiles as $pileIndex => $pile): ?>
                                     <?php $pileCards = $pile['Cards'] ?? []; ?>
                                     <div class="board-seat-monte-pile">
-                                        <span class="board-seat-monte-round">Vaza <?= htmlspecialchars((string) ((int) ($pile['Round'] ?? ($pileIndex + 1)))) ?></span>
+                                        <span class="board-seat-monte-round"><?= htmlspecialchars(tr('game_trick_round_label', (int) ($pile['Round'] ?? ($pileIndex + 1)))) ?></span>
                                         <div class="board-seat-monte-pile-stack">
                                             <?php foreach (array_slice($pileCards, 0, 4) as $idx => $_card): ?>
                                                 <span class="tiny-back board-seat-monte-back board-seat-monte-back-<?= $idx ?>"></span>
@@ -336,7 +356,7 @@ $hierarchyText = $locale === 'en-US'
     </div>
 
     <div class="player-dock board-zone board-zone-hand">
-        <section class="player-hand">
+        <section class="player-hand" data-focus-target="player-hand" tabindex="-1">
             <div class="player-dock-head">
                 <div>
                     <span class="section-kicker"><?= tr('hand_title') ?></span>
@@ -365,16 +385,17 @@ $hierarchyText = $locale === 'en-US'
             </div>
         </section>
 
-        <section class="player-actions">
+        <section class="player-actions" data-focus-target="player-actions" tabindex="-1">
             <?php if ($showResponseActions): ?>
                 <div class="player-actions-row response-row">
                     <div class="player-actions-copy">
                         <span class="section-kicker"><?= tr('game_action_title_response') ?></span>
                         <strong><?= htmlspecialchars($statusText) ?></strong>
+                        <span><?= htmlspecialchars($heroSubtext) ?></span>
                     </div>
                     <form method="post" action="index.php" data-ajax="true" class="action-form action-form-truco">
                         <input type="hidden" name="action" value="truco">
-                        <button type="submit" class="action-btn action-btn-truco" <?= $canTruco ? '' : 'disabled' ?>>
+                        <button type="submit" class="action-btn action-btn-truco <?= $canTruco ? 'armed' : '' ?>" <?= $canTruco ? '' : 'disabled' ?>>
                             <strong><?= strtoupper(tr('btn_raise')) ?></strong>
                             <span class="action-sub"><?= htmlspecialchars(tr('game_action_raise_sub', raiseLabel($nextRaisePreview, $locale))) ?></span>
                         </button>
@@ -403,7 +424,7 @@ $hierarchyText = $locale === 'en-US'
                     </div>
                     <form method="post" action="index.php" data-ajax="true" class="action-form action-form-truco">
                         <input type="hidden" name="action" value="truco">
-                        <button type="submit" class="action-btn action-btn-truco" <?= $canTruco ? '' : 'disabled' ?>>
+                        <button type="submit" class="action-btn action-btn-truco <?= $canTruco ? 'armed' : '' ?>" <?= $canTruco ? '' : 'disabled' ?>>
                             <strong><?= strtoupper(tr('btn_truco')) ?></strong>
                             <span class="action-sub"><?= htmlspecialchars(tr('game_action_call_sub', raiseLabel($nextStake, $locale))) ?></span>
                         </button>
@@ -421,7 +442,7 @@ $hierarchyText = $locale === 'en-US'
         </section>
     </div>
 
-    <div class="board-footer board-zone board-zone-footer">
+    <div class="board-footer board-zone board-zone-footer" data-focus-target="board-footer" tabindex="-1">
         <div class="board-logline">
             <span class="section-kicker"><?= tr('log_title') ?></span>
             <strong><?= htmlspecialchars($latestLog) ?></strong>
@@ -445,7 +466,7 @@ $hierarchyText = $locale === 'en-US'
 
     <?php if ($isOnline): ?>
         <details class="table-sidecar">
-            <summary>Online mesa</summary>
+            <summary><?= tr('game_table_online') ?></summary>
 
             <div class="table-ops sidecar-grid">
                 <section class="side-block">
