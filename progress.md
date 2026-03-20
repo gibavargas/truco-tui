@@ -11,6 +11,23 @@ This file tracks the latest documentation-aligned project status captured in the
 - Added clearer ally/enemy encoding, trick progress, opening-seat emphasis, pending truco pressure states, and stronger action messaging for Truco / Aceitar / Correr / Aumentar.
 - Updated the PHP i18n strings to support the new game presentation in both Portuguese and English.
 
+## Stitch-Inspired Mesa Pass
+
+- Pulled the gameplay mesa closer to the Stitch prototype by compacting the scorecard, surfacing the deck/vira pair at the top of the table, and making the bottom action dock feel closer to a live card-room control strip.
+- Kept the backend contract unchanged: the same action names, lobby flow, and runtime refresh behavior still drive the browser edition.
+- Added a dedicated deck label in i18n so the mesa can present the face-down baralho without inventing a new backend field.
+
+## Native Parity Pass
+
+- Brought the native macOS connection/diagnostic block into the browser game sidecar so online play now shows connection status, backlog, role, and recent event feed in the same place the mac client surfaces them.
+- Kept the lobby and game PHP flows aligned with the same runtime bundle fields the Swift client already uses, which keeps the feature gap mainly in animation and native windowing rather than data model support.
+
+## Full Native-Parity Browser Pass
+
+- Added a browser-side trick-end overlay driven by `LastTrickSeq`, `LastTrickWinner`, `LastTrickTeam`, and `LastTrickTie` so the web edition can mirror the native result cue without changing the backend payload.
+- Gave the online sidecar a stronger table-first hierarchy with separate diagnostics, pulse, and controls blocks so the operational data reads like part of the match, not a separate panel.
+- Kept reduced-motion and AJAX focus restoration in the existing browser flow so the new feedback system does not interfere with input continuity or accessibility.
+
 ## Latest Validation
 
 - Ran the official Playwright-based validation client against the local browser edition after the redesign.

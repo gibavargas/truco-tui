@@ -5,6 +5,23 @@
   viewRoot.tabIndex = -1;
 
   const motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
+  const uiState = window.__trucoBrowserUI || (window.__trucoBrowserUI = {
+    lastTrickSeq: null,
+    trickTimers: [],
+    lastFocusTarget: 'auto',
+    motionReduced: motionQuery.matches,
+  });
+
+  const syncMotionPreference = () => {
+    uiState.motionReduced = motionQuery.matches;
+  };
+
+  syncMotionPreference();
+  if (typeof motionQuery.addEventListener === 'function') {
+    motionQuery.addEventListener('change', syncMotionPreference);
+  } else if (typeof motionQuery.addListener === 'function') {
+    motionQuery.addListener(syncMotionPreference);
+  }
 
   applyUiMode(localStorage.getItem(UI_MODE_KEY) || 'polished');
 
@@ -18,13 +35,16 @@
     }
     const submitter = event.submitter || form.querySelector('button[type="submit"]');
     const focusTarget = inferFocusTarget(form);
+    uiState.lastFocusTarget = focusTarget;
     setBusyState(form, submitter, true);
 
     try {
       const payload = await submitAjaxForm(form);
       if (payload && payload.viewHtml) {
+        clearTrickTimers();
         viewRoot.innerHTML = payload.viewHtml;
         syncUiModeButtons();
+        syncTrickPresentation();
         restoreFocus(focusTarget);
       } else {
         throw new Error('Empty AJAX response');
@@ -64,6 +84,10 @@
   });
 
   syncUiModeButtons();
+  syncTrickPresentation();
+  uiState.syncTrickPresentation = syncTrickPresentation;
+  uiState.startTrickAnimation = startTrickAnimation;
+  uiState.clearTrickTimers = clearTrickTimers;
 
   async function submitAjaxForm(form) {
     const method = (form.method || 'POST').toUpperCase();
@@ -120,6 +144,21 @@
     }
   }
 
+  function clearTrickTimers() {
+    while (uiState.trickTimers.length > 0) {
+      window.clearTimeout(uiState.trickTimers.pop());
+    }
+  }
+
+  function queueTrickTimer(fn, delay) {
+    const timerId = window.setTimeout(() => {
+      uiState.trickTimers = uiState.trickTimers.filter((id) => id !== timerId);
+      fn();
+    }, delay);
+    uiState.trickTimers.push(timerId);
+    return timerId;
+  }
+
   function inferFocusTarget(form) {
     const actionField = form.querySelector('input[name="action"]');
     const action = actionField ? actionField.value : '';
@@ -166,6 +205,117 @@
         focusTarget.focus({ preventScroll: false });
       }
     });
+  }
+
+  function syncTrickPresentation() {
+    const gamePanel = viewRoot.querySelector('.game-panel[data-last-trick-seq]');
+    if (!gamePanel) {
+      clearTrickTimers();
+      uiState.lastTrickSeq = null;
+      return;
+    }
+
+    const nextSeq = parseInt(gamePanel.dataset.lastTrickSeq || '0', 10) || 0;
+    if (uiState.lastTrickSeq === null) {
+      uiState.lastTrickSeq = nextSeq;
+      return;
+    }
+
+    if (nextSeq <= 0) {
+      uiState.lastTrickSeq = nextSeq;
+      return;
+    }
+
+    if (nextSeq < uiState.lastTrickSeq) {
+      clearTrickTimers();
+      uiState.lastTrickSeq = nextSeq;
+      return;
+    }
+
+    if (nextSeq === uiState.lastTrickSeq) {
+      return;
+    }
+
+    clearTrickTimers();
+    uiState.lastTrickSeq = nextSeq;
+
+    queueTrickTimer(() => {
+      startTrickAnimation(gamePanel);
+    }, 16);
+  }
+
+  function startTrickAnimation(gamePanel) {
+    const overlay = gamePanel.querySelector('[data-trick-overlay]');
+    const stage = gamePanel.querySelector('.board-stage');
+    if (!overlay || !stage) return;
+
+    const isTie = gamePanel.dataset.lastTrickTie === '1';
+    const winnerTeam = parseInt(gamePanel.dataset.lastTrickTeam || '-1', 10);
+    const winnerId = parseInt(gamePanel.dataset.lastTrickWinner || '-1', 10);
+    const localPlayerId = parseInt(gamePanel.dataset.localPlayerId || '-1', 10);
+    const roundLabel = gamePanel.dataset.lastTrickRoundLabel || '';
+    const deckTarget = { x: 0, y: 0 };
+    const localSeat = gamePanel.querySelector(`.board-seat[data-player-id="${localPlayerId}"]`);
+    const localTeam = localSeat ? parseInt(localSeat.dataset.team || '-1', 10) : -1;
+    const result = isTie ? 'tie' : (localTeam >= 0 && winnerTeam === localTeam ? 'win' : 'loss');
+
+    overlay.classList.remove('is-visible', 'is-traveling', 'is-reduced', 'is-win', 'is-loss', 'is-tie');
+    overlay.setAttribute('aria-hidden', 'true');
+    overlay.style.setProperty('--trick-target-x', '0px');
+    overlay.style.setProperty('--trick-target-y', '0px');
+
+    const kicker = overlay.querySelector('[data-trick-overlay-kicker]');
+    const title = overlay.querySelector('[data-trick-overlay-title]');
+    const caption = overlay.querySelector('[data-trick-overlay-caption]');
+    if (kicker) {
+      kicker.textContent = roundLabel;
+    }
+    if (title) {
+      if (result === 'win') {
+        title.textContent = overlay.dataset.trickToastWin || '';
+      } else if (result === 'loss') {
+        title.textContent = overlay.dataset.trickToastLoss || '';
+      } else {
+        title.textContent = overlay.dataset.trickToastTie || '';
+      }
+    }
+    if (caption) {
+      caption.textContent = overlay.dataset.trickToastCaption || '';
+    }
+
+    if (!isTie) {
+      const targetSeat = winnerId >= 0
+        ? gamePanel.querySelector(`.board-seat[data-player-id="${winnerId}"]`)
+        : null;
+      const seatRect = targetSeat ? targetSeat.getBoundingClientRect() : null;
+      const stageRect = stage.getBoundingClientRect();
+      if (seatRect && stageRect.width > 0 && stageRect.height > 0) {
+        deckTarget.x = Math.round((seatRect.left + seatRect.width / 2) - (stageRect.left + stageRect.width / 2));
+        deckTarget.y = Math.round((seatRect.top + seatRect.height / 2) - (stageRect.top + stageRect.height / 2));
+      }
+    }
+    overlay.classList.add(`is-${result}`);
+    if (uiState.motionReduced) {
+      overlay.classList.add('is-reduced');
+    }
+
+    queueTrickTimer(() => {
+      overlay.setAttribute('aria-hidden', 'false');
+      overlay.classList.add('is-visible');
+    }, 150);
+
+    if (!uiState.motionReduced && !isTie) {
+      queueTrickTimer(() => {
+        overlay.style.setProperty('--trick-target-x', `${deckTarget.x}px`);
+        overlay.style.setProperty('--trick-target-y', `${deckTarget.y}px`);
+        overlay.classList.add('is-traveling');
+      }, 900);
+    }
+
+    queueTrickTimer(() => {
+      overlay.classList.remove('is-visible', 'is-traveling');
+      overlay.setAttribute('aria-hidden', 'true');
+    }, uiState.motionReduced ? 1200 : 2150);
   }
 
   function showRuntimeNotice(error, stale) {
