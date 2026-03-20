@@ -1,4 +1,5 @@
 <?php /** Setup page — New match form */ ?>
+<?php $defaultPlayerName = tr('default_player_name'); ?>
 <section class="panel setup-panel">
     <div class="setup-stage">
         <div class="setup-copy">
@@ -35,7 +36,7 @@
                     <div>
                         <label for="player-name"><?= tr('setup_name') ?></label>
                         <input id="player-name" name="name" class="field" type="text"
-                            value="<?= htmlspecialchars($_SESSION['player_name'] ?? 'Você') ?>" autocomplete="off">
+                            value="<?= htmlspecialchars($_SESSION['player_name'] ?? $defaultPlayerName) ?>" autocomplete="off">
                     </div>
                     <div>
                         <label for="num-players"><?= tr('setup_players') ?></label>
@@ -66,7 +67,7 @@
                     </div>
                     <form method="post" action="index.php" data-ajax="true">
                         <input type="hidden" name="action" value="startOnlineHost">
-                        <input type="hidden" name="name" value="<?= htmlspecialchars($_SESSION['player_name'] ?? 'Você') ?>">
+                        <input type="hidden" name="name" value="<?= htmlspecialchars($_SESSION['player_name'] ?? $defaultPlayerName) ?>">
                         <div class="setup-grid host-grid">
                             <div>
                                 <label for="host-num-players"><?= tr('setup_online_players') ?></label>
@@ -93,7 +94,7 @@
                     </div>
                     <form method="post" action="index.php" data-ajax="true">
                         <input type="hidden" name="action" value="joinOnline">
-                        <input type="hidden" name="name" value="<?= htmlspecialchars($_SESSION['player_name'] ?? 'Você') ?>">
+                        <input type="hidden" name="name" value="<?= htmlspecialchars($_SESSION['player_name'] ?? $defaultPlayerName) ?>">
                         <div class="setup-grid">
                             <div>
                                 <label for="invite-key"><?= tr('setup_online_key') ?></label>

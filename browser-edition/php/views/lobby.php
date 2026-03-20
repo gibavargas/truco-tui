@@ -48,7 +48,7 @@ $roleLabel = trim((string) ($session['role'] ?? ''));
         <article class="lobby-block lobby-tableau">
             <div class="block-head">
                 <h3><?= tr('lobby_slots_title') ?></h3>
-                <span class="table-tag"><?= count($slots) ?> lugares</span>
+                <span class="table-tag"><?= tr('lobby_slots_count', count($slots)) ?></span>
             </div>
             <div class="lobby-slots">
                 <?php foreach ($slots as $idx => $slotName): ?>
@@ -115,7 +115,7 @@ $roleLabel = trim((string) ($session['role'] ?? ''));
 
                 <section class="side-block side-log">
                     <h3><?= tr('lobby_events_title') ?></h3>
-                    <pre id="lobby-events" class="event-feed"><?php
+                    <pre id="lobby-events" class="event-feed" data-focus-target="lobby-events" tabindex="-1" role="log" aria-live="polite" aria-atomic="false"><?php
                         if (!$events) {
                             echo htmlspecialchars(tr('lobby_events_empty'));
                         } else {

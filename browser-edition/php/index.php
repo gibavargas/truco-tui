@@ -26,6 +26,8 @@ function storeBrowserState(array $result): void
         $_SESSION['runtime_bundle'] = $bundle;
         $_SESSION['online_session'] = $result['session'] ?? [];
     }
+    $_SESSION['runtime_state_valid'] = true;
+    unset($_SESSION['runtime_error']);
     if (!empty($result['events']) && is_array($result['events'])) {
         $trail = $_SESSION['runtime_events'] ?? [];
         foreach ($result['events'] as $ev) {
@@ -35,10 +37,17 @@ function storeBrowserState(array $result): void
     }
 }
 
+function markBrowserRuntimeError(string $message, bool $stale = false): void
+{
+    $_SESSION['runtime_error'] = trim($message);
+    $_SESSION['runtime_state_valid'] = !$stale;
+}
+
 function refreshRuntimeState(TrucoApiClient $api, string $sid, bool $pullEvents = false): ?array
 {
     $res = $api->call('snapshot', $sid);
     if (empty($res['ok'])) {
+        markBrowserRuntimeError((string) ($res['error'] ?? tr('game_runtime_stale_copy')), true);
         return null;
     }
     storeBrowserState($res);
@@ -61,6 +70,28 @@ function currentViewFromBundle(?array $bundle): string
         return 'game';
     }
     return 'setup';
+}
+
+function renderRuntimeNotice(): string
+{
+    $message = trim((string) ($_SESSION['runtime_error'] ?? ''));
+    $stateValid = $_SESSION['runtime_state_valid'] ?? true;
+
+    $isStale = !$stateValid;
+    if ($message === '' && $stateValid) {
+        return '<div id="runtime-notice" class="runtime-banner" data-focus-target="runtime-banner" tabindex="-1" role="status" aria-live="polite" aria-atomic="true"></div>';
+    }
+
+    $title = $isStale ? tr('game_runtime_stale_title') : tr('connection_error');
+    if ($message === '') {
+        $message = $isStale ? tr('game_runtime_stale_copy') : tr('connection_error');
+    }
+
+    $class = $isStale ? 'runtime-banner stale' : 'runtime-banner error';
+    return '<div id="runtime-notice" class="' . $class . '" data-focus-target="runtime-banner" tabindex="-1" role="status" aria-live="polite" aria-atomic="true">'
+        . '<strong>' . htmlspecialchars($title) . '</strong>'
+        . '<span>' . htmlspecialchars($message) . '</span>'
+        . '</div>';
 }
 
 function formatEventLine(array $ev): string
@@ -102,11 +133,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $res = $api->call('setLocale', $sid, ['locale' => $_SESSION['locale']]);
             if (!empty($res['ok'])) {
                 storeBrowserState($res);
+            } else {
+                markBrowserRuntimeError((string) ($res['error'] ?? tr('connection_error')));
             }
             break;
 
         case 'startGame':
-            $_SESSION['player_name'] = trim($_POST['name'] ?? 'Você');
+            $_SESSION['player_name'] = trim($_POST['name'] ?? tr('default_player_name'));
             $res = $api->call('startGame', $sid, [
                 'numPlayers' => (int) ($_POST['numPlayers'] ?? 2),
                 'name' => $_SESSION['player_name'],
@@ -115,6 +148,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 storeBrowserState($res);
             } else {
                 $errorMsg = $res['error'] ?? 'Failed to start game';
+                markBrowserRuntimeError($errorMsg);
             }
             break;
 
@@ -132,6 +166,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 refreshRuntimeState($api, $sid, true);
             } else {
                 $errorMsg = $res['error'] ?? 'Action failed';
+                markBrowserRuntimeError($errorMsg);
             }
             break;
 
@@ -143,12 +178,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 unset($_SESSION['runtime_events']);
             } else {
                 $errorMsg = $res['error'] ?? 'Failed to close session';
+                markBrowserRuntimeError($errorMsg);
             }
             break;
 
         case 'startOnlineHost':
             $res = $api->call('startOnlineHost', $sid, [
-                'name' => trim($_POST['name'] ?? 'Host'),
+                'name' => trim($_POST['name'] ?? tr('default_player_name')),
                 'numPlayers' => (int) ($_POST['numPlayers'] ?? 2),
                 'relay_url' => trim($_POST['relay_url'] ?? ''),
             ]);
@@ -156,12 +192,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 storeBrowserState($res);
             } else {
                 $errorMsg = $res['error'] ?? 'Failed to create lobby';
+                markBrowserRuntimeError($errorMsg);
             }
             break;
 
         case 'joinOnline':
             $res = $api->call('joinOnline', $sid, [
-                'name' => trim($_POST['name'] ?? 'Player'),
+                'name' => trim($_POST['name'] ?? tr('default_player_name')),
                 'key' => trim($_POST['key'] ?? ''),
                 'role' => $_POST['role'] ?? 'auto',
             ]);
@@ -169,6 +206,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 storeBrowserState($res);
             } else {
                 $errorMsg = $res['error'] ?? 'Failed to join lobby';
+                markBrowserRuntimeError($errorMsg);
             }
             break;
 
@@ -179,6 +217,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 refreshRuntimeState($api, $sid, true);
             } else {
                 $errorMsg = $res['error'] ?? 'Failed to start match';
+                markBrowserRuntimeError($errorMsg);
             }
             break;
 
@@ -195,6 +234,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     storeBrowserState($res);
                 } else {
                     $errorMsg = $res['error'] ?? 'Failed to send chat';
+                    markBrowserRuntimeError($errorMsg);
                 }
             }
             refreshRuntimeState($api, $sid, true);
@@ -206,6 +246,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 storeBrowserState($res);
             } else {
                 $errorMsg = $res['error'] ?? 'Failed to vote host';
+                markBrowserRuntimeError($errorMsg);
             }
             refreshRuntimeState($api, $sid, true);
             break;
@@ -216,6 +257,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 storeBrowserState($res);
             } else {
                 $errorMsg = $res['error'] ?? 'Failed to request replacement invite';
+                markBrowserRuntimeError($errorMsg);
             }
             refreshRuntimeState($api, $sid, true);
             break;
@@ -232,15 +274,13 @@ $view = currentViewFromBundle($bundle);
 $snap = is_array($bundle['match'] ?? null) ? $bundle['match'] : null;
 
 ob_start();
+echo renderRuntimeNotice();
 if ($view === 'game' && $snap !== null) {
     include __DIR__ . '/views/game.php';
 } elseif ($view === 'lobby') {
     include __DIR__ . '/views/lobby.php';
 } else {
     include __DIR__ . '/views/setup.php';
-}
-if ($errorMsg) {
-    echo '<div class="error-log" style="margin-top:12px; padding:10px;">' . htmlspecialchars($errorMsg) . '</div>';
 }
 $viewHtml = ob_get_clean();
 
@@ -266,6 +306,10 @@ $langAttr = ($locale === 'en-US') ? 'en' : 'pt-BR';
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <title><?= tr('title_main') ?></title>
     <meta name="description" content="Truco Paulista no navegador, com mesa offline e online em uma direção visual de botequim refinado.">
+    <link rel="icon" type="image/svg+xml" href="favicon.svg">
+    <link rel="icon" type="image/png" sizes="512x512" href="favicon.png">
+    <link rel="icon" href="favicon.ico" sizes="any">
+    <link rel="apple-touch-icon" href="apple-touch-icon.png">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700;800&family=Cormorant+Garamond:wght@500;600;700&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
