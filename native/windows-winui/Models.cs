@@ -351,7 +351,6 @@ public sealed class TableSeatViewModel
     public int HandCount { get; set; }
     public List<HandCardViewModel> HandCards { get; set; } = [];
     public CardState? PlayedCard { get; set; }
-    public HandCardViewModel? PlayedCardViewModel { get; set; }
     public string Summary => IsVisible ? $"{Name}  {TeamLabel}" : string.Empty;
     public string CpuTag => IsProvisionalCpu ? "CPU temporaria" : IsCpu ? "CPU" : string.Empty;
     public string PlayedCardLabel => PlayedCard?.ShortLabel ?? "--";
@@ -364,6 +363,8 @@ public sealed class HandCardViewModel
     public bool IsFaceUp { get; set; }
     public double Rotation { get; set; }
     public double Scale { get; set; } = 1.0;
+    public double TranslateX { get; set; }
+    public double TranslateY { get; set; }
     public Microsoft.UI.Xaml.Visibility CardVisibility => Card is null ? Microsoft.UI.Xaml.Visibility.Collapsed : Microsoft.UI.Xaml.Visibility.Visible;
 }
 

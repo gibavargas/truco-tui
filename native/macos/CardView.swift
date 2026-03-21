@@ -36,7 +36,7 @@ struct CardView: View {
             VStack {
                 HStack {
                     VStack(spacing: -4) {
-                        Text(card.Rank)
+                        Text(card.rank)
                             .font(.system(size: 18, weight: .bold, design: .rounded))
                         Text(card.suitSymbol)
                             .font(.system(size: 16))
@@ -57,7 +57,7 @@ struct CardView: View {
                 HStack {
                     Spacer()
                     VStack(spacing: -4) {
-                        Text(card.Rank)
+                        Text(card.rank)
                             .font(.system(size: 18, weight: .bold, design: .rounded))
                         Text(card.suitSymbol)
                             .font(.system(size: 16))
