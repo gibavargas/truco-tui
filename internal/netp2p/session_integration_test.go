@@ -289,7 +289,6 @@ func TestJoinSessionFallsBackToPreviousProtocolVersion(t *testing.T) {
 				}
 				seen <- next.ProtocolVersion
 				close(handled)
-				return
 			}(conn)
 		}
 	}()
