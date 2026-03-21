@@ -1,19 +1,17 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net8.0-windows10.0.22621.0</TargetFramework>
-    <TargetPlatformMinVersion>10.0.22621.0</TargetPlatformMinVersion>
+    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+    <TargetPlatformMinVersion>10.0.19041.0</TargetPlatformMinVersion>
+    <Platforms>x64</Platforms>
+    <PlatformTarget>x64</PlatformTarget>
     <UseWinUI>true</UseWinUI>
-    <Nullable>enable</Nullable>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <EnableMsixTooling>false</EnableMsixTooling>
     <WindowsPackageType>None</WindowsPackageType>
-    <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
-    <PublishSingleFile>true</PublishSingleFile>
-    <SelfContained>true</SelfContained>
-    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
-    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
-    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <Nullable>enable</Nullable>
+    <NativeRuntimeDir Condition="'$(NativeRuntimeDir)' == '' and Exists('C:\msys64\mingw64\bin')">C:\msys64\mingw64\bin</NativeRuntimeDir>
+    <AppxGeneratePriEnabled>false</AppxGeneratePriEnabled>
+    <EnableDefaultWindowsAppSdkPRIResourceItems>false</EnableDefaultWindowsAppSdkPRIResourceItems>
+    <IncludeProjectPriFile>false</IncludeProjectPriFile>
   </PropertyGroup>
 
   <ItemGroup>
@@ -22,9 +20,20 @@
   </ItemGroup>
 
   <ItemGroup>
-    <None Include="..\..\bin\truco-core-ffi.dll" Condition="Exists('..\..\bin\truco-core-ffi.dll')">
+    <None Include="truco-core-ffi.dll" Condition="Exists('truco-core-ffi.dll')">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
-    <EmbeddedResource Include="..\..\bin\truco-core-ffi.dll" Condition="Exists('..\..\bin\truco-core-ffi.dll')" />
+    <None Include="$(NativeRuntimeDir)\libgcc_s_seh-1.dll" Condition="'$(NativeRuntimeDir)' != '' and Exists('$(NativeRuntimeDir)\libgcc_s_seh-1.dll')">
+      <Link>libgcc_s_seh-1.dll</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="$(NativeRuntimeDir)\libstdc++-6.dll" Condition="'$(NativeRuntimeDir)' != '' and Exists('$(NativeRuntimeDir)\libstdc++-6.dll')">
+      <Link>libstdc++-6.dll</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="$(NativeRuntimeDir)\libwinpthread-1.dll" Condition="'$(NativeRuntimeDir)' != '' and Exists('$(NativeRuntimeDir)\libwinpthread-1.dll')">
+      <Link>libwinpthread-1.dll</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 </Project>

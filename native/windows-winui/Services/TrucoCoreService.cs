@@ -1,142 +1,102 @@
 using System;
-using System.IO;
-using System.Reflection;
+using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Text.Json;
+using TrucoWinUI.Models;
 
 namespace TrucoWinUI.Services;
 
 public sealed class TrucoCoreService : IDisposable
 {
-    private static readonly string DllName = "truco-core-ffi.dll";
-    private static string? _cachedDllPath;
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        PropertyNameCaseInsensitive = true,
+    };
+
     private IntPtr _handle;
-
-    static TrucoCoreService()
-    {
-        ExtractAndCacheDll();
-    }
-
-    private static void ExtractAndCacheDll()
-    {
-        if (_cachedDllPath != null && File.Exists(_cachedDllPath))
-            return;
-
-        var assembly = Assembly.GetExecutingAssembly();
-        var resourceName = "TrucoWinUI.truco-core-ffi.dll";
-
-        var tempPath = Path.Combine(Path.GetTempPath(), "TrucoWinUI");
-        Directory.CreateDirectory(tempPath);
-        _cachedDllPath = Path.Combine(tempPath, DllName);
-
-        if (!File.Exists(_cachedDllPath))
-        {
-            using var stream = assembly.GetManifestResourceStream(resourceName);
-            if (stream == null)
-            {
-                var binPath = Path.Combine(AppContext.BaseDirectory, DllName);
-                if (File.Exists(binPath))
-                {
-                    _cachedDllPath = binPath;
-                    return;
-                }
-                throw new InvalidOperationException($"Native DLL '{DllName}' not found. Please ensure the DLL is in the application directory.");
-            }
-
-            using var fileStream = File.Create(_cachedDllPath);
-            stream.CopyTo(fileStream);
-        }
-    }
-
-    private static class NativeMethods
-    {
-        [DllImport("kernel32", SetLastError = true, CharSet = CharSet.Unicode)]
-        private static extern IntPtr LoadLibrary(string lpFileName);
-
-        [DllImport("kernel32", SetLastError = true)]
-        private static extern bool FreeLibrary(IntPtr hModule);
-
-        [DllImport("kernel32", SetLastError = true, CharSet = CharSet.Ansi)]
-        private static extern IntPtr GetProcAddress(IntPtr hModule, string lpProcName);
-
-        private static IntPtr _libraryHandle;
-
-        static NativeMethods()
-        {
-            _libraryHandle = LoadLibrary(_cachedDllPath!);
-            if (_libraryHandle == IntPtr.Zero)
-            {
-                var error = Marshal.GetLastWin32Error();
-                throw new DllNotFoundException($"Failed to load native library '{_cachedDllPath}'. Error code: {error}");
-            }
-        }
-
-        [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
-        public delegate IntPtr TrucoCoreCreateDelegate();
-        [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
-        public delegate void TrucoCoreDestroyDelegate(IntPtr handle);
-        [UnmanagedFunctionPointer(CallingConvention.Cdecl, CharSet = CharSet.Ansi)]
-        public delegate IntPtr TrucoCoreDispatchIntentJSONDelegate(IntPtr handle, [MarshalAs(UnmanagedType.LPUTF8Str)] string payload);
-        [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
-        public delegate IntPtr TrucoCorePollEventJSONDelegate(IntPtr handle);
-        [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
-        public delegate IntPtr TrucoCoreSnapshotJSONDelegate(IntPtr handle);
-        [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
-        public delegate void TrucoCoreFreeStringDelegate(IntPtr ptr);
-
-        private static T GetDelegate<T>(IntPtr ptr) where T : Delegate
-        {
-            return (T)Marshal.GetDelegateForFunctionPointer(ptr, typeof(T));
-        }
-
-        public static TrucoCoreCreateDelegate TrucoCoreCreate => 
-            GetDelegate<TrucoCoreCreateDelegate>(GetProcAddress(_libraryHandle, "TrucoCoreCreate"));
-        public static TrucoCoreDestroyDelegate TrucoCoreDestroy => 
-            GetDelegate<TrucoCoreDestroyDelegate>(GetProcAddress(_libraryHandle, "TrucoCoreDestroy"));
-        public static TrucoCoreDispatchIntentJSONDelegate TrucoCoreDispatchIntentJSON => 
-            GetDelegate<TrucoCoreDispatchIntentJSONDelegate>(GetProcAddress(_libraryHandle, "TrucoCoreDispatchIntentJSON"));
-        public static TrucoCorePollEventJSONDelegate TrucoCorePollEventJSON => 
-            GetDelegate<TrucoCorePollEventJSONDelegate>(GetProcAddress(_libraryHandle, "TrucoCorePollEventJSON"));
-        public static TrucoCoreSnapshotJSONDelegate TrucoCoreSnapshotJSON => 
-            GetDelegate<TrucoCoreSnapshotJSONDelegate>(GetProcAddress(_libraryHandle, "TrucoCoreSnapshotJSON"));
-        public static TrucoCoreFreeStringDelegate TrucoCoreFreeString => 
-            GetDelegate<TrucoCoreFreeStringDelegate>(GetProcAddress(_libraryHandle, "TrucoCoreFreeString"));
-    }
 
     public TrucoCoreService()
     {
+        NativeDependencyValidator.EnsurePresent();
         _handle = NativeMethods.TrucoCoreCreate();
-        if (_handle == IntPtr.Zero)
+    }
+
+    public SnapshotBundle GetSnapshot()
+    {
+        string json = ReadAndFreeString(NativeMethods.TrucoCoreSnapshotJSON(_handle))
+            ?? throw new InvalidOperationException("Core returned an empty snapshot.");
+        return JsonSerializer.Deserialize<SnapshotBundle>(json, JsonOptions)
+            ?? new SnapshotBundle();
+    }
+
+    public AppEvent? PollEvent()
+    {
+        string? json = ReadAndFreeString(NativeMethods.TrucoCorePollEventJSON(_handle));
+        if (string.IsNullOrWhiteSpace(json))
         {
-            throw new InvalidOperationException("Failed to initialize TrucoCore - native library may be missing or incompatible");
+            return null;
         }
+
+        return JsonSerializer.Deserialize<AppEvent>(json, JsonOptions);
     }
 
-    public string? Dispatch(string intentJson)
+    public CoreVersions GetVersions()
     {
-        IntPtr resultPtr = NativeMethods.TrucoCoreDispatchIntentJSON(_handle, intentJson);
-        return ReadAndFreeString(resultPtr);
+        string json = ReadAndFreeString(NativeMethods.TrucoCoreVersionsJSON())
+            ?? throw new InvalidOperationException("Core returned no version payload.");
+        return JsonSerializer.Deserialize<CoreVersions>(json, JsonOptions)
+            ?? new CoreVersions();
     }
 
-    public string? SnapshotJson()
-    {
-        IntPtr resultPtr = NativeMethods.TrucoCoreSnapshotJSON(_handle);
-        return ReadAndFreeString(resultPtr);
-    }
+    public AppError? SetLocale(string locale) => Dispatch("set_locale", new { locale });
 
-    public string? PollEventJson()
-    {
-        IntPtr resultPtr = NativeMethods.TrucoCorePollEventJSON(_handle);
-        return ReadAndFreeString(resultPtr);
-    }
+    public AppError? NewHand() => Dispatch("new_hand", null);
 
-    private string? ReadAndFreeString(IntPtr ptr)
-    {
-        if (ptr == IntPtr.Zero) return null;
-        string? result = Marshal.PtrToStringUTF8(ptr);
-        NativeMethods.TrucoCoreFreeString(ptr);
-        return result;
-    }
+    public AppError? StartOfflineGame(IReadOnlyList<string> playerNames, IReadOnlyList<bool> cpuFlags)
+        => Dispatch("new_offline_game", new
+        {
+            player_names = playerNames,
+            cpu_flags = cpuFlags,
+        });
+
+    public AppError? CreateHostSession(string hostName, int numPlayers, string? bindAddr, string? relayUrl, string? transportMode)
+        => Dispatch("create_host_session", new
+        {
+            bind_addr = bindAddr ?? string.Empty,
+            host_name = hostName,
+            num_players = numPlayers,
+            relay_url = relayUrl ?? string.Empty,
+            transport_mode = transportMode ?? string.Empty,
+        });
+
+    public AppError? StartHostedMatch() => Dispatch("start_hosted_match", null);
+
+    public AppError? JoinSession(string key, string playerName, string desiredRole)
+        => Dispatch("join_session", new
+        {
+            key,
+            player_name = playerName,
+            desired_role = desiredRole,
+        });
+
+    public AppError? SendChat(string text) => Dispatch("send_chat", new { text });
+
+    public AppError? VoteHost(int candidateSeat) => Dispatch("vote_host", new { candidate_seat = candidateSeat });
+
+    public AppError? RequestReplacementInvite(int targetSeat)
+        => Dispatch("request_replacement_invite", new { target_seat = targetSeat });
+
+    public AppError? CloseSession() => Dispatch("close_session", null);
+
+    public AppError? ResetSession() => Dispatch("reset", null);
+
+    public AppError? PlayCard(int cardIndex) => DispatchGameAction("play", cardIndex);
+
+    public AppError? RequestTruco() => DispatchGameAction("truco", 0);
+
+    public AppError? AcceptTruco() => DispatchGameAction("accept", 0);
+
+    public AppError? RefuseTruco() => DispatchGameAction("refuse", 0);
 
     public void Dispose()
     {
@@ -145,5 +105,67 @@ public sealed class TrucoCoreService : IDisposable
             NativeMethods.TrucoCoreDestroy(_handle);
             _handle = IntPtr.Zero;
         }
+    }
+
+    private AppError? DispatchGameAction(string action, int cardIndex)
+        => Dispatch("game_action", new { action, card_index = cardIndex });
+
+    private AppError? Dispatch(string kind, object? payload)
+    {
+        if (_handle == IntPtr.Zero)
+        {
+            return new AppError { Code = "disposed", Message = "The native runtime has already been disposed." };
+        }
+
+        string intentJson = payload is null
+            ? JsonSerializer.Serialize(new { kind }, JsonOptions)
+            : JsonSerializer.Serialize(new { kind, payload }, JsonOptions);
+
+        string? responseJson = ReadAndFreeString(NativeMethods.TrucoCoreDispatchIntentJSON(_handle, intentJson));
+        if (string.IsNullOrWhiteSpace(responseJson))
+        {
+            return null;
+        }
+
+        return JsonSerializer.Deserialize<AppError>(responseJson, JsonOptions)
+            ?? new AppError { Code = "dispatch_failed", Message = responseJson };
+    }
+
+    private static string? ReadAndFreeString(IntPtr ptr)
+    {
+        if (ptr == IntPtr.Zero)
+        {
+            return null;
+        }
+
+        string? result = Marshal.PtrToStringUTF8(ptr);
+        NativeMethods.TrucoCoreFreeString(ptr);
+        return result;
+    }
+
+    private static class NativeMethods
+    {
+        private const string DllName = "truco-core-ffi";
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern IntPtr TrucoCoreCreate();
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern void TrucoCoreDestroy(IntPtr handle);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Ansi)]
+        public static extern IntPtr TrucoCoreDispatchIntentJSON(IntPtr handle, [MarshalAs(UnmanagedType.LPUTF8Str)] string payload);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern IntPtr TrucoCorePollEventJSON(IntPtr handle);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern IntPtr TrucoCoreSnapshotJSON(IntPtr handle);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern IntPtr TrucoCoreVersionsJSON();
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern void TrucoCoreFreeString(IntPtr ptr);
     }
 }

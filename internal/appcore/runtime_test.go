@@ -75,3 +75,78 @@ func TestRuntimeSnapshotJSONIncludesVersions(t *testing.T) {
 		t.Fatalf("snapshot_schema_version = %d, want %d", state.Versions.SnapshotSchema, SnapshotSchemaMajor)
 	}
 }
+
+func TestRuntimeLocaleChange(t *testing.T) {
+	rt := NewRuntime()
+	defer func() { _ = rt.Close() }()
+
+	payload, err := json.Marshal(SetLocalePayload{Locale: "en-US"})
+	if err != nil {
+		t.Fatalf("Marshal payload: %v", err)
+	}
+	if err := rt.DispatchIntent(AppIntent{Kind: "set_locale", Payload: payload}); err != nil {
+		t.Fatalf("Dispatch set_locale: %v", err)
+	}
+
+	state := rt.SnapshotBundle()
+	if state.Locale != "en-US" {
+		t.Fatalf("locale = %q, want en-US", state.Locale)
+	}
+	ev, ok := rt.PollEvent()
+	if !ok {
+		t.Fatal("expected locale_changed event")
+	}
+	if ev.Kind != "locale_changed" {
+		t.Fatalf("event kind = %q, want locale_changed", ev.Kind)
+	}
+}
+
+func TestRuntimeNewHandAndReset(t *testing.T) {
+	rt := NewRuntime()
+	defer func() { _ = rt.Close() }()
+
+	payload, err := json.Marshal(NewOfflineGamePayload{
+		PlayerNames: []string{"Ana", "CPU-2"},
+		CPUFlags:    []bool{false, true},
+	})
+	if err != nil {
+		t.Fatalf("Marshal payload: %v", err)
+	}
+	if err := rt.DispatchIntent(AppIntent{Kind: "new_offline_game", Payload: payload}); err != nil {
+		t.Fatalf("Dispatch new_offline_game: %v", err)
+	}
+
+	before := rt.SnapshotBundle()
+	if before.Match == nil {
+		t.Fatal("match snapshot is nil")
+	}
+	oldDealer := before.Match.CurrentHand.Dealer
+
+	if err := rt.DispatchIntent(AppIntent{Kind: "new_hand"}); err != nil {
+		t.Fatalf("Dispatch new_hand: %v", err)
+	}
+	after := rt.SnapshotBundle()
+	if after.Mode != "offline_match" {
+		t.Fatalf("mode = %q, want offline_match", after.Mode)
+	}
+	if after.Match == nil {
+		t.Fatal("match snapshot after new_hand is nil")
+	}
+	if after.Match.CurrentHand.Dealer == oldDealer {
+		t.Fatalf("dealer did not rotate: %d", after.Match.CurrentHand.Dealer)
+	}
+
+	if err := rt.DispatchIntent(AppIntent{Kind: "reset"}); err != nil {
+		t.Fatalf("Dispatch reset: %v", err)
+	}
+	cleared := rt.SnapshotBundle()
+	if cleared.Mode != "idle" {
+		t.Fatalf("mode after reset = %q, want idle", cleared.Mode)
+	}
+	if cleared.Match != nil {
+		t.Fatal("match should be nil after reset")
+	}
+	if cleared.Lobby != nil {
+		t.Fatal("lobby should be nil after reset")
+	}
+}

@@ -27,6 +27,21 @@ go.work
 # Browser edition build output
 browser-edition/dist/
 
+# .NET / WinUI
+.dotnet-home/
+.nuget/
+.cache/
+native/windows-winui/bin/
+native/windows-winui/obj/
+native/windows-winui/.vs/
+native/windows-winui/truco-core-ffi.h
+*.log
+
+# Local Codex/Claude workspace metadata
+.claude/
+.codex/
+scripts/__pycache__/
+
 # OS
 .DS_Store
 Thumbs.db
