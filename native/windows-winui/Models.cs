@@ -326,12 +326,22 @@ public sealed class TableSeatViewModel
     public bool IsCpu { get; set; }
     public bool IsProvisionalCpu { get; set; }
     public int HandCount { get; set; }
-    public List<CardState> Hand { get; set; } = [];
+    public List<HandCardViewModel> HandCards { get; set; } = [];
     public CardState? PlayedCard { get; set; }
+    public HandCardViewModel? PlayedCardViewModel { get; set; }
     public string Summary => IsVisible ? $"{Name}  {TeamLabel}" : string.Empty;
-    public string CpuTag => IsProvisionalCpu ? "CPU temporario" : IsCpu ? "CPU" : string.Empty;
+    public string CpuTag => IsProvisionalCpu ? "CPU temporaria" : IsCpu ? "CPU" : string.Empty;
     public string PlayedCardLabel => PlayedCard?.ShortLabel ?? "--";
     public string HiddenHandText => HandCount <= 0 ? string.Empty : string.Join(" ", Enumerable.Repeat("[ ]", Math.Min(HandCount, 3)));
+}
+
+public sealed class HandCardViewModel
+{
+    public CardState? Card { get; set; }
+    public bool IsFaceUp { get; set; }
+    public double Rotation { get; set; }
+    public double Scale { get; set; } = 1.0;
+    public Microsoft.UI.Xaml.Visibility CardVisibility => Card is null ? Microsoft.UI.Xaml.Visibility.Collapsed : Microsoft.UI.Xaml.Visibility.Visible;
 }
 
 public sealed class ActivityEntry
@@ -340,6 +350,15 @@ public sealed class ActivityEntry
     public string Timestamp { get; set; } = string.Empty;
     public string Text { get; set; } = string.Empty;
     public string Accent { get; set; } = "#E8E8E8";
+
+    public string ChannelLabel => Channel switch
+    {
+        "chat" => "CHAT",
+        "system" => "SISTEMA",
+        "error" => "ERRO",
+        "match" => "JOGO",
+        _ => Channel.ToUpperInvariant(),
+    };
 
     public override string ToString()
         => string.IsNullOrWhiteSpace(Timestamp)

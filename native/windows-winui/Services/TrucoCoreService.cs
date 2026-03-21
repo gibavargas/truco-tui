@@ -50,13 +50,13 @@ public sealed class TrucoCoreService : IDisposable
 
     public AppError? SetLocale(string locale) => Dispatch("set_locale", new { locale });
 
-    public AppError? StartOfflineGame(IReadOnlyList<string> playerNames, IReadOnlyList<bool> cpuFlags, ulong? seedLo, ulong? seedHi)
+    public AppError? NewHand() => Dispatch("new_hand", null);
+
+    public AppError? StartOfflineGame(IReadOnlyList<string> playerNames, IReadOnlyList<bool> cpuFlags)
         => Dispatch("new_offline_game", new
         {
             player_names = playerNames,
             cpu_flags = cpuFlags,
-            seed_lo = seedLo.GetValueOrDefault(),
-            seed_hi = seedHi.GetValueOrDefault(),
         });
 
     public AppError? CreateHostSession(string hostName, int numPlayers, string? bindAddr, string? relayUrl, string? transportMode)
@@ -87,6 +87,8 @@ public sealed class TrucoCoreService : IDisposable
         => Dispatch("request_replacement_invite", new { target_seat = targetSeat });
 
     public AppError? CloseSession() => Dispatch("close_session", null);
+
+    public AppError? ResetSession() => Dispatch("reset", null);
 
     public AppError? PlayCard(int cardIndex) => DispatchGameAction("play", cardIndex);
 

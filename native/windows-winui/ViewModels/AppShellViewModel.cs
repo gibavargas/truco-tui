@@ -48,6 +48,12 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
     private string versionText = string.Empty;
 
     [ObservableProperty]
+    private string localeCode = "pt-BR";
+
+    [ObservableProperty]
+    private string localeDisplayText = "Idioma: Português (BR)";
+
+    [ObservableProperty]
     private string inviteKey = string.Empty;
 
     [ObservableProperty]
@@ -60,40 +66,13 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
     private string handSummary = string.Empty;
 
     [ObservableProperty]
-    private string seedSummary = string.Empty;
-
-    [ObservableProperty]
     private string pendingRaiseText = string.Empty;
 
     [ObservableProperty]
-    private string offlinePlayer1Name = "Voce";
-
-    [ObservableProperty]
-    private string offlinePlayer2Name = "CPU-2";
-
-    [ObservableProperty]
-    private string offlinePlayer3Name = "CPU-3";
-
-    [ObservableProperty]
-    private string offlinePlayer4Name = "CPU-4";
-
-    [ObservableProperty]
-    private bool offlinePlayer2Cpu = true;
-
-    [ObservableProperty]
-    private bool offlinePlayer3Cpu = true;
-
-    [ObservableProperty]
-    private bool offlinePlayer4Cpu = true;
+    private string offlinePlayerName = Environment.UserName;
 
     [ObservableProperty]
     private int offlineNumPlayers = 2;
-
-    [ObservableProperty]
-    private string seedLoText = string.Empty;
-
-    [ObservableProperty]
-    private string seedHiText = string.Empty;
 
     [ObservableProperty]
     private string hostName = Environment.UserName;
@@ -174,10 +153,13 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
     private Visibility topSeatVisibility = Visibility.Collapsed;
 
     [ObservableProperty]
-    private string localSeatTitle = "Voce";
+    private string localSeatTitle = "Você";
 
     [ObservableProperty]
     private bool canStartHostedMatch;
+
+    [ObservableProperty]
+    private bool canStartNewHand;
 
     [ObservableProperty]
     private bool canRequestTruco;
@@ -195,6 +177,9 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
     private bool hasActiveSession;
 
     [ObservableProperty]
+    private bool canResetSession;
+
+    [ObservableProperty]
     private bool isLobbyScreen;
 
     [ObservableProperty]
@@ -202,6 +187,9 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
 
     [ObservableProperty]
     private bool isMenuScreen = true;
+
+    [ObservableProperty]
+    private bool isDiagnosticsOpen;
 
     public AppShellViewModel()
     {
@@ -233,30 +221,58 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
     private void ShowJoinSetup() => SetMenuPane("join");
 
     [RelayCommand]
+    private void ToggleDiagnostics() => IsDiagnosticsOpen = !IsDiagnosticsOpen;
+
+    [RelayCommand]
+    private void OpenDiagnostics() => IsDiagnosticsOpen = true;
+
+    [RelayCommand]
+    private void CloseDiagnostics() => IsDiagnosticsOpen = false;
+
+    [RelayCommand]
     private void CopyInviteKey() => CopyTextToClipboard(InviteKey);
 
     [RelayCommand]
     private void CopyReplacementInvite() => CopyTextToClipboard(ReplacementInviteKey);
 
     [RelayCommand]
+    private void ToggleLocale()
+    {
+        string nextLocale = LocaleCode == "en-US" ? "pt-BR" : "en-US";
+        AppError? error = _core.SetLocale(nextLocale);
+        HandleDispatchResult(error, nextLocale == "en-US"
+            ? "Idioma alterado para English (US)."
+            : "Idioma alterado para Português (BR).");
+        RefreshSnapshot(_core.GetSnapshot(), preserveMenuPane: true);
+    }
+
+    [RelayCommand]
     private void StartOfflineGame()
     {
-        List<string> names = [OfflinePlayer1Name, OfflinePlayer2Name];
-        List<bool> cpu = [false, OfflinePlayer2Cpu];
+        string playerName = NormalizeName(OfflinePlayerName);
+        List<string> names = [playerName, "CPU-2"];
+        List<bool> cpu = [false, true];
         if (OfflineNumPlayers == 4)
         {
-            names.Add(OfflinePlayer3Name);
-            names.Add(OfflinePlayer4Name);
-            cpu.Add(OfflinePlayer3Cpu);
-            cpu.Add(OfflinePlayer4Cpu);
+            names.Add("CPU-3");
+            names.Add("CPU-4");
+            cpu.Add(true);
+            cpu.Add(true);
         }
 
-        AppError? error = _core.StartOfflineGame(
-            names.Select(NormalizeName).ToArray(),
-            cpu.ToArray(),
-            ParseSeed(SeedLoText),
-            ParseSeed(SeedHiText));
+        AppError? error = _core.StartOfflineGame(names.ToArray(), cpu.ToArray());
         HandleDispatchResult(error, "Partida offline criada.");
+        if (error is null)
+        {
+            ChatFeed.Clear();
+        }
+        RefreshSnapshot(_core.GetSnapshot(), preserveMenuPane: false);
+    }
+
+    [RelayCommand]
+    private void NewHand()
+    {
+        HandleDispatchResult(_core.NewHand(), "Nova mão iniciada.");
         RefreshSnapshot(_core.GetSnapshot(), preserveMenuPane: false);
     }
 
@@ -269,7 +285,11 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
             NullIfWhitespace(BindAddress),
             NullIfWhitespace(RelayUrl),
             NullIfWhitespace(TransportMode));
-        HandleDispatchResult(error, "Sessao host criada.");
+        HandleDispatchResult(error, "Sessão host criada.");
+        if (error is null)
+        {
+            ChatFeed.Clear();
+        }
         RefreshSnapshot(_core.GetSnapshot(), preserveMenuPane: false);
     }
 
@@ -280,7 +300,11 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
             JoinKey.Trim(),
             NormalizeName(JoinPlayerName),
             string.IsNullOrWhiteSpace(DesiredRole) ? "auto" : DesiredRole.Trim());
-        HandleDispatchResult(error, "Sessao conectada.");
+        HandleDispatchResult(error, "Sessão conectada.");
+        if (error is null)
+        {
+            ChatFeed.Clear();
+        }
         RefreshSnapshot(_core.GetSnapshot(), preserveMenuPane: false);
     }
 
@@ -294,8 +318,15 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private void CloseSession()
     {
-        HandleDispatchResult(_core.CloseSession(), "Sessao encerrada.");
-        RefreshSnapshot(_core.GetSnapshot(), preserveMenuPane: true);
+        HandleDispatchResult(_core.CloseSession(), "Sessão encerrada.");
+        RefreshSnapshot(_core.GetSnapshot(), preserveMenuPane: false);
+    }
+
+    [RelayCommand]
+    private void ResetSession()
+    {
+        HandleDispatchResult(_core.ResetSession(), "Sessão reiniciada.");
+        RefreshSnapshot(_core.GetSnapshot(), preserveMenuPane: false);
     }
 
     [RelayCommand]
@@ -330,31 +361,31 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
     {
         if (SelectedReplacementSeat is null)
         {
-            ErrorBannerText = "Selecione um slot para gerar convite de reposicao.";
+            ErrorBannerText = "Selecione um slot para gerar convite de reposição.";
             return;
         }
 
-        HandleDispatchResult(_core.RequestReplacementInvite(SelectedReplacementSeat.SeatIndex), "Pedido de substituicao enviado.");
+        HandleDispatchResult(_core.RequestReplacementInvite(SelectedReplacementSeat.SeatIndex), "Pedido de substituição enviado.");
         RefreshSnapshot(_core.GetSnapshot(), preserveMenuPane: false);
     }
 
     [RelayCommand]
     private void PlayCard(CardState? card)
     {
-        if (card is null || BottomSeat.Hand.Count == 0)
+        if (card is null || BottomSeat.HandCards.Count == 0)
         {
             return;
         }
 
-        int index = BottomSeat.Hand.FindIndex(c => ReferenceEquals(c, card));
+        int index = BottomSeat.HandCards.FindIndex(c => c.Card is not null && ReferenceEquals(c.Card, card));
         if (index < 0)
         {
-            index = BottomSeat.Hand.FindIndex(c => c.Rank == card.Rank && c.Suit == card.Suit);
+            index = BottomSeat.HandCards.FindIndex(c => c.Card is not null && c.Card.Rank == card.Rank && c.Card.Suit == card.Suit);
         }
 
         if (index < 0)
         {
-            ErrorBannerText = "Carta nao encontrada na mao local.";
+            ErrorBannerText = "Carta não encontrada na mão local.";
             return;
         }
 
@@ -405,6 +436,13 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
     {
         NormalizeBundle(bundle);
         _bundle = bundle;
+        if (bundle.Mode == "idle" && !preserveMenuPane)
+        {
+            ChatFeed.Clear();
+            InfoBannerText = string.Empty;
+        }
+        LocaleCode = bundle.Locale;
+        LocaleDisplayText = BuildLocaleDisplayText(bundle.Locale);
         CurrentModeText = bundle.Mode;
         InviteKey = bundle.Lobby?.InviteKey ?? string.Empty;
         if (bundle.Mode == "idle")
@@ -412,9 +450,8 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
             ReplacementInviteKey = string.Empty;
         }
         ConnectionDetails = BuildConnectionDetails(bundle);
-        SeedSummary = BuildSeedSummary(bundle.Diagnostics);
         StatusText = BuildStatusText(bundle);
-        ErrorBannerText = bundle.Connection.LastError?.Message ?? ErrorBannerText;
+        ErrorBannerText = bundle.Connection.LastError?.Message ?? string.Empty;
 
         MatchLog.ReplaceWith(bundle.Match?.Logs ?? []);
         DiagnosticsLog.ReplaceWith(bundle.Diagnostics.EventLog ?? []);
@@ -427,6 +464,8 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(StakeText));
         OnPropertyChanged(nameof(ViraText));
         OnPropertyChanged(nameof(ManilhaText));
+        OnPropertyChanged(nameof(ViraCardViewModel));
+        OnPropertyChanged(nameof(ManilhaCardViewModel));
         OnPropertyChanged(nameof(CurrentTurnText));
         OnPropertyChanged(nameof(WinnerText));
     }
@@ -436,6 +475,15 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
     public string StakeText => (_bundle.Match?.CurrentHand.Stake ?? 1).ToString(CultureInfo.InvariantCulture);
     public string ViraText => _bundle.Match?.CurrentHand?.Vira?.ShortLabel ?? "--";
     public string ManilhaText => _bundle.Match?.CurrentHand?.Manilha ?? "--";
+    
+    public HandCardViewModel? ViraCardViewModel => _bundle.Match?.CurrentHand?.Vira is { Rank: not "" } vira
+        ? new HandCardViewModel { Card = vira, IsFaceUp = true, Scale = 1.0, Rotation = 0 }
+        : null;
+
+    public HandCardViewModel? ManilhaCardViewModel => !string.IsNullOrWhiteSpace(_bundle.Match?.CurrentHand?.Manilha)
+        ? new HandCardViewModel { Card = new CardState { Rank = _bundle.Match.CurrentHand.Manilha, Suit = "" }, IsFaceUp = true, Scale = 1.0, Rotation = 0 }
+        : null;
+
     public string CurrentTurnText => BuildCurrentTurnText(_bundle.Match, BottomSeat);
     public string WinnerText => _bundle.Match?.MatchFinished == true ? $"Time vencedor: {_bundle.Match.WinnerTeam}" : string.Empty;
 
@@ -479,12 +527,12 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
                 seats.Add(new LobbySeatViewModel
                 {
                     SeatIndex = i,
-                    Name = string.IsNullOrWhiteSpace(name) ? "slot vazio" : name,
+                    Name = string.IsNullOrWhiteSpace(name) ? "assento vazio" : name,
                     IsAssigned = i == lobby.AssignedSeat,
                     IsConnected = connected,
                     IsHost = i == lobby.HostSeat,
                     IsEmpty = string.IsNullOrWhiteSpace(name),
-                    StatusText = connected ? "conectado" : lobby.Started && !string.IsNullOrWhiteSpace(name) ? "aguardando reconexao" : "livre",
+                    StatusText = connected ? "conectado" : lobby.Started && !string.IsNullOrWhiteSpace(name) ? "aguardando reconexão" : "livre",
                 });
             }
         }
@@ -492,8 +540,8 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
         LobbySeats.ReplaceWith(seats);
         CandidateSeats.ReplaceWith(seats.Where(s => !s.IsEmpty));
         ReplacementSeats.ReplaceWith(seats.Where(s => s.SeatIndex > 0 && !s.IsEmpty));
-        SelectedCandidateSeat ??= CandidateSeats.FirstOrDefault();
-        SelectedReplacementSeat ??= ReplacementSeats.FirstOrDefault();
+        SelectedCandidateSeat = CandidateSeats.FirstOrDefault(s => s.SeatIndex == SelectedCandidateSeat?.SeatIndex) ?? CandidateSeats.FirstOrDefault();
+        SelectedReplacementSeat = ReplacementSeats.FirstOrDefault(s => s.SeatIndex == SelectedReplacementSeat?.SeatIndex) ?? ReplacementSeats.FirstOrDefault();
         CanStartHostedMatch = _bundle.Mode == "host_lobby" && lobby is not null && lobby.Slots.Count == lobby.NumPlayers && lobby.Slots.All(s => !string.IsNullOrWhiteSpace(s));
     }
 
@@ -523,7 +571,7 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
         TopSeatVisibility = TopSeat.IsVisible ? Visibility.Visible : Visibility.Collapsed;
         LeftSeatVisibility = LeftSeat.IsVisible ? Visibility.Visible : Visibility.Collapsed;
         RightSeatVisibility = RightSeat.IsVisible ? Visibility.Visible : Visibility.Collapsed;
-        HandSummary = $"Mao local: {BottomSeat.HandCount} cartas  |  Rodada {match.CurrentHand.Round + 1}";
+        HandSummary = $"Mão local: {BottomSeat.HandCount} cartas  |  Rodada {match.CurrentHand.Round + 1}";
         PendingRaiseText = BuildRaiseSummary(match);
     }
 
@@ -531,13 +579,15 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
     {
         MatchSnapshot? match = bundle.Match;
         bool hasMatch = match is not null;
-        hasActiveSession = bundle.Mode != "idle";
-        canSendChat = hasActiveSession;
-        canRequestTruco = hasMatch &&
+        HasActiveSession = bundle.Mode != "idle";
+        CanResetSession = HasActiveSession;
+        CanSendChat = HasActiveSession;
+        CanStartNewHand = hasMatch && (bundle.Mode == "offline_match" || bundle.Mode == "host_match");
+        CanRequestTruco = hasMatch &&
             BottomSeat.IsCurrentTurn &&
             (match!.CanAskTruco || match.PendingRaiseFor == BottomSeat.TeamIndex);
-        canAnswerRaise = hasMatch && match!.PendingRaiseFor != -1 && BottomSeat.TeamIndex == match.PendingRaiseFor;
-        canPlayCards = hasMatch && BottomSeat.IsCurrentTurn && match!.PendingRaiseFor == -1 && BottomSeat.HandCount > 0;
+        CanAnswerRaise = hasMatch && match!.PendingRaiseFor != -1 && BottomSeat.TeamIndex == match.PendingRaiseFor;
+        CanPlayCards = hasMatch && BottomSeat.IsCurrentTurn && match!.PendingRaiseFor == -1 && BottomSeat.HandCount > 0;
     }
 
     private void HandleEvent(AppEvent appEvent)
@@ -550,6 +600,15 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
                 {
                     ErrorBannerText = error.Message;
                     AddChatEntry("error", error.Message, "#FF7070", appEvent.Timestamp);
+                }
+                break;
+            case "locale_changed":
+                if (appEvent.Payload.TryGetProperty("locale", out JsonElement localeEl))
+                {
+                    string locale = localeEl.GetString() ?? LocaleCode;
+                    LocaleCode = locale;
+                    LocaleDisplayText = BuildLocaleDisplayText(locale);
+                    AddChatEntry("system", $"Idioma alterado para {BuildLocaleName(locale)}.", "#80C8FF", appEvent.Timestamp);
                 }
                 break;
             case "chat":
@@ -573,15 +632,24 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
                 if (appEvent.Payload.TryGetProperty("invite_key", out JsonElement replacementEl))
                 {
                     ReplacementInviteKey = replacementEl.GetString() ?? string.Empty;
-                    AddChatEntry("system", "Convite de reposicao gerado.", "#FFD166", appEvent.Timestamp);
+                    AddChatEntry("system", "Convite de reposição gerado.", "#FFD166", appEvent.Timestamp);
                 }
+                break;
+            case "client_joined":
+                AddChatEntry("system", "Jogador entrou na sessão.", "#80C8FF", appEvent.Timestamp);
+                break;
+            case "lobby_updated":
+                AddChatEntry("system", "Lobby atualizado.", "#80C8FF", appEvent.Timestamp);
+                break;
+            case "match_updated":
+                AddChatEntry("system", "Mesa atualizada.", "#80C8FF", appEvent.Timestamp);
                 break;
             case "failover_promoted":
             case "failover_rejoined":
             case "session_ready":
             case "match_started":
             case "session_closed":
-                AddChatEntry("system", appEvent.Kind.Replace('_', ' '), "#80C8FF", appEvent.Timestamp);
+                AddChatEntry("system", BuildSystemEventMessage(appEvent.Kind), "#80C8FF", appEvent.Timestamp);
                 break;
         }
     }
@@ -607,6 +675,23 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
     private static string BuildVersionText(CoreVersions versions)
         => $"Core API {versions.CoreApiVersion}  |  Protocolo {versions.ProtocolVersion}  |  Snapshot {versions.SnapshotSchemaVersion}";
 
+    private static string BuildLocaleDisplayText(string locale)
+        => $"Idioma: {BuildLocaleName(locale)}";
+
+    private static string BuildLocaleName(string locale)
+        => locale == "en-US" ? "English (US)" : "Português (BR)";
+
+    private static string BuildSystemEventMessage(string kind)
+        => kind switch
+        {
+            "session_ready" => "Sessão pronta.",
+            "match_started" => "Partida iniciada.",
+            "session_closed" => "Sessão encerrada.",
+            "failover_promoted" => "Failover promovido.",
+            "failover_rejoined" => "Reconectado após failover.",
+            _ => kind.Replace('_', ' '),
+        };
+
     private static string BuildStatusText(SnapshotBundle bundle)
     {
         if (bundle.Connection.LastError is not null)
@@ -631,17 +716,7 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
         LobbySnapshot? lobby = bundle.Lobby;
         string hostSeat = FormatSeatIndex(lobby?.HostSeat ?? -1);
         string assignedSeat = FormatSeatIndex(lobby?.AssignedSeat ?? -1);
-        return $"Status: {bundle.Connection.Status}  |  Host seat: {hostSeat}  |  Seat local: {assignedSeat}  |  backlog: {bundle.Diagnostics.EventBacklog}";
-    }
-
-    private static string BuildSeedSummary(DiagnosticsSnapshot diagnostics)
-    {
-        if (diagnostics.ReplaySeedLo == 0 && diagnostics.ReplaySeedHi == 0)
-        {
-            return "Seed: aleatoria";
-        }
-
-        return $"Seed: {diagnostics.ReplaySeedLo}/{diagnostics.ReplaySeedHi}";
+        return $"Status: {bundle.Connection.Status}  |  Locale: {bundle.Locale}  |  Host seat: {hostSeat}  |  Assento local: {assignedSeat}  |  backlog: {bundle.Diagnostics.EventBacklog}";
     }
 
     private static string BuildRaiseSummary(MatchSnapshot match)
@@ -705,7 +780,7 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
     {
         string role = relativeIndex switch
         {
-            0 => "Voce",
+            0 => "Você",
             1 when match.NumPlayers == 2 => "Oponente",
             1 => "Direita",
             2 => "Oponente",
@@ -727,9 +802,38 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
             IsCpu = player.Cpu,
             IsProvisionalCpu = player.ProvisionalCpu,
             HandCount = player.Hand.Count,
-            Hand = relativeIndex == 0 ? player.Hand : [],
+            HandCards = BuildHandVisuals(player.Hand, relativeIndex == 0),
             PlayedCard = playedByPlayerId.TryGetValue(player.Id, out CardState? played) ? played : null,
+            PlayedCardViewModel = playedByPlayerId.TryGetValue(player.Id, out CardState? playedCard) ? new HandCardViewModel { Card = playedCard, IsFaceUp = true, Scale = 0.85, Rotation = 0 } : null
         };
+    }
+
+    private static List<HandCardViewModel> BuildHandVisuals(IReadOnlyList<CardState> cards, bool isLocalSeat)
+    {
+        if (cards.Count == 0)
+        {
+            return [];
+        }
+
+        int visibleCount = isLocalSeat ? cards.Count : Math.Min(cards.Count, 3);
+        double rotationStep = isLocalSeat ? 9.0 : 7.0;
+        double scale = isLocalSeat ? 1.0 : 0.72;
+        double midpoint = (visibleCount - 1) / 2.0;
+        List<HandCardViewModel> result = [];
+
+        for (int index = 0; index < visibleCount; index++)
+        {
+            double offset = index - midpoint;
+            result.Add(new HandCardViewModel
+            {
+                Card = isLocalSeat ? cards[index] : null,
+                IsFaceUp = isLocalSeat,
+                Rotation = offset * rotationStep,
+                Scale = scale,
+            });
+        }
+
+        return result;
     }
 
     private static T? DeserializePayload<T>(JsonElement payload)
@@ -773,16 +877,6 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
         DataPackage package = new();
         package.SetText(text);
         Clipboard.SetContent(package);
-    }
-
-    private static ulong? ParseSeed(string value)
-    {
-        if (ulong.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out ulong parsed))
-        {
-            return parsed;
-        }
-
-        return null;
     }
 
     private static string NormalizeName(string? value)

@@ -82,6 +82,9 @@ func (r *Runtime) DispatchIntent(intent AppIntent) error {
 		}
 		return r.startOfflineLocked(payload)
 
+	case "new_hand":
+		return r.newHandLocked()
+
 	case "create_host_session":
 		var payload CreateHostPayload
 		if err := decodeIntentPayload(intent.Payload, &payload); err != nil {
@@ -128,12 +131,10 @@ func (r *Runtime) DispatchIntent(intent AppIntent) error {
 		return r.requestReplacementInviteLocked(payload.TargetSeat)
 
 	case "close_session":
-		r.teardownSessionLocked()
-		r.mode = "idle"
-		r.match = nil
-		r.lobby = nil
-		r.queueEventLocked("session_closed", nil)
-		return nil
+		return r.resetSessionLocked()
+
+	case "reset":
+		return r.resetSessionLocked()
 	}
 
 	return r.failLocked("unknown_intent", fmt.Errorf("intent desconhecido: %s", intent.Kind))
@@ -255,6 +256,9 @@ func (r *Runtime) teardownSessionLocked() {
 	r.game = nil
 	r.localSeat = -1
 	r.inviteKey = ""
+	r.events = nil
+	r.eventLog = nil
+	r.nextSeq = 0
 }
 
 func (r *Runtime) startOfflineLocked(payload NewOfflineGamePayload) error {
@@ -284,6 +288,41 @@ func (r *Runtime) startOfflineLocked(payload NewOfflineGamePayload) error {
 	gen := r.sessionGen
 	go r.runGameTicker(gen)
 	r.queueEventLocked("session_ready", map[string]any{"mode": r.mode})
+	return nil
+}
+
+func (r *Runtime) newHandLocked() error {
+	switch r.mode {
+	case "offline_match", "host_match":
+		if r.game == nil {
+			return r.failLocked("invalid_state", errors.New("partida ausente"))
+		}
+		r.clearErrorLocked()
+		r.game.StartNewHand()
+		r.setMatchLocked(r.game.Snapshot(r.localSeat))
+		if r.mode == "host_match" && r.host != nil {
+			pushSnapshotsToClients(r.host, r.game)
+			r.updateHostLobbyLocked()
+		}
+		return nil
+	default:
+		return r.failLocked("invalid_state", fmt.Errorf("nova mão indisponível no modo %s", r.mode))
+	}
+}
+
+func (r *Runtime) resetSessionLocked() error {
+	r.teardownSessionLocked()
+	r.clearErrorLocked()
+	r.mode = "idle"
+	r.match = nil
+	r.lobby = nil
+	r.seedLo = 0
+	r.seedHi = 0
+	r.useSeed = false
+	r.events = nil
+	r.eventLog = nil
+	r.nextSeq = 0
+	r.queueEventLocked("session_closed", nil)
 	return nil
 }
 
