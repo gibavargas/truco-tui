@@ -71,6 +71,9 @@ public sealed class ConnectionSnapshot
     [JsonPropertyName("is_host")]
     public bool IsHost { get; set; }
 
+    [JsonPropertyName("network")]
+    public NetworkSnapshot? Network { get; set; }
+
     [JsonPropertyName("last_error")]
     public AppError? LastError { get; set; }
 
@@ -91,6 +94,24 @@ public sealed class DiagnosticsSnapshot
 
     [JsonPropertyName("event_log")]
     public List<string> EventLog { get; set; } = [];
+}
+
+public sealed class NetworkSnapshot
+{
+    [JsonPropertyName("transport")]
+    public string Transport { get; set; } = string.Empty;
+
+    [JsonPropertyName("supported_protocol_versions")]
+    public List<int> SupportedProtocolVersions { get; set; } = [];
+
+    [JsonPropertyName("negotiated_protocol_version")]
+    public int NegotiatedProtocolVersion { get; set; }
+
+    [JsonPropertyName("seat_protocol_versions")]
+    public Dictionary<int, int> SeatProtocolVersions { get; set; } = [];
+
+    [JsonPropertyName("mixed_protocol_session")]
+    public bool MixedProtocolSession { get; set; }
 }
 
 public sealed class SnapshotBundle
@@ -306,10 +327,12 @@ public sealed class LobbySeatViewModel
     public bool IsConnected { get; set; }
     public bool IsHost { get; set; }
     public bool IsEmpty { get; set; }
+    public int ProtocolVersion { get; set; }
     public string StatusText { get; set; } = string.Empty;
     public string DisplayLabel => $"Slot {SeatIndex + 1}: {Name}";
     public string ConnectionBadge => IsConnected ? "Conectado" : IsEmpty ? "Livre" : "Offline";
     public string RoleBadge => IsHost ? "Host" : IsAssigned ? "Local" : string.Empty;
+    public string ProtocolBadge => ProtocolVersion > 0 ? $"v{ProtocolVersion}" : string.Empty;
 }
 
 public sealed class TableSeatViewModel

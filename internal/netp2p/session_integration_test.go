@@ -1,6 +1,7 @@
 package netp2p
 
 import (
+	"crypto/tls"
 	"fmt"
 	"net"
 	"strings"
@@ -197,6 +198,424 @@ func TestJoinRejectsProtocolVersionMismatch(t *testing.T) {
 	}
 }
 
+func TestJoinAcceptsPreviousProtocolVersion(t *testing.T) {
+	host, key, err := NewHostSession("127.0.0.1:0", "Host", 2)
+	if err != nil {
+		t.Fatalf("NewHostSession: %v", err)
+	}
+	defer host.Close()
+
+	inv, err := DecodeInviteKey(key)
+	if err != nil {
+		t.Fatalf("DecodeInviteKey: %v", err)
+	}
+	conn, err := dialSessionConn(inv, 2*time.Second)
+	if err != nil {
+		t.Fatalf("dialSessionConn: %v", err)
+	}
+	defer closeConnWithLog(conn, "test previous protocol version")
+	reader := newConnReader(conn)
+
+	if err := writeMessage(conn, Message{
+		Type:            "join",
+		ProtocolVersion: protocolVersion - 1,
+		Token:           inv.Token,
+		Name:            "Guest",
+		DesiredRole:     "auto",
+	}); err != nil {
+		t.Fatalf("writeMessage(join previous): %v", err)
+	}
+
+	msg, err := readMessage(conn, reader)
+	if err != nil {
+		t.Fatalf("readMessage: %v", err)
+	}
+	if msg.Type != "join_ok" {
+		t.Fatalf("response type = %q, want join_ok", msg.Type)
+	}
+	if msg.ProtocolVersion != protocolVersion-1 {
+		t.Fatalf("protocol version = %d, want %d", msg.ProtocolVersion, protocolVersion-1)
+	}
+}
+
+func TestJoinSessionFallsBackToPreviousProtocolVersion(t *testing.T) {
+	tlsCfg, fingerprint, _, err := buildTLSConfig("fallback-protocol-seed")
+	if err != nil {
+		t.Fatalf("buildTLSConfig: %v", err)
+	}
+	ln, err := tls.Listen("tcp", "127.0.0.1:0", tlsCfg)
+	if err != nil {
+		t.Fatalf("tls.Listen: %v", err)
+	}
+	defer ln.Close()
+
+	seen := make(chan int, 4)
+	handled := make(chan struct{})
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			go func(conn net.Conn) {
+				defer closeConnWithLog(conn, "fallback server conn")
+				reader := newConnReader(conn)
+				msg, err := readMessage(conn, reader)
+				if err != nil {
+					return
+				}
+				seen <- msg.ProtocolVersion
+				if msg.ProtocolVersion == protocolVersion {
+					_ = writeMessage(conn, Message{Type: "error", Error: fmt.Sprintf("versão de protocolo incompatível (cliente=%d, esperado=%d)", msg.ProtocolVersion, protocolVersion-1)})
+					return
+				}
+				if msg.ProtocolVersion != protocolVersion-1 {
+					_ = writeMessage(conn, Message{Type: "error", Error: fmt.Sprintf("versão inesperada: %d", msg.ProtocolVersion)})
+					return
+				}
+				if err := writeMessage(conn, Message{
+					Type:            "join_ok",
+					ProtocolVersion: protocolVersion - 1,
+					Assigned:        1,
+					NumPlayers:      2,
+					Slots:           []string{"Host", "Guest"},
+					SessionID:       "session-legacy",
+				}); err != nil {
+					return
+				}
+				next, err := readMessage(conn, reader)
+				if err != nil {
+					return
+				}
+				seen <- next.ProtocolVersion
+				close(handled)
+				return
+			}(conn)
+		}
+	}()
+
+	inv := InviteKey{
+		Addr:             ln.Addr().String(),
+		Token:            "legacy-token",
+		Fingerprint:      fingerprint,
+		Transport:        "tcp_tls",
+		TransportVersion: 1,
+	}
+	key, err := EncodeInviteKey(inv)
+	if err != nil {
+		t.Fatalf("EncodeInviteKey: %v", err)
+	}
+
+	cli, err := JoinSession(key, "Guest", "auto")
+	if err != nil {
+		t.Fatalf("JoinSession fallback: %v", err)
+	}
+	defer cli.Close()
+
+	if err := cli.SendChat("hello"); err != nil {
+		t.Fatalf("SendChat: %v", err)
+	}
+
+	select {
+	case <-handled:
+	case <-time.After(2 * time.Second):
+		t.Fatalf("timeout waiting fallback server")
+	}
+
+	var versions []int
+	close(seen)
+	for v := range seen {
+		versions = append(versions, v)
+	}
+	if len(versions) < 3 {
+		t.Fatalf("seen versions = %v, want at least join retry and chat", versions)
+	}
+	if versions[0] != protocolVersion || versions[1] != protocolVersion-1 {
+		t.Fatalf("seen versions = %v, want retry from %d to %d", versions, protocolVersion, protocolVersion-1)
+	}
+	if versions[2] != protocolVersion-1 {
+		t.Fatalf("client follow-up version = %d, want %d", versions[2], protocolVersion-1)
+	}
+}
+
+func TestHostNetworkStateTracksMixedProtocolSession(t *testing.T) {
+	host, key, err := NewHostSession("127.0.0.1:0", "Host", 4)
+	if err != nil {
+		t.Fatalf("NewHostSession: %v", err)
+	}
+	defer host.Close()
+
+	inv, err := DecodeInviteKey(key)
+	if err != nil {
+		t.Fatalf("DecodeInviteKey: %v", err)
+	}
+	legacyConn, err := dialSessionConn(inv, 2*time.Second)
+	if err != nil {
+		t.Fatalf("dialSessionConn: %v", err)
+	}
+	defer closeConnWithLog(legacyConn, "test mixed legacy client")
+	legacyReader := newConnReader(legacyConn)
+
+	if err := writeMessage(legacyConn, Message{
+		Type:            "join",
+		ProtocolVersion: protocolVersion - 1,
+		Token:           inv.Token,
+		Name:            "Legacy",
+		DesiredRole:     "auto",
+	}); err != nil {
+		t.Fatalf("writeMessage(join legacy): %v", err)
+	}
+	joinOK, err := readMessage(legacyConn, legacyReader)
+	if err != nil {
+		t.Fatalf("readMessage(join_ok legacy): %v", err)
+	}
+	if joinOK.Type != "join_ok" {
+		t.Fatalf("response type = %q, want join_ok", joinOK.Type)
+	}
+
+	modern, err := JoinSession(key, "Modern", "auto")
+	if err != nil {
+		t.Fatalf("JoinSession modern: %v", err)
+	}
+	defer modern.Close()
+
+	waitUntil(t, 2*time.Second, func() bool {
+		versions := host.SeatProtocolVersions()
+		return versions[0] == protocolVersion &&
+			versions[joinOK.Assigned] == protocolVersion-1 &&
+			versions[modern.AssignedSeat()] == protocolVersion
+	}, "host protocol map to include mixed client versions")
+
+	if host.TransportMode() != "tcp_tls" {
+		t.Fatalf("transport = %q, want tcp_tls", host.TransportMode())
+	}
+	versions := host.SeatProtocolVersions()
+	if versions[0] != protocolVersion {
+		t.Fatalf("seat 0 protocol = %d, want %d", versions[0], protocolVersion)
+	}
+	if versions[joinOK.Assigned] != protocolVersion-1 {
+		t.Fatalf("legacy seat protocol = %d, want %d", versions[joinOK.Assigned], protocolVersion-1)
+	}
+	if versions[modern.AssignedSeat()] != protocolVersion {
+		t.Fatalf("modern seat protocol = %d, want %d", versions[modern.AssignedSeat()], protocolVersion)
+	}
+	mutated := host.SeatProtocolVersions()
+	mutated[0] = 99
+	if host.SeatProtocolVersions()[0] != protocolVersion {
+		t.Fatalf("SeatProtocolVersions should return a copy")
+	}
+}
+
+func TestClientNetworkStateGettersReflectNegotiatedProtocol(t *testing.T) {
+	host, key, err := NewHostSession("127.0.0.1:0", "Host", 2)
+	if err != nil {
+		t.Fatalf("NewHostSession: %v", err)
+	}
+	defer host.Close()
+
+	cli, err := JoinSession(key, "Guest", "auto")
+	if err != nil {
+		t.Fatalf("JoinSession: %v", err)
+	}
+	defer cli.Close()
+
+	if cli.TransportMode() != "tcp_tls" {
+		t.Fatalf("transport = %q, want tcp_tls", cli.TransportMode())
+	}
+	if cli.WireProtocolVersion() != protocolVersion {
+		t.Fatalf("wire protocol = %d, want %d", cli.WireProtocolVersion(), protocolVersion)
+	}
+	versions := SupportedProtocolVersions()
+	if len(versions) < 2 || versions[0] != protocolVersion || versions[1] != protocolVersion-1 {
+		t.Fatalf("supported versions = %v, want [%d %d]", versions, protocolVersion, protocolVersion-1)
+	}
+	versions[0] = 77
+	if SupportedProtocolVersions()[0] != protocolVersion {
+		t.Fatalf("SupportedProtocolVersions should return a copy")
+	}
+}
+
+func TestClientReconnectPreservesNegotiatedProtocolVersion(t *testing.T) {
+	tlsCfg, fingerprint, _, err := buildTLSConfig("reconnect-protocol-seed")
+	if err != nil {
+		t.Fatalf("buildTLSConfig: %v", err)
+	}
+	ln, err := tls.Listen("tcp", "127.0.0.1:0", tlsCfg)
+	if err != nil {
+		t.Fatalf("tls.Listen: %v", err)
+	}
+	defer ln.Close()
+
+	serverErr := make(chan error, 4)
+	initialConnReady := make(chan net.Conn, 1)
+	reconnectJoinVersion := make(chan int, 1)
+	reconnectChatVersion := make(chan int, 1)
+	go func() {
+		reportErr := func(err error) {
+			select {
+			case serverErr <- err:
+			default:
+			}
+		}
+
+		conn, err := ln.Accept()
+		if err != nil {
+			reportErr(err)
+			return
+		}
+		reader := newConnReader(conn)
+		first, err := readMessage(conn, reader)
+		if err != nil {
+			reportErr(err)
+			return
+		}
+		if first.ProtocolVersion != protocolVersion {
+			reportErr(fmt.Errorf("first attempt protocol=%d, want %d", first.ProtocolVersion, protocolVersion))
+			return
+		}
+		if err := writeMessage(conn, Message{
+			Type:  "error",
+			Error: fmt.Sprintf("versão de protocolo incompatível (cliente=%d, esperado=%d)", first.ProtocolVersion, protocolVersion-1),
+		}); err != nil {
+			reportErr(err)
+		}
+		closeConnWithLog(conn, "legacy reconnect mismatch")
+
+		conn, err = ln.Accept()
+		if err != nil {
+			reportErr(err)
+			return
+		}
+		reader = newConnReader(conn)
+		legacyJoin, err := readMessage(conn, reader)
+		if err != nil {
+			reportErr(err)
+			return
+		}
+		if legacyJoin.ProtocolVersion != protocolVersion-1 {
+			reportErr(fmt.Errorf("legacy join protocol=%d, want %d", legacyJoin.ProtocolVersion, protocolVersion-1))
+			return
+		}
+		if err := writeMessage(conn, Message{
+			Type:            "join_ok",
+			ProtocolVersion: protocolVersion - 1,
+			Assigned:        1,
+			NumPlayers:      2,
+			Slots:           []string{"Host", "Guest"},
+			SessionID:       "legacy-reconnect-session",
+		}); err != nil {
+			reportErr(err)
+			return
+		}
+		initialConnReady <- conn
+
+		conn, err = ln.Accept()
+		if err != nil {
+			reportErr(err)
+			return
+		}
+		reader = newConnReader(conn)
+		rejoin, err := readMessage(conn, reader)
+		if err != nil {
+			reportErr(err)
+			return
+		}
+		reconnectJoinVersion <- rejoin.ProtocolVersion
+		if err := writeMessage(conn, Message{
+			Type:            "join_ok",
+			ProtocolVersion: protocolVersion - 1,
+			Assigned:        1,
+			NumPlayers:      2,
+			Slots:           []string{"Host", "Guest"},
+			SessionID:       "legacy-reconnect-session",
+		}); err != nil {
+			reportErr(err)
+			return
+		}
+		for {
+			msg, err := readMessage(conn, reader)
+			if err != nil {
+				reportErr(err)
+				return
+			}
+			if msg.Type == "ping" {
+				if err := writeMessage(conn, Message{Type: "pong", ProtocolVersion: protocolVersion - 1}); err != nil {
+					reportErr(err)
+					return
+				}
+				continue
+			}
+			if msg.Type == "chat" {
+				reconnectChatVersion <- msg.ProtocolVersion
+				return
+			}
+		}
+	}()
+
+	inv := InviteKey{
+		Addr:             ln.Addr().String(),
+		Token:            "legacy-reconnect-token",
+		Fingerprint:      fingerprint,
+		Transport:        "tcp_tls",
+		TransportVersion: 1,
+	}
+	key, err := EncodeInviteKey(inv)
+	if err != nil {
+		t.Fatalf("EncodeInviteKey: %v", err)
+	}
+
+	cli, err := JoinSession(key, "Guest", "auto")
+	if err != nil {
+		t.Fatalf("JoinSession: %v", err)
+	}
+	defer cli.Close()
+
+	if cli.WireProtocolVersion() != protocolVersion-1 {
+		t.Fatalf("initial wire protocol = %d, want %d", cli.WireProtocolVersion(), protocolVersion-1)
+	}
+
+	var initialConn net.Conn
+	select {
+	case initialConn = <-initialConnReady:
+	case err := <-serverErr:
+		t.Fatalf("server error before initial connection ready: %v", err)
+	case <-time.After(2 * time.Second):
+		t.Fatalf("timeout waiting initial legacy connection")
+	}
+	closeConnWithLog(initialConn, "force client reconnect")
+
+	waitEventContains(t, cli.Events(), 8*time.Second, "Reconectado ao host")
+	if cli.WireProtocolVersion() != protocolVersion-1 {
+		t.Fatalf("wire protocol after reconnect = %d, want %d", cli.WireProtocolVersion(), protocolVersion-1)
+	}
+
+	if err := cli.SendChat("after reconnect"); err != nil {
+		t.Fatalf("SendChat after reconnect: %v", err)
+	}
+
+	select {
+	case version := <-reconnectJoinVersion:
+		if version != protocolVersion-1 {
+			t.Fatalf("reconnect join protocol = %d, want %d", version, protocolVersion-1)
+		}
+	case err := <-serverErr:
+		t.Fatalf("server error during reconnect: %v", err)
+	case <-time.After(8 * time.Second):
+		t.Fatalf("timeout waiting reconnect join")
+	}
+
+	select {
+	case version := <-reconnectChatVersion:
+		if version != protocolVersion-1 {
+			t.Fatalf("reconnect chat protocol = %d, want %d", version, protocolVersion-1)
+		}
+	case err := <-serverErr:
+		t.Fatalf("server error during reconnect chat: %v", err)
+	case <-time.After(8 * time.Second):
+		t.Fatalf("timeout waiting reconnect chat")
+	}
+}
+
 func TestClientReconnectsAndReceivesCachedState(t *testing.T) {
 	host, key, err := NewHostSession("127.0.0.1:0", "Host", 2)
 	if err != nil {
@@ -335,7 +754,7 @@ func TestHeartbeatTimeoutEvictsIdleClient(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DecodeInviteKey: %v", err)
 	}
-	conn, _, _, err := dialAndJoin(inv, "IdleGuest", "auto", "", 1)
+	conn, _, _, err := dialAndJoin(inv, "IdleGuest", "auto", "", 1, supportedProtocolVersions())
 	if err != nil {
 		t.Fatalf("dialAndJoin: %v", err)
 	}

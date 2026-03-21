@@ -7,9 +7,9 @@ pub struct SnapshotBundle {
     pub locale: Option<String>,
     pub match_snapshot: Option<GameSnapshot>,
     // Serde rename for the "match" key (reserved word in Rust)
-    pub lobby: Option<serde_json::Value>,
-    pub connection: Option<serde_json::Value>,
-    pub diagnostics: Option<serde_json::Value>,
+    pub lobby: Option<LobbySnapshot>,
+    pub connection: Option<ConnectionSnapshot>,
+    pub diagnostics: Option<DiagnosticsSnapshot>,
 }
 
 // Custom deserializer to handle "match" as a key name
@@ -21,9 +21,9 @@ impl SnapshotBundle {
         let match_snapshot = v.get("match").and_then(|m| {
             serde_json::from_value::<GameSnapshot>(m.clone()).ok()
         });
-        let lobby = v.get("lobby").cloned();
-        let connection = v.get("connection").cloned();
-        let diagnostics = v.get("diagnostics").cloned();
+        let lobby = v.get("lobby").and_then(|value| serde_json::from_value::<LobbySnapshot>(value.clone()).ok());
+        let connection = v.get("connection").and_then(|value| serde_json::from_value::<ConnectionSnapshot>(value.clone()).ok());
+        let diagnostics = v.get("diagnostics").and_then(|value| serde_json::from_value::<DiagnosticsSnapshot>(value.clone()).ok());
         
         Some(SnapshotBundle {
             mode,
@@ -62,6 +62,38 @@ pub struct LobbySnapshot {
     pub connected_seats: Option<std::collections::HashMap<String, bool>>,
     #[serde(rename = "role")]
     pub role: Option<String>,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+pub struct ConnectionSnapshot {
+    #[serde(rename = "status")]
+    pub status: Option<String>,
+    #[serde(rename = "is_online")]
+    pub is_online: Option<bool>,
+    #[serde(rename = "is_host")]
+    pub is_host: Option<bool>,
+    #[serde(rename = "network")]
+    pub network: Option<NetworkSnapshot>,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+pub struct NetworkSnapshot {
+    #[serde(rename = "transport")]
+    pub transport: Option<String>,
+    #[serde(rename = "supported_protocol_versions")]
+    pub supported_protocol_versions: Option<Vec<i32>>,
+    #[serde(rename = "negotiated_protocol_version")]
+    pub negotiated_protocol_version: Option<i32>,
+    #[serde(rename = "seat_protocol_versions")]
+    pub seat_protocol_versions: Option<std::collections::HashMap<String, i32>>,
+    #[serde(rename = "mixed_protocol_session")]
+    pub mixed_protocol_session: Option<bool>,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+pub struct DiagnosticsSnapshot {
+    #[serde(rename = "event_backlog")]
+    pub event_backlog: Option<i32>,
 }
 
 #[derive(Deserialize, Debug, Clone)]

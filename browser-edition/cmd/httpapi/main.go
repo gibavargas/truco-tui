@@ -209,9 +209,7 @@ func (srv *apiServer) dispatch(action, sessionID string, body map[string]interfa
 		return runtimeResult(bs.rt, true)
 
 	case "pullOnlineEvents", "pollEvents":
-		out := runtimeResult(bs.rt, true)
-		out["events"] = drainEvents(bs.rt)
-		return out
+		return runtimeResult(bs.rt, true)
 
 	default:
 		return errResult("unknown action: " + action)
@@ -288,6 +286,7 @@ func sessionFromBundle(bundle appcore.SnapshotBundle) map[string]interface{} {
 		"connected":    connected,
 		"started":      bundle.Lobby.Started,
 		"role":         bundle.Lobby.Role,
+		"network":      bundle.Connection.Network,
 	}
 }
 

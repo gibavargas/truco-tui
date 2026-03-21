@@ -32,10 +32,49 @@ struct ConnectionSnapshot: Codable {
     let status: String?
     let is_online: Bool?
     let is_host: Bool?
+    let network: NetworkSnapshot?
 }
 
 struct DiagnosticsSnapshot: Codable {
     let event_backlog: Int?
+}
+
+struct NetworkSnapshot: Codable {
+    let transport: String?
+    let supported_protocol_versions: [Int]?
+    let negotiated_protocol_version: Int?
+    let seat_protocol_versions: [String: Int]?
+    let mixed_protocol_session: Bool?
+
+    var transportLabel: String {
+        transport == "relay_quic_v2" ? "Relay QUIC v2" : "TCP + TLS"
+    }
+
+    var supportedVersionsLabel: String {
+        guard let versions = supported_protocol_versions, !versions.isEmpty else { return "-" }
+        return versions.map { "v\($0)" }.joined(separator: "/")
+    }
+
+    func protocolVersion(for seat: Int) -> Int? {
+        seat_protocol_versions?["\(seat)"]
+    }
+
+    func compatibilitySummary(isHost: Bool) -> String {
+        if isHost {
+            var unique: [Int] = []
+            for version in (seat_protocol_versions ?? [:]).values.filter({ $0 > 0 }).sorted(by: >) {
+                if !unique.contains(version) {
+                    unique.append(version)
+                }
+            }
+            let summary = unique.isEmpty ? supportedVersionsLabel : unique.map { "v\($0)" }.joined(separator: "/")
+            return mixed_protocol_session == true ? "Sessão mista \(summary)" : summary
+        }
+        if let negotiatedProtocolVersion = negotiated_protocol_version {
+            return "Negociado v\(negotiatedProtocolVersion)"
+        }
+        return supportedVersionsLabel
+    }
 }
 
 // MARK: - AppEvents definition

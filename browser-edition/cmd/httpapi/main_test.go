@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
 )
 
 // ---------------------------------------------------------------------------
@@ -63,6 +65,19 @@ func parseSnap(t *testing.T, res map[string]interface{}) map[string]interface{} 
 		t.Fatalf("decode snapshot: %v", err)
 	}
 	return snap
+}
+
+func requireSessionNetwork(t *testing.T, res map[string]interface{}) map[string]interface{} {
+	t.Helper()
+	session, ok := res["session"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected session in response")
+	}
+	network, ok := session["network"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected session.network in response, got %v", session["network"])
+	}
+	return network
 }
 
 // ---------------------------------------------------------------------------
@@ -316,6 +331,20 @@ func TestStartOnlineHost(t *testing.T) {
 	if session["inviteKey"] == "" {
 		t.Fatalf("expected inviteKey")
 	}
+	network := requireSessionNetwork(t, res)
+	if network["transport"] != "tcp_tls" {
+		t.Fatalf("transport = %v, want tcp_tls", network["transport"])
+	}
+	if mixed, _ := network["mixed_protocol_session"].(bool); mixed {
+		t.Fatalf("mixed_protocol_session = %v, want false", mixed)
+	}
+	seatVersions, ok := network["seat_protocol_versions"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected seat_protocol_versions in host network payload")
+	}
+	if seatVersions["0"] != float64(2) {
+		t.Fatalf("seat 0 protocol = %v, want 2", seatVersions["0"])
+	}
 }
 
 func TestJoinOnline(t *testing.T) {
@@ -344,6 +373,13 @@ func TestJoinOnline(t *testing.T) {
 	}
 	if res["mode"] != "client_lobby" {
 		t.Fatalf("expected client_lobby, got %v", res["mode"])
+	}
+	network := requireSessionNetwork(t, res)
+	if network["transport"] != "tcp_tls" {
+		t.Fatalf("transport = %v, want tcp_tls", network["transport"])
+	}
+	if network["negotiated_protocol_version"] != float64(2) {
+		t.Fatalf("negotiated_protocol_version = %v, want 2", network["negotiated_protocol_version"])
 	}
 }
 
@@ -386,6 +422,14 @@ func TestOnlineState(t *testing.T) {
 	}
 	if session["inviteKey"] == nil || session["inviteKey"] == "" {
 		t.Fatalf("expected inviteKey in onlineState")
+	}
+	network := requireSessionNetwork(t, res)
+	if network["transport"] != "tcp_tls" {
+		t.Fatalf("transport = %v, want tcp_tls", network["transport"])
+	}
+	seatVersions, ok := network["seat_protocol_versions"].(map[string]interface{})
+	if !ok || seatVersions["0"] != float64(2) {
+		t.Fatalf("unexpected host seat_protocol_versions payload: %v", network["seat_protocol_versions"])
 	}
 }
 
@@ -445,6 +489,57 @@ func TestSendChat(t *testing.T) {
 	if !res["ok"].(bool) {
 		t.Fatalf("onlineState failed after chat")
 	}
+}
+
+func TestPollEventsReturnsGuestChatToHost(t *testing.T) {
+	srv := newAPIServer()
+	hostRes := postAction(t, srv, "createSession", "", nil)
+	hostSID := hostRes["sessionId"].(string)
+	joinRes := postAction(t, srv, "createSession", "", nil)
+	joinSID := joinRes["sessionId"].(string)
+
+	res := postAction(t, srv, "startOnlineHost", hostSID, map[string]interface{}{
+		"name":       "Host",
+		"numPlayers": 2,
+	})
+	key := res["session"].(map[string]interface{})["inviteKey"].(string)
+	_ = postAction(t, srv, "joinOnline", joinSID, map[string]interface{}{
+		"name": "Joiner",
+		"key":  key,
+		"role": "opponent",
+	})
+
+	res = postAction(t, srv, "startOnlineMatch", hostSID, nil)
+	if !res["ok"].(bool) {
+		t.Fatalf("startOnlineMatch failed: %v", res["error"])
+	}
+
+	res = postAction(t, srv, "sendChat", joinSID, map[string]interface{}{
+		"message": "mesa viva",
+	})
+	if !res["ok"].(bool) {
+		t.Fatalf("guest sendChat failed: %v", res["error"])
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		res = postAction(t, srv, "pollEvents", hostSID, nil)
+		events, _ := res["events"].([]interface{})
+		for _, raw := range events {
+			ev, ok := raw.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			payload, _ := ev["payload"].(map[string]interface{})
+			text, _ := payload["text"].(string)
+			if strings.Contains(text, "mesa viva") {
+				return
+			}
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+
+	t.Fatalf("host pollEvents did not return guest chat")
 }
 
 func TestSendHostVote(t *testing.T) {

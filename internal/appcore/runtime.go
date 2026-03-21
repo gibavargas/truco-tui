@@ -35,8 +35,9 @@ type Runtime struct {
 	events    []AppEvent
 	eventLog  []string
 
-	match *truco.Snapshot
-	lobby *LobbySnapshot
+	match   *truco.Snapshot
+	lobby   *LobbySnapshot
+	network *NetworkSnapshot
 }
 
 func NewRuntime() *Runtime {
@@ -187,6 +188,7 @@ func (r *Runtime) snapshotBundleLocked() SnapshotBundle {
 		c := cloneLobbySnapshot(*r.lobby)
 		lobby = &c
 	}
+	network := r.currentNetworkSnapshotLocked()
 	return SnapshotBundle{
 		Versions: r.Versions(),
 		Mode:     r.mode,
@@ -197,6 +199,7 @@ func (r *Runtime) snapshotBundleLocked() SnapshotBundle {
 			Status:       r.mode,
 			IsOnline:     strings.Contains(r.mode, "host") || strings.Contains(r.mode, "client"),
 			IsHost:       strings.Contains(r.mode, "host"),
+			Network:      network,
 			LastError:    cloneError(r.lastError),
 			LastEventSeq: r.nextSeq,
 		},
@@ -254,11 +257,14 @@ func (r *Runtime) teardownSessionLocked() {
 	r.host = nil
 	r.client = nil
 	r.game = nil
+	r.match = nil
+	r.lobby = nil
 	r.localSeat = -1
 	r.inviteKey = ""
 	r.events = nil
 	r.eventLog = nil
 	r.nextSeq = 0
+	r.network = nil
 }
 
 func (r *Runtime) startOfflineLocked(payload NewOfflineGamePayload) error {
@@ -285,6 +291,7 @@ func (r *Runtime) startOfflineLocked(payload NewOfflineGamePayload) error {
 	snap := game.Snapshot(0)
 	r.setMatchLocked(snap)
 	r.lobby = nil
+	r.network = nil
 	gen := r.sessionGen
 	go r.runGameTicker(gen)
 	r.queueEventLocked("session_ready", map[string]any{"mode": r.mode})
@@ -316,6 +323,7 @@ func (r *Runtime) resetSessionLocked() error {
 	r.mode = "idle"
 	r.match = nil
 	r.lobby = nil
+	r.network = nil
 	r.seedLo = 0
 	r.seedHi = 0
 	r.useSeed = false
@@ -384,12 +392,9 @@ func (r *Runtime) joinSessionLocked(payload JoinSessionPayload) error {
 	r.client = client
 	r.mode = "client_lobby"
 	r.localSeat = client.AssignedSeat()
-	r.lobby = &LobbySnapshot{
-		Slots:        client.Slots(),
-		AssignedSeat: client.AssignedSeat(),
-		NumPlayers:   len(client.Slots()),
-		Started:      client.GameStarted(),
-		Role:         payload.DesiredRole,
+	r.updateClientLobbyLocked()
+	if r.lobby != nil {
+		r.lobby.Role = payload.DesiredRole
 	}
 	gen := r.sessionGen
 	go r.runClientLoop(gen, client)
@@ -490,6 +495,7 @@ func (r *Runtime) setMatchLocked(s truco.Snapshot) {
 func (r *Runtime) updateHostLobbyLocked() {
 	if r.host == nil {
 		r.lobby = nil
+		r.network = nil
 		return
 	}
 	r.lobby = &LobbySnapshot{
@@ -501,12 +507,14 @@ func (r *Runtime) updateHostLobbyLocked() {
 		HostSeat:       r.host.CurrentHostSeat(),
 		ConnectedSeats: r.host.ConnectedSeats(),
 	}
+	r.network = r.buildHostNetworkSnapshotLocked()
 	r.queueEventLocked("lobby_updated", r.lobby)
 }
 
 func (r *Runtime) updateClientLobbyLocked() {
 	if r.client == nil {
 		r.lobby = nil
+		r.network = nil
 		return
 	}
 	r.lobby = &LobbySnapshot{
@@ -516,7 +524,81 @@ func (r *Runtime) updateClientLobbyLocked() {
 		Started:      r.client.GameStarted(),
 		Role:         "",
 	}
+	r.network = r.buildClientNetworkSnapshotLocked()
 	r.queueEventLocked("lobby_updated", r.lobby)
+}
+
+func (r *Runtime) currentNetworkSnapshotLocked() *NetworkSnapshot {
+	if r.network != nil {
+		return cloneNetworkSnapshot(r.network)
+	}
+	switch {
+	case r.host != nil:
+		return cloneNetworkSnapshot(r.buildHostNetworkSnapshotLocked())
+	case r.client != nil:
+		return cloneNetworkSnapshot(r.buildClientNetworkSnapshotLocked())
+	default:
+		return nil
+	}
+}
+
+func (r *Runtime) buildHostNetworkSnapshotLocked() *NetworkSnapshot {
+	if r.host == nil {
+		return nil
+	}
+	seatVersions := r.host.SeatProtocolVersions()
+	return &NetworkSnapshot{
+		Transport:                 r.host.TransportMode(),
+		SupportedProtocolVersions: netp2p.SupportedProtocolVersions(),
+		SeatProtocolVersions:      seatVersions,
+		MixedProtocolSession:      hasMixedProtocolVersions(seatVersions),
+	}
+}
+
+func (r *Runtime) buildClientNetworkSnapshotLocked() *NetworkSnapshot {
+	if r.client == nil {
+		return nil
+	}
+	return &NetworkSnapshot{
+		Transport:                 r.client.TransportMode(),
+		SupportedProtocolVersions: netp2p.SupportedProtocolVersions(),
+		NegotiatedProtocolVersion: r.client.WireProtocolVersion(),
+	}
+}
+
+func hasMixedProtocolVersions(seatVersions map[int]int) bool {
+	seen := map[int]struct{}{}
+	for _, version := range seatVersions {
+		if version == 0 {
+			continue
+		}
+		seen[version] = struct{}{}
+		if len(seen) > 1 {
+			return true
+		}
+	}
+	return false
+}
+
+func cloneNetworkSnapshot(src *NetworkSnapshot) *NetworkSnapshot {
+	if src == nil {
+		return nil
+	}
+	out := &NetworkSnapshot{
+		Transport:                 src.Transport,
+		NegotiatedProtocolVersion: src.NegotiatedProtocolVersion,
+		MixedProtocolSession:      src.MixedProtocolSession,
+	}
+	if len(src.SupportedProtocolVersions) > 0 {
+		out.SupportedProtocolVersions = append([]int(nil), src.SupportedProtocolVersions...)
+	}
+	if len(src.SeatProtocolVersions) > 0 {
+		out.SeatProtocolVersions = make(map[int]int, len(src.SeatProtocolVersions))
+		for seat, version := range src.SeatProtocolVersions {
+			out.SeatProtocolVersions[seat] = version
+		}
+	}
+	return out
 }
 
 func (r *Runtime) runHostEventLoop(gen uint64, host *netp2p.HostSession) {

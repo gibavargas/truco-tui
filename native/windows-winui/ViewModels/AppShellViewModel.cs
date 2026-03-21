@@ -518,6 +518,7 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
     private void UpdateLobby(LobbySnapshot? lobby)
     {
         List<LobbySeatViewModel> seats = [];
+        Dictionary<int, int> seatProtocolVersions = _bundle.Connection.Network?.SeatProtocolVersions ?? [];
         if (lobby is not null)
         {
             for (int i = 0; i < lobby.NumPlayers; i++)
@@ -532,6 +533,7 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
                     IsConnected = connected,
                     IsHost = i == lobby.HostSeat,
                     IsEmpty = string.IsNullOrWhiteSpace(name),
+                    ProtocolVersion = seatProtocolVersions.GetValueOrDefault(i),
                     StatusText = connected ? "conectado" : lobby.Started && !string.IsNullOrWhiteSpace(name) ? "aguardando reconexão" : "livre",
                 });
             }
@@ -713,11 +715,52 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
 
     private static string BuildConnectionDetails(SnapshotBundle bundle)
     {
-        LobbySnapshot? lobby = bundle.Lobby;
-        string hostSeat = FormatSeatIndex(lobby?.HostSeat ?? -1);
-        string assignedSeat = FormatSeatIndex(lobby?.AssignedSeat ?? -1);
-        return $"Status: {bundle.Connection.Status}  |  Locale: {bundle.Locale}  |  Host seat: {hostSeat}  |  Assento local: {assignedSeat}  |  backlog: {bundle.Diagnostics.EventBacklog}";
+        NetworkSnapshot? network = bundle.Connection.Network;
+        string transport = FormatTransport(network?.Transport);
+        string supported = FormatSupportedVersions(network);
+        string compatibility = BuildCompatibilitySummary(bundle, network);
+        return $"Status: {bundle.Connection.Status}  |  Rede: {transport}  |  Compat: {compatibility}  |  Build: {supported}";
     }
+
+    private static string BuildCompatibilitySummary(SnapshotBundle bundle, NetworkSnapshot? network)
+    {
+        if (network is null)
+        {
+            return "offline";
+        }
+
+        if (bundle.Connection.IsHost)
+        {
+            IEnumerable<string> seatVersions = network.SeatProtocolVersions
+                .Values
+                .Where(version => version > 0)
+                .Distinct()
+                .OrderByDescending(version => version)
+                .Select(version => $"v{version}");
+            string joined = string.Join("/", seatVersions);
+            if (string.IsNullOrWhiteSpace(joined))
+            {
+                joined = FormatSupportedVersions(network);
+            }
+            return network.MixedProtocolSession ? $"misto {joined}" : joined;
+        }
+
+        return network.NegotiatedProtocolVersion > 0
+            ? $"negociado v{network.NegotiatedProtocolVersion}"
+            : FormatSupportedVersions(network);
+    }
+
+    private static string FormatSupportedVersions(NetworkSnapshot? network)
+    {
+        if (network is null || network.SupportedProtocolVersions.Count == 0)
+        {
+            return "-";
+        }
+        return string.Join("/", network.SupportedProtocolVersions.Select(version => $"v{version}"));
+    }
+
+    private static string FormatTransport(string? transport)
+        => transport == "relay_quic_v2" ? "Relay QUIC v2" : "TCP + TLS";
 
     private static string BuildRaiseSummary(MatchSnapshot match)
     {
@@ -893,6 +936,11 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
         bundle.Lobby ??= new LobbySnapshot();
         bundle.Lobby.Slots ??= [];
         bundle.Lobby.ConnectedSeats ??= [];
+        if (bundle.Connection.Network is not null)
+        {
+            bundle.Connection.Network.SupportedProtocolVersions ??= [];
+            bundle.Connection.Network.SeatProtocolVersions ??= [];
+        }
 
         if (bundle.Match is null)
         {

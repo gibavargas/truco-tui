@@ -403,6 +403,29 @@
                             </Border>
                         </Grid>
 
+                        <Grid Visibility="{Binding HostVisibility}">
+                            <Border Background="#D9000000" CornerRadius="24" Padding="40" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                <StackPanel MaxWidth="520" Spacing="16">
+                                    <TextBlock Text="Criar Mesa Online" FontSize="28" FontWeight="Bold" Foreground="{StaticResource MacTextPrimary}"/>
+                                    <TextBox Text="{Binding HostName, Mode=TwoWay}" PlaceholderText="Seu nome" Background="#33FFFFFF" Foreground="White" BorderThickness="0" Padding="12" CornerRadius="8"/>
+                                    <ComboBox SelectedValue="{Binding HostNumPlayers, Mode=TwoWay}" SelectedValuePath="Tag" Width="220" Background="#33FFFFFF" Foreground="White" BorderThickness="0" CornerRadius="8">
+                                        <ComboBoxItem Content="2 jogadores" Tag="2" />
+                                        <ComboBoxItem Content="4 jogadores" Tag="4" />
+                                    </ComboBox>
+                                    <TextBox Text="{Binding BindAddress, Mode=TwoWay}" PlaceholderText="Bind address (opcional)" Background="#33FFFFFF" Foreground="White" BorderThickness="0" Padding="12" CornerRadius="8"/>
+                                    <TextBox Text="{Binding RelayUrl, Mode=TwoWay}" PlaceholderText="Relay URL (opcional)" Background="#33FFFFFF" Foreground="White" BorderThickness="0" Padding="12" CornerRadius="8"/>
+                                    <ComboBox SelectedValue="{Binding TransportMode, Mode=TwoWay}" SelectedValuePath="Tag" Width="220" Background="#33FFFFFF" Foreground="White" BorderThickness="0" CornerRadius="8">
+                                        <ComboBoxItem Content="TCP + TLS" Tag="tcp_tls" />
+                                        <ComboBoxItem Content="Relay QUIC v2" Tag="relay_quic_v2" />
+                                    </ComboBox>
+                                    <StackPanel Orientation="Horizontal" Spacing="16" Margin="0,24,0,0">
+                                        <Button Content="Criar sala" Command="{Binding CreateHostSessionCommand}" Padding="24,10" Background="{StaticResource MacTextYellow}" Foreground="{StaticResource MacTextDark}" FontWeight="Bold" CornerRadius="8" BorderThickness="0"/>
+                                        <Button Content="Voltar" Command="{Binding ShowHomeCommand}" Padding="24,10" Background="Transparent" Foreground="White" BorderThickness="0"/>
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+                        </Grid>
+
                         <Grid Visibility="{Binding JoinVisibility}">
                             <Border Background="#D9000000" CornerRadius="24" Padding="40" HorizontalAlignment="Center" VerticalAlignment="Center">
                                 <StackPanel MaxWidth="500" Spacing="16">
@@ -417,6 +440,58 @@
                                     <StackPanel Orientation="Horizontal" Spacing="16" Margin="0,24,0,0">
                                         <Button Content="Conectar" Command="{Binding JoinOnlineSessionCommand}" Padding="24,10" Background="{StaticResource MacTextYellow}" Foreground="{StaticResource MacTextDark}" FontWeight="Bold" CornerRadius="8" BorderThickness="0"/>
                                         <Button Content="Voltar" Command="{Binding ShowHomeCommand}" Padding="24,10" Background="Transparent" Foreground="White" BorderThickness="0"/>
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+                        </Grid>
+
+                        <Grid Visibility="{Binding LobbyVisibility}">
+                            <Border Background="#D9000000" CornerRadius="24" Padding="32" HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="760">
+                                <StackPanel Spacing="16">
+                                    <TextBlock Text="Lobby Online" FontSize="28" FontWeight="Bold" Foreground="{StaticResource MacTextPrimary}"/>
+                                    <TextBlock Text="{Binding ConnectionDetails}" TextWrapping="Wrap" Foreground="{StaticResource MacTextMuted}"/>
+
+                                    <Border Background="#1AFFFFFF" CornerRadius="12" Padding="12" Visibility="{Binding InviteVisibility}">
+                                        <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+                                            <TextBlock Text="Convite" Foreground="{StaticResource MacTextMuted}" VerticalAlignment="Center"/>
+                                            <TextBlock Text="{Binding InviteKey}" Foreground="{StaticResource MacTextYellow}" FontFamily="Consolas" FontSize="16" VerticalAlignment="Center"/>
+                                            <Button Content="Copiar" Command="{Binding CopyInviteKeyCommand}" Background="#33FFFFFF" Foreground="White" BorderThickness="0" CornerRadius="8"/>
+                                        </StackPanel>
+                                    </Border>
+
+                                    <ItemsControl ItemsSource="{Binding LobbySeats}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Border Background="#14000000" BorderBrush="#1AFFFFFF" BorderThickness="1" CornerRadius="12" Padding="12" Margin="0,0,0,8">
+                                                    <Grid ColumnSpacing="12">
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="*" />
+                                                            <ColumnDefinition Width="Auto" />
+                                                        </Grid.ColumnDefinitions>
+                                                        <StackPanel>
+                                                            <TextBlock Text="{Binding DisplayLabel}" Foreground="{StaticResource MacTextPrimary}" FontWeight="SemiBold"/>
+                                                            <TextBlock Text="{Binding StatusText}" Foreground="{StaticResource MacTextMuted}" FontSize="12"/>
+                                                        </StackPanel>
+                                                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                                            <Border Background="#1AFFFFFF" CornerRadius="999" Padding="8,4">
+                                                                <TextBlock Text="{Binding ConnectionBadge}" Foreground="{StaticResource MacTextPrimary}" FontSize="11"/>
+                                                            </Border>
+                                                            <Border Background="#1AFFFFFF" CornerRadius="999" Padding="8,4">
+                                                                <TextBlock Text="{Binding RoleBadge}" Foreground="{StaticResource MacTextPrimary}" FontSize="11"/>
+                                                            </Border>
+                                                            <Border Background="#33FFD54F" CornerRadius="999" Padding="8,4">
+                                                                <TextBlock Text="{Binding ProtocolBadge}" Foreground="{StaticResource MacTextDark}" FontSize="11" FontWeight="Bold"/>
+                                                            </Border>
+                                                        </StackPanel>
+                                                    </Grid>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+
+                                    <StackPanel Orientation="Horizontal" Spacing="16" VerticalAlignment="Center">
+                                        <Button Content="Iniciar partida" Command="{Binding StartHostedMatchCommand}" IsEnabled="{Binding CanStartHostedMatch}" Padding="24,10" Background="{StaticResource MacTextYellow}" Foreground="{StaticResource MacTextDark}" FontWeight="Bold" CornerRadius="8" BorderThickness="0"/>
+                                        <TextBlock Text="O host inicia quando todos os assentos ocupados estiverem conectados." Foreground="{StaticResource MacTextMuted}" TextWrapping="Wrap" VerticalAlignment="Center"/>
                                     </StackPanel>
                                 </StackPanel>
                             </Border>

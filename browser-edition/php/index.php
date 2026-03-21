@@ -121,8 +121,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             break;
 
         case 'startOnlineHost':
+            $_SESSION['player_name'] = trim($_POST['name'] ?? ($_SESSION['player_name'] ?? 'Host'));
             $res = $api->call('startOnlineHost', $sid, [
-                'name' => trim($_POST['name'] ?? 'Host'),
+                'name' => $_SESSION['player_name'],
                 'numPlayers' => (int) ($_POST['numPlayers'] ?? 2),
             ]);
             if (!empty($res['ok'])) {
@@ -133,8 +134,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             break;
 
         case 'joinOnline':
+            $_SESSION['player_name'] = trim($_POST['name'] ?? ($_SESSION['player_name'] ?? 'Player'));
             $res = $api->call('joinOnline', $sid, [
-                'name' => trim($_POST['name'] ?? 'Player'),
+                'name' => $_SESSION['player_name'],
                 'key' => trim($_POST['key'] ?? ''),
                 'role' => $_POST['role'] ?? 'auto',
             ]);
@@ -222,6 +224,7 @@ if ($ajaxRequest) {
     echo json_encode([
         'ok' => true,
         'view' => $view,
+        'mode' => $bundle['mode'] ?? 'idle',
         'viewHtml' => $viewHtml,
     ]);
     exit;
@@ -257,7 +260,7 @@ $langAttr = ($locale === 'en-US') ? 'en' : 'pt-BR';
                 <span class="brand-mark">🂡</span>
                 <div>
                     <h1><?= tr('title_main') ?></h1>
-                    <p><?= tr('title_sub') ?></p>
+                    <p class="brand-sub"><?= tr('title_sub') ?></p>
                 </div>
             </div>
             <div class="topbar-actions">
@@ -273,7 +276,7 @@ $langAttr = ($locale === 'en-US') ? 'en' : 'pt-BR';
             </div>
         </header>
 
-        <div id="view-root">
+        <div id="view-root" data-view="<?= htmlspecialchars($view) ?>" data-mode="<?= htmlspecialchars($bundle['mode'] ?? 'idle') ?>">
             <?= $viewHtml ?>
         </div>
     </main>

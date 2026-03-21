@@ -118,7 +118,7 @@ p {
   margin: 0;
 }
 
-#title-sub {
+.brand-sub {
   color: var(--muted);
   font-size: 0.82rem;
 }
@@ -155,9 +155,8 @@ label {
 }
 
 .setup-panel {
-  max-width: 540px;
   margin: 8px auto;
-  padding: 18px;
+  padding: 24px;
   position: relative;
   overflow: hidden;
   border-color: rgba(255, 213, 144, 0.5);
@@ -176,37 +175,141 @@ label {
   pointer-events: none;
 }
 
-.setup-panel h2 {
-  margin: 0 0 12px;
-  font-family: "Bebas Neue", "Sora", sans-serif;
-  letter-spacing: 0.05em;
-  font-size: clamp(1.45rem, 3vw, 1.95rem);
+.setup-shell {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.9fr) minmax(0, 1.5fr);
+  gap: 18px;
+  align-items: start;
 }
 
-.setup-grid {
+.setup-hero {
   display: grid;
-  grid-template-columns: 1fr 140px;
+  gap: 12px;
+  padding: 16px;
+  border-radius: 18px;
+  background:
+    radial-gradient(180px 120px at 10% 0%, rgba(255, 213, 144, 0.18), transparent 75%),
+    linear-gradient(155deg, rgba(12, 30, 42, 0.86), rgba(10, 24, 35, 0.72));
+  border: 1px solid rgba(255, 219, 154, 0.2);
+  box-shadow: inset 0 0 0 1px rgba(255, 243, 216, 0.04);
+}
+
+.setup-kicker,
+.setup-card-kicker,
+.decision-kicker {
+  font-size: 0.72rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: #ffdca1;
+}
+
+.setup-panel h2 {
+  margin: 0;
+  font-family: "Bebas Neue", "Sora", sans-serif;
+  letter-spacing: 0.05em;
+  font-size: clamp(2rem, 4vw, 3.25rem);
+  line-height: 0.95;
+}
+
+.setup-intro {
+  color: #d6eaf7;
+  font-size: 0.95rem;
+  line-height: 1.65;
+}
+
+.setup-hero-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.setup-hero-pills span,
+.lobby-meta > div {
+  border: 1px solid rgba(222, 240, 252, 0.18);
+  border-radius: 999px;
+  background: rgba(7, 23, 35, 0.52);
+  padding: 7px 10px;
+  font-size: 0.78rem;
+  color: #d6ecf8;
+}
+
+.setup-card-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.setup-card {
+  border: 1px solid rgba(221, 242, 252, 0.18);
+  border-radius: 18px;
+  background:
+    linear-gradient(180deg, rgba(16, 38, 52, 0.84), rgba(10, 26, 37, 0.96)),
+    linear-gradient(145deg, rgba(255, 255, 255, 0.05), transparent);
+  padding: 16px;
+  display: grid;
+  gap: 14px;
+  min-height: 100%;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.02);
+}
+
+.setup-card-offline {
+  border-color: rgba(255, 208, 113, 0.28);
+}
+
+.setup-card-host {
+  border-color: rgba(126, 196, 255, 0.26);
+}
+
+.setup-card-join {
+  border-color: rgba(52, 211, 153, 0.28);
+}
+
+.setup-card-head {
+  display: grid;
+  gap: 8px;
+}
+
+.setup-card h3 {
+  margin: 0;
+  font-family: "Bebas Neue", "Sora", sans-serif;
+  font-size: 1.8rem;
+  letter-spacing: 0.04em;
+}
+
+.setup-card p {
+  color: #cfe4f2;
+  line-height: 1.55;
+}
+
+.setup-form-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 132px;
   gap: 10px;
 }
 
+.setup-form-grid-single {
+  grid-template-columns: 1fr;
+}
+
+.field-help {
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 0.76rem;
+  line-height: 1.5;
+}
+
 .setup-actions {
-  margin-top: 14px;
+  margin-top: 4px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .setup-help {
-  margin-top: 10px;
+  margin-top: 0;
   color: var(--muted);
   font-size: 0.82rem;
-}
-
-.online-setup {
-  margin-top: 12px;
-  border-top: 1px dashed rgba(255, 219, 154, 0.24);
-  padding-top: 12px;
-}
-
-.online-grid {
-  margin-top: 8px;
+  line-height: 1.5;
 }
 
 .lobby-panel {
@@ -220,12 +323,27 @@ label {
 }
 
 .lobby-meta {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 8px;
-  margin-bottom: 8px;
+  margin-bottom: 10px;
   color: var(--muted);
+}
+
+.lobby-meta > div {
+  border-radius: 14px;
+  display: grid;
+  gap: 2px;
+  padding: 10px 12px;
+}
+
+.lobby-meta code {
+  font-family: "IBM Plex Mono", monospace;
+  color: #fff0cd;
+  display: block;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 .lobby-grid {
@@ -239,6 +357,7 @@ label {
   border-radius: var(--r-md);
   background: rgba(9, 24, 35, 0.67);
   padding: 9px 10px;
+  min-width: 0;
 }
 
 .lobby-block h3 {
@@ -270,6 +389,14 @@ label {
   font-size: 0.8rem;
 }
 
+.lobby-slot small {
+  border: 1px solid rgba(255, 207, 107, 0.24);
+  border-radius: 999px;
+  padding: 2px 7px;
+  color: #ffe5b0;
+  background: rgba(255, 207, 107, 0.08);
+}
+
 .lobby-slot .roles {
   display: flex;
   flex-wrap: wrap;
@@ -296,6 +423,9 @@ label {
   margin: 0;
   max-height: 140px;
   overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
   font-family: "IBM Plex Mono", monospace;
   font-size: 0.72rem;
   color: #cde5f3;
@@ -504,17 +634,67 @@ label {
 }
 
 .turn-line {
-  margin-top: 8px;
+  margin-top: 10px;
   border: 1px solid var(--edge-soft);
   border-radius: var(--r-md);
-  padding: 8px 10px;
+  padding: 11px 12px;
   background: rgba(10, 28, 41, 0.62);
-  font-size: 0.92rem;
+  font-size: 0.98rem;
 }
 
 .turn-line.my-turn {
   border-color: rgba(255, 207, 107, 0.68);
   box-shadow: inset 0 0 0 1px rgba(255, 207, 107, 0.28), 0 0 18px rgba(255, 185, 80, 0.22);
+}
+
+.decision-banner {
+  margin-top: 10px;
+  border: 1px solid rgba(224, 243, 255, 0.18);
+  border-radius: 18px;
+  padding: 14px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  background: linear-gradient(145deg, rgba(11, 30, 42, 0.88), rgba(12, 28, 40, 0.72));
+}
+
+.decision-banner strong {
+  display: block;
+  margin-top: 4px;
+  font-size: 1.1rem;
+}
+
+.decision-banner p {
+  margin-top: 4px;
+  color: #d2e7f5;
+  font-size: 0.9rem;
+}
+
+.decision-banner.is-live {
+  border-color: rgba(255, 207, 107, 0.42);
+  box-shadow: 0 0 0 5px rgba(255, 189, 77, 0.08);
+}
+
+.decision-banner.is-pending {
+  border-color: rgba(255, 148, 118, 0.52);
+  background:
+    radial-gradient(220px 140px at 100% 0%, rgba(255, 124, 79, 0.18), transparent 75%),
+    linear-gradient(145deg, rgba(44, 21, 20, 0.92), rgba(17, 27, 37, 0.9));
+  box-shadow: 0 0 0 5px rgba(255, 112, 74, 0.12);
+}
+
+.decision-chip {
+  min-width: 92px;
+  text-align: center;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 207, 107, 0.32);
+  background: rgba(255, 207, 107, 0.12);
+  padding: 10px 12px;
+  font-family: "Bebas Neue", "Sora", sans-serif;
+  font-size: 1.2rem;
+  letter-spacing: 0.05em;
+  color: #fff1cf;
 }
 
 .layout {
@@ -818,6 +998,26 @@ label {
   gap: 4px;
 }
 
+.played-card.pos-top {
+  left: 50%;
+  top: 33%;
+}
+
+.played-card.pos-bottom {
+  left: 50%;
+  top: 68%;
+}
+
+.played-card.pos-left {
+  left: 31%;
+  top: 50%;
+}
+
+.played-card.pos-right {
+  left: 69%;
+  top: 50%;
+}
+
 .played-card .owner {
   font-size: 0.67rem;
   background: rgba(8, 24, 34, 0.72);
@@ -875,6 +1075,11 @@ label {
   padding: 0;
   cursor: pointer;
   border-radius: 12px;
+}
+
+.card-btn-static {
+  opacity: 0.62;
+  cursor: default;
 }
 
 .card-btn:disabled {
@@ -959,6 +1164,7 @@ label {
 .side-panel {
   display: grid;
   gap: 8px;
+  min-width: 0;
 }
 
 .side-block {
@@ -966,6 +1172,7 @@ label {
   border-radius: var(--r-md);
   background: rgba(9, 24, 35, 0.67);
   padding: 9px 10px;
+  min-width: 0;
 }
 
 .side-block h3 {
@@ -974,6 +1181,15 @@ label {
   color: var(--muted);
   text-transform: uppercase;
   letter-spacing: 0.09em;
+}
+
+.side-status.is-live {
+  border-color: rgba(255, 207, 107, 0.24);
+}
+
+.side-status.is-pending {
+  border-color: rgba(255, 124, 79, 0.34);
+  box-shadow: inset 0 0 0 1px rgba(255, 114, 79, 0.12);
 }
 
 .status-line {
@@ -1065,6 +1281,9 @@ kbd {
   margin: 0;
   max-height: 218px;
   overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
   font-family: "IBM Plex Mono", monospace;
   font-size: 0.73rem;
   line-height: 1.45;
@@ -1081,11 +1300,33 @@ kbd {
 }
 
 .action-row {
-  margin-top: 8px;
+  margin-top: 10px;
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
   align-items: center;
+}
+
+.action-dock {
+  border: 1px solid rgba(224, 243, 255, 0.12);
+  border-radius: 18px;
+  padding: 12px;
+  background: rgba(8, 24, 35, 0.6);
+}
+
+.action-dock.is-live {
+  border-color: rgba(255, 207, 107, 0.22);
+}
+
+.action-dock.is-pending {
+  border-color: rgba(255, 114, 79, 0.34);
+  box-shadow: 0 0 0 5px rgba(255, 114, 79, 0.08);
+}
+
+.action-hint {
+  flex: 1 0 100%;
+  color: var(--muted);
+  font-size: 0.76rem;
 }
 
 .btn {
@@ -1177,11 +1418,20 @@ kbd {
 }
 
 .hand-block {
-  margin-top: 8px;
+  margin-top: 12px;
   border: 1px solid var(--edge-soft);
   border-radius: var(--r-md);
   background: rgba(10, 27, 39, 0.62);
-  padding: 9px;
+  padding: 12px;
+}
+
+.hand-block.is-live {
+  border-color: rgba(255, 207, 107, 0.26);
+}
+
+.hand-block.locked {
+  border-color: rgba(219, 237, 248, 0.14);
+  background: rgba(7, 20, 30, 0.72);
 }
 
 .hand-title {
@@ -1195,11 +1445,25 @@ kbd {
 .my-hand {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 10px;
 }
 
 .my-hand .card-btn {
   flex: 0 0 auto;
+}
+
+.my-hand .card {
+  width: 96px;
+  height: 136px;
+}
+
+.my-hand .card.small {
+  width: 70px;
+  height: 98px;
+}
+
+.online-tools {
+  margin-top: 12px;
 }
 
 .btn:focus-visible,
@@ -1314,6 +1578,14 @@ select:focus-visible {
 }
 
 @media (max-width: 1030px) {
+  .setup-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .setup-card-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .layout {
     grid-template-columns: 1fr;
   }
@@ -1333,7 +1605,11 @@ select:focus-visible {
     align-items: stretch;
   }
 
-  .setup-grid {
+  .setup-card-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .setup-form-grid {
     grid-template-columns: 1fr;
   }
 
@@ -1370,11 +1646,31 @@ select:focus-visible {
   .lobby-grid {
     grid-template-columns: 1fr;
   }
+
+  .decision-banner {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .action-dock {
+    position: sticky;
+    bottom: 10px;
+    z-index: 15;
+    backdrop-filter: blur(16px);
+  }
 }
 
 @media (max-width: 520px) {
   .app-shell {
     width: min(1240px, 98vw);
+  }
+
+  .setup-panel {
+    padding: 18px;
+  }
+
+  .setup-hero {
+    padding: 14px;
   }
 
   .table-panel {
@@ -1408,8 +1704,17 @@ select:focus-visible {
     min-width: 0;
   }
 
+  .action-dock .btn {
+    min-height: 46px;
+  }
+
   .lobby-chat-row {
     grid-template-columns: 1fr;
+  }
+
+  .my-hand .card {
+    width: 82px;
+    height: 116px;
   }
 }
 

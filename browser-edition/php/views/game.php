@@ -13,6 +13,13 @@ $hand = $snap['CurrentHand'] ?? [];
 $mode = $bundle['mode'] ?? 'offline_match';
 $isOnline = strpos($mode, 'host_') === 0 || strpos($mode, 'client_') === 0;
 $lobby = $bundle['lobby'] ?? [];
+$locale = $_SESSION['locale'] ?? 'pt-BR';
+$numPlayers = $snap['NumPlayers'] ?? 2;
+$playersByID = [];
+foreach ($players as $playerEntry) {
+    $playersByID[(int) ($playerEntry['ID'] ?? -1)] = $playerEntry;
+}
+
 $myPlayer = null;
 foreach ($players as $p) {
     if (($p['ID'] ?? -1) === $myID) {
@@ -20,6 +27,7 @@ foreach ($players as $p) {
         break;
     }
 }
+
 $myCards = $myPlayer['Hand'] ?? [];
 $myTeam = $myPlayer['Team'] ?? 0;
 $stake = $hand['Stake'] ?? 1;
@@ -35,7 +43,42 @@ $turnName = htmlspecialchars($turnPlayerObj['Name'] ?? '?');
 $canPlayCard = !$matchFinished && $turnPlayer === $myID && $pendingFor === -1;
 $canTruco = !$matchFinished && (($turnPlayer === $myID && $pendingFor === -1) || ($pendingFor !== -1 && $pendingFor === $myTeam));
 $canAccept = !$matchFinished && $pendingFor !== -1 && $pendingFor === $myTeam;
-$locale = $_SESSION['locale'] ?? 'pt-BR';
+
+$statusText = '';
+if ($matchFinished) {
+    $statusText = tr('status_match_end');
+} elseif ($pendingFor !== -1 && $pendingFor === $myTeam) {
+    $statusText = tr('status_pending_you', raiseLabel($pendingTo ?: 3, $locale), $pendingTo ?: 3);
+} elseif ($pendingFor !== -1) {
+    $statusText = tr('status_pending_other', $turnName, raiseLabel($pendingTo ?: 3, $locale), $pendingTo ?: 3);
+} elseif ($turnPlayer === $myID) {
+    $statusText = tr('status_your_turn');
+} else {
+    $statusText = tr('status_wait_cpu', $turnName);
+}
+
+$decisionKicker = null;
+$decisionTitle = null;
+$decisionBody = null;
+$decisionClass = '';
+if ($canAccept) {
+    $decisionKicker = tr('decision_pending_eyebrow');
+    $decisionTitle = tr('decision_pending_title', raiseLabel($pendingTo ?: 3, $locale));
+    $decisionBody = tr('decision_pending_body');
+    $decisionClass = 'is-pending';
+} elseif ($canPlayCard || $canTruco) {
+    $decisionKicker = tr('decision_turn_eyebrow');
+    $decisionTitle = tr('decision_turn_title');
+    $decisionBody = tr('decision_turn_body');
+    $decisionClass = 'is-live';
+}
+
+$seatPosition = static function (int $playerID) use ($numPlayers, $myID): string {
+    if ($numPlayers === 2) {
+        return $playerID === $myID ? 'bottom' : 'top';
+    }
+    return ['bottom', 'right', 'top', 'left'][($playerID - $myID + 4) % 4] ?? 'top';
+};
 ?>
 <section class="panel game-panel">
     <div class="hud">
@@ -63,18 +106,54 @@ $locale = $_SESSION['locale'] ?? 'pt-BR';
         <?= tr('turn_of', $turnName) ?>
     </div>
 
+    <?php if ($decisionTitle !== null): ?>
+        <div class="decision-banner <?= $decisionClass ?>">
+            <div class="decision-copy">
+                <span class="decision-kicker"><?= htmlspecialchars($decisionKicker) ?></span>
+                <strong><?= htmlspecialchars($decisionTitle) ?></strong>
+                <p><?= htmlspecialchars($decisionBody) ?></p>
+            </div>
+            <div class="decision-chip">
+                <?= htmlspecialchars($canAccept ? raiseLabel($pendingTo ?: 3, $locale) : tr('btn_truco')) ?>
+            </div>
+        </div>
+    <?php endif; ?>
+
+    <div class="action-row action-dock <?= $decisionClass ?>">
+        <form method="post" action="index.php" data-ajax="true">
+            <input type="hidden" name="action" value="truco">
+            <button type="submit" class="btn btn-truco <?= $canTruco ? 'armed' : '' ?>" <?= $canTruco ? '' : 'disabled' ?>>⚡ <?= $canAccept ? tr('btn_raise') : tr('btn_truco') ?></button>
+        </form>
+        <form method="post" action="index.php" data-ajax="true">
+            <input type="hidden" name="action" value="accept">
+            <button type="submit" class="btn btn-accept" <?= $canAccept ? '' : 'disabled' ?>>✓ <?= tr('btn_accept') ?></button>
+        </form>
+        <form method="post" action="index.php" data-ajax="true">
+            <input type="hidden" name="action" value="refuse">
+            <button type="submit" class="btn btn-refuse" <?= $canAccept ? '' : 'disabled' ?>>✕ <?= tr('btn_refuse') ?></button>
+        </form>
+        <form method="post" action="index.php" data-ajax="true">
+            <input type="hidden" name="action" value="refreshGame">
+            <button type="submit" class="btn btn-neutral">↺ <?= tr('refresh') ?></button>
+        </form>
+        <?php if ($isOnline): ?>
+            <form method="post" action="index.php" data-ajax="true">
+                <input type="hidden" name="action" value="leaveLobby">
+                <button type="submit" class="btn btn-refuse">⎋ <?= tr('lobby_leave') ?></button>
+            </form>
+        <?php endif; ?>
+        <div class="action-hint"><?= tr('action_hint_auto_refresh') ?></div>
+    </div>
+
     <div class="layout">
         <div class="table-panel">
-            <?php
-            $numPlayers = $snap['NumPlayers'] ?? 2;
-            foreach ($players as $p):
-                $pos = ($numPlayers === 2)
-                    ? (($p['ID'] ?? 0) === $myID ? 'bottom' : 'top')
-                    : (['bottom', 'right', 'top', 'left'][($p['ID'] - $myID + 4) % 4] ?? 'top');
+            <?php foreach ($players as $p): ?>
+                <?php
+                $pos = $seatPosition((int) ($p['ID'] ?? 0));
                 $isTurn = (($p['ID'] ?? -1) === $turnPlayer);
                 $teamNum = ($p['Team'] ?? 0) + 1;
                 $cardCount = count($p['Hand'] ?? []);
-            ?>
+                ?>
                 <div class="seat seat-<?= $pos ?>">
                     <div class="seat-head">
                         <div class="seat-avatar team-<?= $teamNum ?>"><?= htmlspecialchars(strtoupper(substr($p['Name'] ?? '?', 0, 1))) ?></div>
@@ -106,8 +185,13 @@ $locale = $_SESSION['locale'] ?? 'pt-BR';
                 </div>
                 <div class="played-layer">
                     <?php foreach (($hand['RoundCards'] ?? []) as $pc): ?>
-                        <div class="played-card">
-                            <div class="owner"><?= htmlspecialchars($players[$pc['PlayerID']]['Name'] ?? ('P' . (($pc['PlayerID'] ?? 0) + 1))) ?></div>
+                        <?php
+                        $cardPlayerID = (int) ($pc['PlayerID'] ?? 0);
+                        $cardPos = $seatPosition($cardPlayerID);
+                        $cardOwner = $playersByID[$cardPlayerID]['Name'] ?? ('P' . ($cardPlayerID + 1));
+                        ?>
+                        <div class="played-card pos-<?= $cardPos ?>">
+                            <div class="owner"><?= htmlspecialchars($cardOwner) ?></div>
                             <?= renderCard($pc['Card'], true) ?>
                         </div>
                     <?php endforeach; ?>
@@ -116,23 +200,9 @@ $locale = $_SESSION['locale'] ?? 'pt-BR';
         </div>
 
         <aside class="side-panel">
-            <div class="side-block">
+            <div class="side-block side-status <?= $canAccept ? 'is-pending' : ($canPlayCard ? 'is-live' : '') ?>">
                 <h3><?= tr('status_title') ?></h3>
-                <div class="status-line">
-                    <?php
-                    if ($matchFinished) {
-                        echo htmlspecialchars(tr('status_match_end'));
-                    } elseif ($pendingFor !== -1 && $pendingFor === $myTeam) {
-                        echo htmlspecialchars(tr('status_pending_you', raiseLabel($pendingTo ?: 3, $locale), $pendingTo ?: 3));
-                    } elseif ($pendingFor !== -1) {
-                        echo htmlspecialchars(tr('status_pending_other', $turnName, raiseLabel($pendingTo ?: 3, $locale), $pendingTo ?: 3));
-                    } elseif ($turnPlayer === $myID) {
-                        echo htmlspecialchars(tr('status_your_turn'));
-                    } else {
-                        echo htmlspecialchars(tr('status_wait_cpu', $turnName));
-                    }
-                    ?>
-                </div>
+                <div class="status-line"><?= htmlspecialchars($statusText) ?></div>
             </div>
             <div class="side-block side-log">
                 <h3><?= tr('log_title') ?></h3>
@@ -157,62 +227,37 @@ $locale = $_SESSION['locale'] ?? 'pt-BR';
         </aside>
     </div>
 
-    <div class="action-row">
-        <form method="post" action="index.php" style="display:inline" data-ajax="true">
-            <input type="hidden" name="action" value="truco">
-            <button type="submit" class="btn btn-truco <?= $canTruco ? 'armed' : '' ?>" <?= $canTruco ? '' : 'disabled' ?>>⚡ <?= $canAccept ? tr('btn_raise') : tr('btn_truco') ?></button>
-        </form>
-        <form method="post" action="index.php" style="display:inline" data-ajax="true">
-            <input type="hidden" name="action" value="accept">
-            <button type="submit" class="btn btn-accept" <?= $canAccept ? '' : 'disabled' ?>>✓ <?= tr('btn_accept') ?></button>
-        </form>
-        <form method="post" action="index.php" style="display:inline" data-ajax="true">
-            <input type="hidden" name="action" value="refuse">
-            <button type="submit" class="btn btn-refuse" <?= $canAccept ? '' : 'disabled' ?>>✕ <?= tr('btn_refuse') ?></button>
-        </form>
-        <form method="post" action="index.php" style="display:inline" data-ajax="true">
-            <input type="hidden" name="action" value="refreshGame">
-            <button type="submit" class="btn btn-neutral">↺ <?= tr('refresh') ?></button>
-        </form>
-        <?php if ($isOnline): ?>
-            <form method="post" action="index.php" style="display:inline" data-ajax="true">
-                <input type="hidden" name="action" value="leaveLobby">
-                <button type="submit" class="btn btn-refuse">⎋ <?= tr('lobby_leave') ?></button>
-            </form>
-        <?php endif; ?>
-    </div>
-
-    <div class="hand-block">
+    <div class="hand-block <?= $canPlayCard ? 'is-live' : 'locked' ?>">
         <div class="hand-title"><?= tr('hand_title') ?></div>
         <div class="my-hand" role="list">
             <?php foreach ($myCards as $idx => $card): ?>
                 <?php if ($canPlayCard): ?>
-                    <form method="post" action="index.php" style="display:inline" class="card-form" data-ajax="true">
+                    <form method="post" action="index.php" class="card-form" data-ajax="true">
                         <input type="hidden" name="action" value="play">
                         <input type="hidden" name="cardIndex" value="<?= $idx ?>">
                         <button type="submit" class="card-btn" role="listitem"><?= renderCard($card, false, (string) ($idx + 1)) ?></button>
                     </form>
                 <?php else: ?>
-                    <div class="card-btn" role="listitem" style="opacity:0.56"><?= renderCard($card, false, (string) ($idx + 1)) ?></div>
+                    <div class="card-btn card-btn-static" role="listitem"><?= renderCard($card, false, (string) ($idx + 1)) ?></div>
                 <?php endif; ?>
             <?php endforeach; ?>
         </div>
     </div>
 
     <?php if ($isOnline): ?>
-        <div class="side-block" style="margin-top:12px;">
+        <div class="side-block online-tools">
             <h3><?= tr('lobby_events_title') ?></h3>
             <div class="action-row" style="margin-bottom:8px;">
                 <?php foreach (($lobby['slots'] ?? []) as $idx => $slotName): ?>
                     <?php if ($idx !== ($lobby['assigned_seat'] ?? -1) && trim((string) $slotName) !== ''): ?>
-                        <form method="post" action="index.php" style="display:inline" data-ajax="true">
+                        <form method="post" action="index.php" data-ajax="true">
                             <input type="hidden" name="action" value="voteHost">
                             <input type="hidden" name="slot" value="<?= $idx ?>">
                             <button type="submit" class="btn btn-neutral"><?= tr('action_vote_host') ?> <?= $idx + 1 ?></button>
                         </form>
                     <?php endif; ?>
                     <?php if (strpos($mode, 'host_') === 0 && trim((string) $slotName) === ''): ?>
-                        <form method="post" action="index.php" style="display:inline" data-ajax="true">
+                        <form method="post" action="index.php" data-ajax="true">
                             <input type="hidden" name="action" value="requestReplacementInvite">
                             <input type="hidden" name="slot" value="<?= $idx ?>">
                             <button type="submit" class="btn btn-truco"><?= tr('action_replacement_invite') ?> <?= $idx + 1 ?></button>

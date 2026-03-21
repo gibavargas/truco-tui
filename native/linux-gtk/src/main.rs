@@ -252,61 +252,104 @@ fn update_ui(window: &window::TrucoWindow, bundle: &models::SnapshotBundle, core
 
 fn update_lobby_ui(window: &window::TrucoWindow, bundle: &models::SnapshotBundle, core: &TrucoCore, mode: &str) {
     window.lbl_online_status().set_label(if mode == "host_lobby" { "🏠 Sala Criada" } else { "🔗 Conectado" });
-    
-    if let Some(lobby_val) = &bundle.lobby {
-        if let Ok(lobby) = serde_json::from_value::<models::LobbySnapshot>(lobby_val.clone()) {
-            if let Some(key) = &lobby.invite_key {
-                window.lbl_invite_key_display().set_label(&format!("Chave: {}", key));
-            } else {
-                window.lbl_invite_key_display().set_label("Chave: (Convidado)");
-            }
-            
-            clear_listbox(&window.list_slots());
-            if let Some(slots) = lobby.slots {
-                for (i, name) in slots.iter().enumerate() {
-                    let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-                    let connected = lobby.connected_seats.as_ref()
-                        .and_then(|m| m.get(&i.to_string()).copied())
-                        .unwrap_or(false);
-                    let mut display = if name.is_empty() { "Aguardando...".to_string() } else { name.clone() };
-                    if i as i32 == lobby.host_seat.unwrap_or(0) {
-                        display.push_str(" [host]");
-                    }
-                    if !name.is_empty() && !connected {
-                        display.push_str(" [offline]");
-                    }
-                    let lbl = gtk::Label::new(Some(&display));
-                    row.append(&lbl);
-                    
-                    if Some(i as i32) == lobby.assigned_seat {
-                        let me_lbl = gtk::Label::new(Some("(você)"));
-                        me_lbl.add_css_class("ladder-active");
-                        row.append(&me_lbl);
-                    } else if name.is_empty() && mode.contains("host") {
-                        let btn_invite = gtk::Button::with_label("Convidar CPU");
-                        let core_inv = core.clone();
-                        btn_invite.connect_clicked(move |_| {
-                            let _ = core_inv.dispatch(&format!(r#"{{"kind":"request_replacement_invite","payload":{{"target_seat":{}}}}}"#, i));
-                        });
-                        row.append(&btn_invite);
-                    } else if !name.is_empty() {
-                        let btn_vote = gtk::Button::with_label("Votar Host");
-                        let core_vote = core.clone();
-                        btn_vote.connect_clicked(move |_| {
-                            let _ = core_vote.dispatch(&format!(r#"{{"kind":"vote_host","payload":{{"candidate_seat":{}}}}}"#, i));
-                        });
-                        row.append(&btn_vote);
-                    }
-                    
-                    let lb_row = gtk::ListBoxRow::new();
-                    lb_row.set_child(Some(&row));
-                    window.list_slots().append(&lb_row);
+
+    let network = bundle.connection.as_ref().and_then(|connection| connection.network.as_ref());
+    window.lbl_network_summary().set_label(&build_network_summary(network, mode.contains("host")));
+
+    if let Some(lobby) = &bundle.lobby {
+        if let Some(key) = &lobby.invite_key {
+            window.lbl_invite_key_display().set_label(&format!("Chave: {}", key));
+        } else {
+            window.lbl_invite_key_display().set_label("Chave: (Convidado)");
+        }
+
+        clear_listbox(&window.list_slots());
+        if let Some(slots) = &lobby.slots {
+            for (i, name) in slots.iter().enumerate() {
+                let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+                let connected = lobby.connected_seats.as_ref()
+                    .and_then(|m| m.get(&i.to_string()).copied())
+                    .unwrap_or(false);
+                let protocol_version = network
+                    .and_then(|snapshot| snapshot.seat_protocol_versions.as_ref())
+                    .and_then(|versions| versions.get(&i.to_string()).copied());
+                let mut display = if name.is_empty() { "Aguardando...".to_string() } else { name.clone() };
+                if i as i32 == lobby.host_seat.unwrap_or(0) {
+                    display.push_str(" [host]");
                 }
+                if let Some(version) = protocol_version {
+                    display.push_str(&format!(" [v{}]", version));
+                }
+                if !name.is_empty() && !connected {
+                    display.push_str(" [offline]");
+                }
+                let lbl = gtk::Label::new(Some(&display));
+                row.append(&lbl);
+
+                if Some(i as i32) == lobby.assigned_seat {
+                    let me_lbl = gtk::Label::new(Some("(você)"));
+                    me_lbl.add_css_class("ladder-active");
+                    row.append(&me_lbl);
+                } else if name.is_empty() && mode.contains("host") {
+                    let btn_invite = gtk::Button::with_label("Convidar CPU");
+                    let core_inv = core.clone();
+                    btn_invite.connect_clicked(move |_| {
+                        let _ = core_inv.dispatch(&format!(r#"{{"kind":"request_replacement_invite","payload":{{"target_seat":{}}}}}"#, i));
+                    });
+                    row.append(&btn_invite);
+                } else if !name.is_empty() {
+                    let btn_vote = gtk::Button::with_label("Votar Host");
+                    let core_vote = core.clone();
+                    btn_vote.connect_clicked(move |_| {
+                        let _ = core_vote.dispatch(&format!(r#"{{"kind":"vote_host","payload":{{"candidate_seat":{}}}}}"#, i));
+                    });
+                    row.append(&btn_vote);
+                }
+
+                let lb_row = gtk::ListBoxRow::new();
+                lb_row.set_child(Some(&row));
+                window.list_slots().append(&lb_row);
             }
         }
     }
-    
+
     window.btn_start_online_match().set_visible(mode == "host_lobby");
+}
+
+fn build_network_summary(network: Option<&models::NetworkSnapshot>, is_host: bool) -> String {
+    let Some(network) = network else {
+        return "Rede: offline".to_string();
+    };
+    let transport = match network.transport.as_deref() {
+        Some("relay_quic_v2") => "Relay QUIC v2",
+        _ => "TCP + TLS",
+    };
+    let supported = network.supported_protocol_versions.as_ref()
+        .map(|versions| versions.iter().map(|version| format!("v{}", version)).collect::<Vec<_>>().join("/"))
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| "-".to_string());
+    let compatibility = if is_host {
+        let mut versions = network.seat_protocol_versions.as_ref()
+            .map(|seat_versions| seat_versions.values().copied().filter(|version| *version > 0).collect::<Vec<_>>())
+            .unwrap_or_default();
+        versions.sort_by(|a, b| b.cmp(a));
+        versions.dedup();
+        let summary = if versions.is_empty() {
+            supported.clone()
+        } else {
+            versions.iter().map(|version| format!("v{}", version)).collect::<Vec<_>>().join("/")
+        };
+        if network.mixed_protocol_session.unwrap_or(false) {
+            format!("mista {}", summary)
+        } else {
+            summary
+        }
+    } else {
+        network.negotiated_protocol_version
+            .map(|version| format!("negociado v{}", version))
+            .unwrap_or_else(|| supported.clone())
+    };
+    format!("Rede: {} | Compatibilidade: {} | Build: {}", transport, compatibility, supported)
 }
 
 fn update_game_ui(window: &window::TrucoWindow, snapshot: &models::GameSnapshot, bundle: &models::SnapshotBundle, core: &TrucoCore) {

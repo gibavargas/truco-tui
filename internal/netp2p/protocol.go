@@ -34,6 +34,40 @@ const (
 
 const ProtocolVersion = protocolVersion
 
+func supportedProtocolVersions() []int {
+	versions := []int{protocolVersion}
+	if protocolVersion > 1 {
+		versions = append(versions, protocolVersion-1)
+	}
+	return versions
+}
+
+func SupportedProtocolVersions() []int {
+	versions := supportedProtocolVersions()
+	out := make([]int, len(versions))
+	copy(out, versions)
+	return out
+}
+
+func normalizeProtocolVersion(v int) int {
+	if v != 0 {
+		return v
+	}
+	if protocolVersion > 1 {
+		return protocolVersion - 1
+	}
+	return protocolVersion
+}
+
+func supportsProtocolVersion(v int) bool {
+	for _, supported := range supportedProtocolVersions() {
+		if v == supported {
+			return true
+		}
+	}
+	return false
+}
+
 func logNetf(format string, args ...any) {
 	if netp2pLogger != nil {
 		netp2pLogger.Printf(format, args...)
@@ -59,6 +93,7 @@ type InviteKey struct {
 	TransportVersion   int    `json:"transport_version,omitempty"`
 	RelayURL           string `json:"relay_url,omitempty"`
 	RelaySessionID     string `json:"relay_session_id,omitempty"`
+	RelaySessionToken  string `json:"relay_session_token,omitempty"`
 	RelayJoinTicket    string `json:"relay_join_ticket,omitempty"`
 	RelayAuthorityPeer string `json:"relay_authority_peer,omitempty"`
 	RelaySPKIPin       string `json:"relay_spki_pin,omitempty"`
@@ -85,8 +120,9 @@ func DecodeInviteKey(s string) (InviteKey, error) {
 	if k.Token == "" {
 		return k, errors.New("chave inválida")
 	}
-	if k.TransportVersion != 2 {
-		return k, errors.New("chave de convite v1 não suportada; atualize para v2")
+	k.TransportVersion = normalizeProtocolVersion(k.TransportVersion)
+	if k.TransportVersion < 1 || k.TransportVersion > protocolVersion {
+		return k, fmt.Errorf("chave de convite v%d não suportada; atualize para v%d", k.TransportVersion, protocolVersion)
 	}
 	if strings.TrimSpace(k.Fingerprint) == "" {
 		return k, errors.New("chave inválida: fingerprint TLS obrigatório")
@@ -101,14 +137,21 @@ func DecodeInviteKey(s string) (InviteKey, error) {
 		}
 	}
 	switch strings.TrimSpace(k.Transport) {
+	case "":
+		k.Transport = "tcp_tls"
+		fallthrough
 	case "tcp_tls":
 		if k.Addr == "" {
 			return k, errors.New("chave inválida")
 		}
-	case "relay_quic_v2":
+	case "relay_quic", "relay_quic_v2":
+		if strings.TrimSpace(k.RelayJoinTicket) == "" {
+			k.RelayJoinTicket = strings.TrimSpace(k.RelaySessionToken)
+		}
 		if strings.TrimSpace(k.RelayURL) == "" || strings.TrimSpace(k.RelaySessionID) == "" || strings.TrimSpace(k.RelayJoinTicket) == "" {
 			return k, errors.New("chave de relay inválida")
 		}
+		k.Transport = "relay_quic_v2"
 	default:
 		return k, errors.New("transporte de convite inválido")
 	}

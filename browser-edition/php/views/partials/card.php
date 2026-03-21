@@ -12,7 +12,7 @@ function renderCard(array $card, bool $small = false, string $keyHint = ''): str
     $suit = $card['Suit'] ?? '';
     $symbol = suitSymbol($suit);
     $colorClass = suitColorClass($suit);
-    $sizeClass = $small ? 'small' : '';
+    $sizeClass = $small ? 'small' : 'hand';
 
     $hint = '';
     if ($keyHint !== '') {

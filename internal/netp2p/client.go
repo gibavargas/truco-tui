@@ -15,23 +15,24 @@ import (
 
 // ClientSession participa de lobby/chat e da partida online.
 type ClientSession struct {
-	mu           sync.Mutex
-	ctx          context.Context
-	cancel       context.CancelFunc
-	conn         net.Conn
-	reader       *bufio.Reader
-	invite       InviteKey
-	sessionID    string
-	desiredRole  string
-	name         string
-	assigned     int
-	numPlayers   int
-	slots        []string
-	events       chan string
-	states       chan truco.Snapshot
-	started      bool
-	reconnecting bool
-	closed       bool
+	mu                  sync.Mutex
+	ctx                 context.Context
+	cancel              context.CancelFunc
+	conn                net.Conn
+	reader              *bufio.Reader
+	invite              InviteKey
+	sessionID           string
+	desiredRole         string
+	name                string
+	wireProtocolVersion int
+	assigned            int
+	numPlayers          int
+	slots               []string
+	events              chan string
+	states              chan truco.Snapshot
+	started             bool
+	reconnecting        bool
+	closed              bool
 
 	failoverHostSeat             int
 	failoverPort                 int
@@ -46,7 +47,8 @@ type ClientSession struct {
 }
 
 type joinProtocolError struct {
-	msg string
+	msg             string
+	versionMismatch bool
 }
 
 func (e joinProtocolError) Error() string {
@@ -96,26 +98,27 @@ func JoinSession(key, playerName, desiredRole string) (*ClientSession, error) {
 	}
 	desiredRole = normalizeDesiredRole(desiredRole)
 
-	conn, reader, first, err := dialAndJoin(inv, name, desiredRole, "", clientConnectAttempts)
+	conn, reader, first, err := dialAndJoin(inv, name, desiredRole, "", clientConnectAttempts, supportedProtocolVersions())
 	if err != nil {
 		return nil, err
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	c := &ClientSession{
-		ctx:         ctx,
-		cancel:      cancel,
-		conn:        conn,
-		reader:      reader,
-		invite:      inv,
-		sessionID:   first.SessionID,
-		desiredRole: desiredRole,
-		name:        name,
-		assigned:    first.Assigned,
-		numPlayers:  first.NumPlayers,
-		slots:       append([]string{}, first.Slots...),
-		events:      make(chan string, 128),
-		states:      make(chan truco.Snapshot, 128),
+		ctx:                 ctx,
+		cancel:              cancel,
+		conn:                conn,
+		reader:              reader,
+		invite:              inv,
+		sessionID:           first.SessionID,
+		desiredRole:         desiredRole,
+		name:                name,
+		wireProtocolVersion: first.ProtocolVersion,
+		assigned:            first.Assigned,
+		numPlayers:          first.NumPlayers,
+		slots:               append([]string{}, first.Slots...),
+		events:              make(chan string, 128),
+		states:              make(chan truco.Snapshot, 128),
 	}
 	go c.readLoop()
 	go c.heartbeatLoop()
@@ -128,56 +131,77 @@ func RejoinSession(inv InviteKey, playerName, desiredRole, sessionID string, att
 		return nil, err
 	}
 	desiredRole = normalizeDesiredRole(desiredRole)
-	conn, reader, first, err := dialAndJoin(inv, name, desiredRole, sessionID, attempts)
+	conn, reader, first, err := dialAndJoin(inv, name, desiredRole, sessionID, attempts, supportedProtocolVersions())
 	if err != nil {
 		return nil, err
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	c := &ClientSession{
-		ctx:         ctx,
-		cancel:      cancel,
-		conn:        conn,
-		reader:      reader,
-		invite:      inv,
-		sessionID:   first.SessionID,
-		desiredRole: desiredRole,
-		name:        name,
-		assigned:    first.Assigned,
-		numPlayers:  first.NumPlayers,
-		slots:       append([]string{}, first.Slots...),
-		events:      make(chan string, 128),
-		states:      make(chan truco.Snapshot, 128),
+		ctx:                 ctx,
+		cancel:              cancel,
+		conn:                conn,
+		reader:              reader,
+		invite:              inv,
+		sessionID:           first.SessionID,
+		desiredRole:         desiredRole,
+		name:                name,
+		wireProtocolVersion: first.ProtocolVersion,
+		assigned:            first.Assigned,
+		numPlayers:          first.NumPlayers,
+		slots:               append([]string{}, first.Slots...),
+		events:              make(chan string, 128),
+		states:              make(chan truco.Snapshot, 128),
 	}
 	go c.readLoop()
 	go c.heartbeatLoop()
 	return c, nil
 }
 
-func dialAndJoin(inv InviteKey, playerName, desiredRole, sessionID string, attempts int) (net.Conn, *bufio.Reader, Message, error) {
+func dialAndJoin(inv InviteKey, playerName, desiredRole, sessionID string, attempts int, protocolVersions []int) (net.Conn, *bufio.Reader, Message, error) {
 	if attempts < 1 {
 		attempts = 1
+	}
+	if len(protocolVersions) == 0 {
+		protocolVersions = supportedProtocolVersions()
 	}
 	addrs := inviteDialAddrs(inv.Addr)
 	if len(addrs) == 0 {
 		addrs = []string{inv.Addr}
 	}
 	var lastErr error
-	for attempt := 1; attempt <= attempts; attempt++ {
-		for _, addr := range addrs {
-			tryInv := inv
-			tryInv.Addr = addr
-			conn, reader, first, err := attemptDialJoin(tryInv, playerName, desiredRole, sessionID)
-			if err == nil {
-				return conn, reader, first, nil
-			}
-			var protocolErr joinProtocolError
-			if errors.As(err, &protocolErr) {
-				return nil, nil, Message{}, err
-			}
-			lastErr = fmt.Errorf("%s: %w", addr, err)
+	for _, protocolVersionCandidate := range protocolVersions {
+		if !supportsProtocolVersion(protocolVersionCandidate) {
+			continue
 		}
-		if attempt < attempts {
-			time.Sleep(250 * time.Millisecond)
+		fallbackToLower := false
+		for attempt := 1; attempt <= attempts; attempt++ {
+			for _, addr := range addrs {
+				tryInv := inv
+				tryInv.Addr = addr
+				conn, reader, first, err := attemptDialJoin(tryInv, playerName, desiredRole, sessionID, protocolVersionCandidate)
+				if err == nil {
+					return conn, reader, first, nil
+				}
+				var protocolErr joinProtocolError
+				if errors.As(err, &protocolErr) {
+					if protocolErr.versionMismatch {
+						lastErr = err
+						fallbackToLower = true
+						break
+					}
+					return nil, nil, Message{}, err
+				}
+				lastErr = fmt.Errorf("%s: %w", addr, err)
+			}
+			if fallbackToLower {
+				break
+			}
+			if attempt < attempts {
+				time.Sleep(250 * time.Millisecond)
+			}
+		}
+		if fallbackToLower {
+			continue
 		}
 	}
 
@@ -234,7 +258,7 @@ func inviteDialAddrs(addr string) []string {
 	return out
 }
 
-func attemptDialJoin(inv InviteKey, playerName, desiredRole, sessionID string) (net.Conn, *bufio.Reader, Message, error) {
+func attemptDialJoin(inv InviteKey, playerName, desiredRole, sessionID string, protocolVersionCandidate int) (net.Conn, *bufio.Reader, Message, error) {
 	conn, err := dialSessionConnWithRelay(inv, 2*time.Second, playerName, desiredRole, sessionID)
 	if err != nil {
 		return nil, nil, Message{}, err
@@ -246,7 +270,7 @@ func attemptDialJoin(inv InviteKey, playerName, desiredRole, sessionID string) (
 	reader := newConnReader(conn)
 	req := Message{
 		Type:            "join",
-		ProtocolVersion: protocolVersion,
+		ProtocolVersion: protocolVersionCandidate,
 		Token:           inv.Token,
 		Name:            playerName,
 		DesiredRole:     desiredRole,
@@ -266,15 +290,19 @@ func attemptDialJoin(inv InviteKey, playerName, desiredRole, sessionID string) (
 	}
 	if first.Type == "error" {
 		closeConnWithLog(conn, "join protocol error")
-		return nil, nil, Message{}, joinProtocolError{msg: first.Error}
+		return nil, nil, Message{}, joinProtocolError{msg: first.Error, versionMismatch: isProtocolVersionMismatchMessage(first.Error)}
 	}
 	if first.Type != "join_ok" {
 		closeConnWithLog(conn, "join unexpected response")
 		return nil, nil, Message{}, joinProtocolError{msg: fmt.Sprintf("resposta inesperada: %s", first.Type)}
 	}
-	if first.ProtocolVersion != protocolVersion {
+	first.ProtocolVersion = normalizeProtocolVersion(first.ProtocolVersion)
+	if !supportsProtocolVersion(first.ProtocolVersion) {
 		closeConnWithLog(conn, "join protocol version mismatch")
-		return nil, nil, Message{}, joinProtocolError{msg: fmt.Sprintf("versão de protocolo incompatível (host=%d, esperado=%d)", first.ProtocolVersion, protocolVersion)}
+		return nil, nil, Message{}, joinProtocolError{
+			msg:             fmt.Sprintf("versão de protocolo incompatível (host=%d, suportado=%v)", first.ProtocolVersion, supportedProtocolVersions()),
+			versionMismatch: true,
+		}
 	}
 	return conn, reader, first, nil
 }
@@ -300,6 +328,21 @@ func (c *ClientSession) GameStarted() bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.started
+}
+
+func (c *ClientSession) TransportMode() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if strings.TrimSpace(c.invite.Transport) == "" {
+		return "tcp_tls"
+	}
+	return c.invite.Transport
+}
+
+func (c *ClientSession) WireProtocolVersion() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return normalizeProtocolVersion(c.wireProtocolVersion)
 }
 
 func (c *ClientSession) FailoverState() ClientFailoverState {
@@ -371,6 +414,9 @@ func (c *ClientSession) send(msg Message) error {
 	}
 	if c.conn == nil {
 		return errors.New("sem conexão ativa")
+	}
+	if msg.ProtocolVersion == 0 {
+		msg.ProtocolVersion = c.wireProtocolVersion
 	}
 	if err := writeMessage(c.conn, msg); err != nil {
 		closeConnWithLog(c.conn, "client send")
@@ -474,7 +520,7 @@ func (c *ClientSession) tryReconnect() bool {
 		if c.ctx.Err() != nil {
 			break
 		}
-		conn, reader, first, err := dialAndJoin(inv, name, role, sessionID, 1)
+		conn, reader, first, err := dialAndJoin(inv, name, role, sessionID, 1, protocolVersionCandidates(c.wireProtocolVersion))
 		if err == nil {
 			c.mu.Lock()
 			if c.closed {
@@ -485,6 +531,7 @@ func (c *ClientSession) tryReconnect() bool {
 			}
 			c.conn = conn
 			c.reader = reader
+			c.wireProtocolVersion = first.ProtocolVersion
 			c.assigned = first.Assigned
 			c.numPlayers = first.NumPlayers
 			if strings.TrimSpace(first.SessionID) != "" {
@@ -641,6 +688,26 @@ func (c *ClientSession) readLoop() {
 			// keepalive ack
 		}
 	}
+}
+
+func protocolVersionCandidates(preferred int) []int {
+	preferred = normalizeProtocolVersion(preferred)
+	if !supportsProtocolVersion(preferred) {
+		return supportedProtocolVersions()
+	}
+	candidates := []int{preferred}
+	for _, supported := range supportedProtocolVersions() {
+		if supported == preferred {
+			continue
+		}
+		candidates = append(candidates, supported)
+	}
+	return candidates
+}
+
+func isProtocolVersionMismatchMessage(msg string) bool {
+	msg = strings.ToLower(strings.TrimSpace(msg))
+	return strings.Contains(msg, "protocolo incompatível") || (strings.Contains(msg, "protocolo") && strings.Contains(msg, "esperado"))
 }
 
 func (c *ClientSession) heartbeatLoop() {

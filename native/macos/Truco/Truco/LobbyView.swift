@@ -478,6 +478,23 @@ struct OnlineLobbyView: View {
                                     .cornerRadius(10)
                                 }
                             }
+
+                            if let network = store.bundle?.connection?.network {
+                                VStack(alignment: .leading, spacing: 8) {
+                                    Text("Rede")
+                                        .font(.caption.bold())
+                                        .foregroundColor(.white.opacity(0.6))
+                                    Text("\(network.transportLabel) · \(network.compatibilitySummary(isHost: store.mode.contains("host")))")
+                                        .foregroundColor(.white)
+                                    Text("Build: \(network.supportedVersionsLabel)")
+                                        .font(.caption)
+                                        .foregroundColor(.white.opacity(0.6))
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding()
+                                .background(Color.white.opacity(0.05))
+                                .cornerRadius(12)
+                            }
                             
                             // Slots display
                             if let slots = lobby.slots {
@@ -487,6 +504,7 @@ struct OnlineLobbyView: View {
                                         .foregroundColor(.white.opacity(0.6))
                                     
                                     ForEach(Array(slots.enumerated()), id: \.offset) { index, name in
+                                        let protocolVersion = store.bundle?.connection?.network?.protocolVersion(for: index)
                                         HStack {
                                             Circle()
                                                 .fill(name.isEmpty ? Color.gray : Color.green)
@@ -499,7 +517,18 @@ struct OnlineLobbyView: View {
                                                 Text("(você)")
                                                     .font(.caption)
                                                     .foregroundColor(.yellow)
-                                            } else if name.isEmpty && store.mode.contains("host") {
+                                            }
+
+                                            if let protocolVersion = protocolVersion {
+                                                Text("v\(protocolVersion)")
+                                                    .font(.caption2.bold())
+                                                    .padding(.horizontal, 8)
+                                                    .padding(.vertical, 4)
+                                                    .background(Color.yellow.opacity(0.18))
+                                                    .cornerRadius(999)
+                                            }
+
+                                            if name.isEmpty && store.mode.contains("host") {
                                                 Button("Convidar CPU") {
                                                     store.requestReplacementInvite(targetSeat: index)
                                                 }

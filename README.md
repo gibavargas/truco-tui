@@ -11,14 +11,28 @@ Projeto base de Truco Paulista em terminal (TUI ASCII), com:
 - Em desconexão de jogador remoto durante partida, o slot passa a CPU provisório até reconexão/substituição.
 - Transferência democrática de host da mesa por votação (`/host`).
 - Estrutura preparada para build cruzado Windows.
-- Runtime compartilhado para clientes nativos via FFI em `internal/appcore` + `cmd/truco-core-ffi`.
-- Scaffolds nativos em `native/` para macOS SwiftUI, Linux GTK4/libadwaita (Rust) e Windows WinUI 3.
+- Runtime compartilhado para clientes nativos via FFI em `internal/appcore` + `cmd/truco-core-ffi`, com scaffolds em `native/` para macOS SwiftUI, Linux GTK4/libadwaita (Rust) e Windows WinUI 3.
 
 ## Requisitos
 
 - Go 1.24+
 
-## Rodar localmente
+## Instalação
+
+### macOS nativo via Homebrew
+
+Para instalar o cliente nativo de macOS pelo Homebrew:
+
+```bash
+brew tap gibavargas/truco-tui
+brew install --cask truco
+```
+
+Depois disso, abra o app `Truco` pelo Launchpad ou pela pasta `Applications`.
+
+Se você preferir compilar do código-fonte, siga o guia em [native/macos/README.md](native/macos/README.md).
+
+### Rodar do código-fonte
 
 ```bash
 go run ./cmd/truco
@@ -45,14 +59,14 @@ Observabilidade do relay:
 
 Em produção, exponha as portas públicas HTTPS+QUIC do relay e configure os hosts para criar sessão com `relay_url` no runtime (`create_host_session`).
 
-### Segurança de rede (v2)
+### Segurança de rede
 
-- Protocolo online atualizado para **v2** (`ProtocolVersion=2`), com rejeição explícita de chaves/protocolo v1.
-- Convites relay v2 usam `relay_join_ticket` (uso único, TTL curto) em vez de `relay_session_token`.
+- Protocolo online compatível com **v1 e v2** (`ProtocolVersion=1..2`), com negociação automática da versão suportada pela outra ponta.
+- Convites relay aceitam o formato legado `relay_session_token` e o formato atual `relay_join_ticket`.
 - Cliente relay valida TLS 1.3 com PKI do sistema e pode aplicar pinning SPKI (`relay_spki_pin`) para reforço.
 - Relay aplica limites de taxa, limites de capacidade, e coleta de sessões/membros/tickets expirados.
 
-> Migração: convites v1 não são mais aceitos. Gere novos convites v2.
+> Migração: o cliente atual continua gerando convites v2, mas ainda consegue se conectar a sessões compatíveis com v1.
 
 ## Build
 
@@ -68,7 +82,7 @@ go build -o bin/tui/truco-tui-core-$(go env GOOS)-$(go env GOARCH) ./cmd/truco
 
 Ou rode `make build` para chegar ao mesmo binário.
 
-### Build da biblioteca compartilhada (macOS atual)
+### Build do runtime FFI no macOS
 
 ```bash
 make ffi

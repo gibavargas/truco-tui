@@ -23,8 +23,13 @@ The shared runtime in `internal/appcore` is the source of truth for every non-TU
 
 ## Lobby parity rules
 
+- `connection.network` is the source of truth for lobby network summaries. Clients must not infer transport or negotiated compatibility from invite keys, local defaults, or seat occupancy.
 - Show invite key when the local runtime is host.
 - Show slots, assigned seat, host seat, and connection state.
+- Show the current transport and compatibility summary from `connection.network`.
+- Show `vN` badges per seat when `connection.network.seat_protocol_versions` is present.
+- On host, show when the session is mixed across protocol versions.
+- On client, show the negotiated protocol version with the host.
 - Allow chat in lobby.
 - Allow host vote for occupied eligible seats.
 - Allow replacement invite actions only when the runtime allows them.

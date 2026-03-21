@@ -8,6 +8,30 @@ $slots = $session['slots'] ?? [];
 $connectedSeats = $session['connected_seats'] ?? [];
 $assignedSeat = $session['assigned_seat'] ?? -1;
 $hostSeat = $session['host_seat'] ?? 0;
+$network = $bundle['connection']['network'] ?? [];
+$seatProtocolVersions = $network['seat_protocol_versions'] ?? [];
+$supportedVersions = array_map(
+    static fn($version) => 'v' . (int) $version,
+    is_array($network['supported_protocol_versions'] ?? null) ? $network['supported_protocol_versions'] : []
+);
+$supportedVersionsText = $supportedVersions ? implode('/', $supportedVersions) : '-';
+$transportKey = 'network_transport_' . ($network['transport'] ?? 'tcp_tls');
+$transportLabel = tr($transportKey);
+$compatibilityText = '';
+if ($isHost) {
+    $uniqueVersions = [];
+    foreach ($seatProtocolVersions as $version) {
+        if ((int) $version > 0) {
+            $uniqueVersions['v' . (int) $version] = true;
+        }
+    }
+    $hostVersionsText = $uniqueVersions ? implode('/', array_keys($uniqueVersions)) : $supportedVersionsText;
+    $compatibilityText = !empty($network['mixed_protocol_session'])
+        ? tr('network_compatibility_host_mixed', $hostVersionsText)
+        : tr('network_compatibility_host_uniform', $hostVersionsText);
+} elseif (!empty($network['negotiated_protocol_version'])) {
+    $compatibilityText = tr('network_compatibility_client', 'v' . (int) $network['negotiated_protocol_version']);
+}
 ?>
 <section class="panel lobby-panel">
     <h2><?= tr('lobby_title') ?></h2>
@@ -15,6 +39,9 @@ $hostSeat = $session['host_seat'] ?? 0;
     <div class="lobby-meta">
         <div><strong><?= htmlspecialchars($mode) ?></strong></div>
         <div><span><?= tr('lobby_invite') ?></span>: <code><?= htmlspecialchars($session['invite_key'] ?? '-') ?></code></div>
+        <div><span><?= tr('network_transport_label') ?></span>: <strong><?= htmlspecialchars($transportLabel) ?></strong></div>
+        <div><span><?= tr('network_compatibility_label') ?></span>: <strong><?= htmlspecialchars($compatibilityText !== '' ? $compatibilityText : $supportedVersionsText) ?></strong></div>
+        <div><span><?= tr('network_supported_versions_label') ?></span>: <code><?= htmlspecialchars($supportedVersionsText) ?></code></div>
     </div>
 
     <div class="lobby-grid">
@@ -25,11 +52,17 @@ $hostSeat = $session['host_seat'] ?? 0;
                     <?php
                     $connected = !empty($connectedSeats[(string) $idx]) || !empty($connectedSeats[$idx]);
                     $displayName = trim($slotName) !== '' ? $slotName : tr('lobby_slot_empty');
+                    $seatProtocolVersion = $seatProtocolVersions[(string) $idx] ?? $seatProtocolVersions[$idx] ?? null;
                     ?>
                     <div class="lobby-slot">
                         <div class="top">
                             <strong>Slot <?= $idx + 1 ?></strong>
-                            <span><?= htmlspecialchars($displayName) ?></span>
+                            <span>
+                                <?= htmlspecialchars($displayName) ?>
+                                <?php if ($seatProtocolVersion !== null): ?>
+                                    <small>· v<?= (int) $seatProtocolVersion ?></small>
+                                <?php endif; ?>
+                            </span>
                         </div>
                         <div class="roles">
                             <?php if ($idx === $assignedSeat): ?><span>you</span><?php endif; ?>

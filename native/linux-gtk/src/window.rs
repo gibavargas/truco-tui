@@ -31,6 +31,8 @@ mod imp {
         #[template_child]
         pub lbl_invite_key_display: TemplateChild<gtk::Label>,
         #[template_child]
+        pub lbl_network_summary: TemplateChild<gtk::Label>,
+        #[template_child]
         pub list_slots: TemplateChild<gtk::ListBox>,
         #[template_child]
         pub btn_start_online_match: TemplateChild<gtk::Button>,
@@ -111,6 +113,7 @@ impl TrucoWindow {
     pub fn btn_join_online(&self) -> gtk::Button { self.imp().btn_join_online.get() }
     pub fn lbl_online_status(&self) -> gtk::Label { self.imp().lbl_online_status.get() }
     pub fn lbl_invite_key_display(&self) -> gtk::Label { self.imp().lbl_invite_key_display.get() }
+    pub fn lbl_network_summary(&self) -> gtk::Label { self.imp().lbl_network_summary.get() }
     pub fn list_slots(&self) -> gtk::ListBox { self.imp().list_slots.get() }
     pub fn btn_start_online_match(&self) -> gtk::Button { self.imp().btn_start_online_match.get() }
     pub fn list_chat(&self) -> gtk::ListBox { self.imp().list_chat.get() }

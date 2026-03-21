@@ -2,8 +2,24 @@ package appcore
 
 import (
 	"encoding/json"
+	"reflect"
 	"testing"
+	"time"
+
+	"truco-tui/internal/netp2p"
 )
+
+func waitForRuntimeCondition(t *testing.T, timeout time.Duration, cond func() bool, msg string) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if cond() {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatalf("timeout waiting: %s", msg)
+}
 
 func TestRuntimeOfflineSeededSnapshotAndActions(t *testing.T) {
 	rt := NewRuntime()
@@ -148,5 +164,106 @@ func TestRuntimeNewHandAndReset(t *testing.T) {
 	}
 	if cleared.Lobby != nil {
 		t.Fatal("lobby should be nil after reset")
+	}
+}
+
+func TestRuntimeHostLobbyNetworkSnapshot(t *testing.T) {
+	rt := NewRuntime()
+	defer func() { _ = rt.Close() }()
+
+	payload, err := json.Marshal(CreateHostPayload{
+		HostName:   "Host",
+		NumPlayers: 2,
+	})
+	if err != nil {
+		t.Fatalf("Marshal payload: %v", err)
+	}
+	if err := rt.DispatchIntent(AppIntent{Kind: "create_host_session", Payload: payload}); err != nil {
+		t.Fatalf("Dispatch create_host_session: %v", err)
+	}
+
+	state := rt.SnapshotBundle()
+	if state.Mode != "host_lobby" {
+		t.Fatalf("mode = %q, want host_lobby", state.Mode)
+	}
+	if state.Connection.Network == nil {
+		t.Fatal("connection.network is nil")
+	}
+	network := state.Connection.Network
+	if network.Transport != "tcp_tls" {
+		t.Fatalf("transport = %q, want tcp_tls", network.Transport)
+	}
+	if !reflect.DeepEqual(network.SupportedProtocolVersions, netp2p.SupportedProtocolVersions()) {
+		t.Fatalf("supported versions = %v, want %v", network.SupportedProtocolVersions, netp2p.SupportedProtocolVersions())
+	}
+	if got := network.SeatProtocolVersions[0]; got != netp2p.ProtocolVersion {
+		t.Fatalf("seat 0 protocol = %d, want %d", got, netp2p.ProtocolVersion)
+	}
+	if network.MixedProtocolSession {
+		t.Fatal("mixed_protocol_session = true, want false")
+	}
+}
+
+func TestRuntimeClientLobbyNetworkSnapshot(t *testing.T) {
+	hostRT := NewRuntime()
+	defer func() { _ = hostRT.Close() }()
+	clientRT := NewRuntime()
+	defer func() { _ = clientRT.Close() }()
+
+	hostPayload, err := json.Marshal(CreateHostPayload{
+		HostName:   "Host",
+		NumPlayers: 2,
+	})
+	if err != nil {
+		t.Fatalf("Marshal host payload: %v", err)
+	}
+	if err := hostRT.DispatchIntent(AppIntent{Kind: "create_host_session", Payload: hostPayload}); err != nil {
+		t.Fatalf("Dispatch create_host_session: %v", err)
+	}
+
+	hostSnap := hostRT.SnapshotBundle()
+	if hostSnap.Lobby == nil || hostSnap.Lobby.InviteKey == "" {
+		t.Fatal("host invite key missing")
+	}
+
+	joinPayload, err := json.Marshal(JoinSessionPayload{
+		Key:         hostSnap.Lobby.InviteKey,
+		PlayerName:  "Guest",
+		DesiredRole: "auto",
+	})
+	if err != nil {
+		t.Fatalf("Marshal join payload: %v", err)
+	}
+	if err := clientRT.DispatchIntent(AppIntent{Kind: "join_session", Payload: joinPayload}); err != nil {
+		t.Fatalf("Dispatch join_session: %v", err)
+	}
+
+	waitForRuntimeCondition(t, 2*time.Second, func() bool {
+		snap := hostRT.SnapshotBundle()
+		return snap.Connection.Network != nil &&
+			snap.Connection.Network.SeatProtocolVersions[1] == netp2p.ProtocolVersion &&
+			snap.Lobby != nil &&
+			snap.Lobby.ConnectedSeats[1]
+	}, "host lobby to include remote network state")
+
+	clientState := clientRT.SnapshotBundle()
+	if clientState.Mode != "client_lobby" {
+		t.Fatalf("mode = %q, want client_lobby", clientState.Mode)
+	}
+	if clientState.Connection.Network == nil {
+		t.Fatal("client connection.network is nil")
+	}
+	clientNetwork := clientState.Connection.Network
+	if clientNetwork.Transport != "tcp_tls" {
+		t.Fatalf("transport = %q, want tcp_tls", clientNetwork.Transport)
+	}
+	if clientNetwork.NegotiatedProtocolVersion != netp2p.ProtocolVersion {
+		t.Fatalf("negotiated protocol = %d, want %d", clientNetwork.NegotiatedProtocolVersion, netp2p.ProtocolVersion)
+	}
+	if !reflect.DeepEqual(clientNetwork.SupportedProtocolVersions, netp2p.SupportedProtocolVersions()) {
+		t.Fatalf("supported versions = %v, want %v", clientNetwork.SupportedProtocolVersions, netp2p.SupportedProtocolVersions())
+	}
+	if len(clientNetwork.SeatProtocolVersions) != 0 {
+		t.Fatalf("client seat_protocol_versions = %v, want empty", clientNetwork.SeatProtocolVersions)
 	}
 }

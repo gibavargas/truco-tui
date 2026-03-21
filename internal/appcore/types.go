@@ -46,12 +46,21 @@ type LobbySnapshot struct {
 	Metadata       map[string]any `json:"metadata,omitempty"`
 }
 
+type NetworkSnapshot struct {
+	Transport                 string      `json:"transport,omitempty"`
+	SupportedProtocolVersions []int       `json:"supported_protocol_versions,omitempty"`
+	NegotiatedProtocolVersion int         `json:"negotiated_protocol_version,omitempty"`
+	SeatProtocolVersions      map[int]int `json:"seat_protocol_versions,omitempty"`
+	MixedProtocolSession      bool        `json:"mixed_protocol_session,omitempty"`
+}
+
 type ConnectionSnapshot struct {
-	Status       string    `json:"status"`
-	IsOnline     bool      `json:"is_online"`
-	IsHost       bool      `json:"is_host"`
-	LastError    *AppError `json:"last_error,omitempty"`
-	LastEventSeq int64     `json:"last_event_sequence"`
+	Status       string           `json:"status"`
+	IsOnline     bool             `json:"is_online"`
+	IsHost       bool             `json:"is_host"`
+	Network      *NetworkSnapshot `json:"network,omitempty"`
+	LastError    *AppError        `json:"last_error,omitempty"`
+	LastEventSeq int64            `json:"last_event_sequence"`
 }
 
 type DiagnosticsSnapshot struct {

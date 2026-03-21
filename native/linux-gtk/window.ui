@@ -197,6 +197,15 @@
                             <property name="halign">start</property>
                           </object>
                         </child>
+
+                        <child>
+                          <object class="GtkLabel" id="lbl_network_summary">
+                            <property name="label">Rede: TCP + TLS</property>
+                            <property name="wrap">true</property>
+                            <property name="halign">start</property>
+                            <property name="xalign">0</property>
+                          </object>
+                        </child>
                         
                         <child>
                           <object class="GtkListBox" id="list_slots">
