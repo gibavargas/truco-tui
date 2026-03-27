@@ -43,6 +43,19 @@ func (s *sessionStore) create() string {
 	return id
 }
 
+func (s *sessionStore) delete(id string) bool {
+	s.mu.Lock()
+	bs, ok := s.sessions[id]
+	if ok {
+		delete(s.sessions, id)
+	}
+	s.mu.Unlock()
+	if ok && bs != nil && bs.rt != nil {
+		_ = bs.rt.Close()
+	}
+	return ok
+}
+
 type apiServer struct {
 	store *sessionStore
 }
@@ -135,6 +148,7 @@ func (srv *apiServer) dispatch(action, sessionID string, body map[string]interfa
 		if err := dispatchIntent(bs.rt, "game_action", appcore.GameActionPayload{
 			Action:    "play",
 			CardIndex: idx,
+			FaceDown:  boolVal(body, "faceDown", false),
 		}); err != nil {
 			return errResult(err.Error())
 		}
@@ -148,11 +162,17 @@ func (srv *apiServer) dispatch(action, sessionID string, body map[string]interfa
 		}
 		return runtimeResult(bs.rt, false)
 
-	case "reset", "leaveSession":
+	case "reset":
 		if err := dispatchIntent(bs.rt, "close_session", nil); err != nil {
 			return errResult(err.Error())
 		}
 		return runtimeResult(bs.rt, true)
+
+	case "leaveSession", "closeSession":
+		if !srv.store.delete(sessionID) {
+			return errResult("session not found")
+		}
+		return map[string]interface{}{"ok": true, "sessionClosed": true}
 
 	case "startOnlineHost":
 		if err := dispatchIntent(bs.rt, "create_host_session", appcore.CreateHostPayload{
@@ -336,6 +356,27 @@ func errResult(msg string) map[string]interface{} {
 		"ok":    false,
 		"error": msg,
 	}
+}
+
+func boolVal(body map[string]interface{}, key string, fallback bool) bool {
+	raw, ok := body[key]
+	if !ok || raw == nil {
+		return fallback
+	}
+	switch value := raw.(type) {
+	case bool:
+		return value
+	case string:
+		switch strings.ToLower(strings.TrimSpace(value)) {
+		case "1", "true", "yes", "on":
+			return true
+		case "0", "false", "no", "off":
+			return false
+		}
+	case float64:
+		return value != 0
+	}
+	return fallback
 }
 
 func mustJSON(v interface{}) string {

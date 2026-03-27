@@ -189,10 +189,11 @@ $seatPosition = static function (int $playerID) use ($numPlayers, $myID): string
                         $cardPlayerID = (int) ($pc['PlayerID'] ?? 0);
                         $cardPos = $seatPosition($cardPlayerID);
                         $cardOwner = $playersByID[$cardPlayerID]['Name'] ?? ('P' . ($cardPlayerID + 1));
+                        $isFaceDown = !empty($pc['FaceDown']);
                         ?>
                         <div class="played-card pos-<?= $cardPos ?>">
                             <div class="owner"><?= htmlspecialchars($cardOwner) ?></div>
-                            <?= renderCard($pc['Card'], true) ?>
+                            <?= $isFaceDown ? renderCardBack(false) : renderCard($pc['Card'], true) ?>
                         </div>
                     <?php endforeach; ?>
                 </div>
@@ -236,6 +237,9 @@ $seatPosition = static function (int $playerID) use ($numPlayers, $myID): string
                         <input type="hidden" name="action" value="play">
                         <input type="hidden" name="cardIndex" value="<?= $idx ?>">
                         <button type="submit" class="card-btn" role="listitem"><?= renderCard($card, false, (string) ($idx + 1)) ?></button>
+                        <?php if (($hand['Round'] ?? 1) >= 2): ?>
+                            <button type="submit" name="faceDown" value="1" class="btn btn-neutral btn-face-down">Virada</button>
+                        <?php endif; ?>
                     </form>
                 <?php else: ?>
                     <div class="card-btn card-btn-static" role="listitem"><?= renderCard($card, false, (string) ($idx + 1)) ?></div>

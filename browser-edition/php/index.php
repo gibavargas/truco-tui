@@ -99,6 +99,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $payload = [];
             if ($action === 'play') {
                 $payload['cardIndex'] = (int) ($_POST['cardIndex'] ?? -1);
+                $payload['faceDown'] = !empty($_POST['faceDown']);
             }
             $res = $api->call($action, $sid, $payload);
             if (!empty($res['ok'])) {
@@ -110,11 +111,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             break;
 
         case 'reset':
-        case 'leaveLobby':
-            $res = $api->call('leaveSession', $sid);
+            $res = $api->call('reset', $sid);
             if (!empty($res['ok'])) {
                 storeBrowserState($res);
                 unset($_SESSION['runtime_events']);
+            } else {
+                $errorMsg = $res['error'] ?? 'Failed to reset session';
+            }
+            break;
+
+        case 'leaveLobby':
+            $res = $api->call('closeSession', $sid);
+            if (!empty($res['ok'])) {
+                unset($_SESSION['api_session_id']);
+                unset($_SESSION['runtime_bundle']);
+                unset($_SESSION['online_session']);
+                unset($_SESSION['runtime_events']);
+                $sid = '';
             } else {
                 $errorMsg = $res['error'] ?? 'Failed to close session';
             }

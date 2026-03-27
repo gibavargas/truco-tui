@@ -292,6 +292,9 @@ public sealed class PlayedCardState
 
     [JsonPropertyName("Card")]
     public CardState Card { get; set; } = new();
+
+    [JsonPropertyName("FaceDown")]
+    public bool FaceDown { get; set; }
 }
 
 public sealed class CardState

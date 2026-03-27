@@ -10,6 +10,40 @@ import (
 	"time"
 )
 
+func advanceBrowserSessionToSecondRound(t *testing.T, srv *apiServer, sid string) {
+	t.Helper()
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		res := postAction(t, srv, "snapshot", sid, nil)
+		snap := parseSnap(t, res)
+		hand := snap["CurrentHand"].(map[string]interface{})
+		round := int(hand["Round"].(float64))
+		pending, _ := snap["PendingRaiseFor"].(float64)
+		turn := int(snap["TurnPlayer"].(float64))
+		roundCards, _ := hand["RoundCards"].([]interface{})
+
+		if round >= 2 && turn == 0 && int(pending) == -1 && len(roundCards) == 0 {
+			return
+		}
+		if int(pending) == 0 {
+			res = postAction(t, srv, "accept", sid, nil)
+			if !res["ok"].(bool) {
+				t.Fatalf("accept pending truco failed while advancing browser round: %v", res["error"])
+			}
+			continue
+		}
+		if turn == 0 {
+			res = postAction(t, srv, "play", sid, map[string]interface{}{"cardIndex": 0})
+			if !res["ok"].(bool) {
+				t.Fatalf("play while advancing browser round failed: %v", res["error"])
+			}
+			continue
+		}
+		_ = postAction(t, srv, "autoCpuLoopTick", sid, nil)
+	}
+	t.Fatalf("timeout advancing browser session to second round")
+}
+
 // ---------------------------------------------------------------------------
 // helpers
 // ---------------------------------------------------------------------------
@@ -168,6 +202,38 @@ func TestPlayCardMissingIndex(t *testing.T) {
 	res := postAction(t, srv, "play", sid, nil)
 	if res["ok"].(bool) {
 		t.Fatalf("expected error when no cardIndex")
+	}
+}
+
+func TestPlayCardFaceDown(t *testing.T) {
+	srv := newAPIServer()
+	sid := createAndStart(t, srv)
+	advanceBrowserSessionToSecondRound(t, srv, sid)
+
+	res := postAction(t, srv, "play", sid, map[string]interface{}{
+		"cardIndex": 0,
+		"faceDown":  true,
+	})
+	if !res["ok"].(bool) {
+		t.Fatalf("play face-down failed: %v", res["error"])
+	}
+
+	snap := parseSnap(t, res)
+	roundCardsRaw, ok := snap["CurrentHand"].(map[string]interface{})["RoundCards"]
+	if !ok || roundCardsRaw == nil {
+		t.Fatalf("expected RoundCards in snapshot, got %v", snap["CurrentHand"])
+	}
+	roundCards := roundCardsRaw.([]interface{})
+	if len(roundCards) != 1 {
+		t.Fatalf("round cards = %d, want 1", len(roundCards))
+	}
+	played := roundCards[0].(map[string]interface{})
+	if played["FaceDown"] != true {
+		t.Fatalf("expected FaceDown=true, got %v", played["FaceDown"])
+	}
+	card := played["Card"].(map[string]interface{})
+	if rank, _ := card["Rank"].(string); rank != "" {
+		t.Fatalf("masked browser snapshot leaked rank %q", rank)
 	}
 }
 
@@ -604,7 +670,7 @@ func TestRequestReplacementInvite(t *testing.T) {
 	}
 }
 
-func TestLeaveSession(t *testing.T) {
+func TestCloseSession(t *testing.T) {
 	srv := newAPIServer()
 	res := postAction(t, srv, "createSession", "", nil)
 	sid := res["sessionId"].(string)
@@ -614,16 +680,18 @@ func TestLeaveSession(t *testing.T) {
 		"numPlayers": 2,
 	})
 
-	res = postAction(t, srv, "leaveSession", sid, nil)
+	res = postAction(t, srv, "closeSession", sid, nil)
 	if !res["ok"].(bool) {
-		t.Fatalf("leaveSession failed")
+		t.Fatalf("closeSession failed")
 	}
 
-	// After leaving, onlineState should return nil session
+	// After closing, the session should be gone from the store.
 	res = postAction(t, srv, "onlineState", sid, nil)
-	session, ok := res["session"].(map[string]interface{})
-	if !ok || len(session) != 0 {
-		t.Fatalf("expected empty session after leave")
+	if res["ok"].(bool) {
+		t.Fatalf("expected session lookup to fail after close, got %v", res)
+	}
+	if res["error"] != "session not found" {
+		t.Fatalf("expected session not found after close, got %v", res["error"])
 	}
 }
 

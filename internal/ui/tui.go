@@ -220,6 +220,9 @@ func (t *TUI) runHostMatch(host *netp2p.HostSession) error {
 func applyRemoteAction(game *truco.Game, a netp2p.ClientAction) error {
 	switch a.Action {
 	case "play":
+		if a.FaceDown {
+			return game.PlayCardFaceDown(a.Seat, a.CardIndex)
+		}
 		return game.PlayCard(a.Seat, a.CardIndex)
 	case "truco":
 		return requestOrRaiseTruco(game, a.Seat)
@@ -234,7 +237,7 @@ func applyRemoteAction(game *truco.Game, a netp2p.ClientAction) error {
 
 func pushSnapshotsToClients(host *netp2p.HostSession, game *truco.Game) {
 	slots := host.Slots()
-	full := game.Snapshot(0)
+	full := game.AuthoritativeSnapshot()
 	full.Logs = nil
 	full.CurrentPlayerIdx = -1
 	for seat := 1; seat < len(slots); seat++ {

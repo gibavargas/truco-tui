@@ -184,6 +184,8 @@ pub struct PlayedCard {
     pub player_id: i32,
     #[serde(rename = "Card")]
     pub card: Card,
+    #[serde(rename = "FaceDown")]
+    pub face_down: Option<bool>,
 }
 
 #[derive(Deserialize, Debug, Clone)]

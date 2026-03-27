@@ -7,7 +7,21 @@ import (
 	"time"
 
 	"truco-tui/internal/netp2p"
+	"truco-tui/internal/truco"
 )
+
+func advanceGameToSecondRound(t *testing.T, g *truco.Game) {
+	t.Helper()
+	for {
+		snap := g.Snapshot(0)
+		if snap.CurrentHand.Round >= 2 {
+			return
+		}
+		if err := applyGameActionHost(g, snap.TurnPlayer, GameActionPayload{Action: "play", CardIndex: 0}); err != nil {
+			t.Fatalf("advanceGameToSecondRound: %v", err)
+		}
+	}
+}
 
 func waitForRuntimeCondition(t *testing.T, timeout time.Duration, cond func() bool, msg string) {
 	t.Helper()
@@ -201,6 +215,53 @@ func TestRuntimeHostLobbyNetworkSnapshot(t *testing.T) {
 	}
 	if network.MixedProtocolSession {
 		t.Fatal("mixed_protocol_session = true, want false")
+	}
+}
+
+func TestApplyGameActionHostFaceDownMasksSnapshot(t *testing.T) {
+	g, err := truco.NewGameWithSeed([]string{"Ana", "Bia"}, []bool{false, false}, 7, 9)
+	if err != nil {
+		t.Fatalf("NewGameWithSeed: %v", err)
+	}
+	advanceGameToSecondRound(t, g)
+
+	turn := g.Snapshot(0).TurnPlayer
+	if err := applyGameActionHost(g, turn, GameActionPayload{Action: "play", CardIndex: 0, FaceDown: true}); err != nil {
+		t.Fatalf("applyGameActionHost faceDown: %v", err)
+	}
+
+	masked := g.Snapshot(turn)
+	if len(masked.CurrentHand.RoundCards) != 1 {
+		t.Fatalf("masked round cards = %d, want 1", len(masked.CurrentHand.RoundCards))
+	}
+	if masked.CurrentHand.RoundCards[0].FaceDown != true {
+		t.Fatalf("expected masked face-down round card")
+	}
+	if masked.CurrentHand.RoundCards[0].Card.Rank != "" || masked.CurrentHand.RoundCards[0].Card.Suit != "" {
+		t.Fatalf("masked snapshot leaked hidden card: %+v", masked.CurrentHand.RoundCards[0].Card)
+	}
+
+	full := g.AuthoritativeSnapshot()
+	if full.CurrentHand.RoundCards[0].Card.Rank == "" {
+		t.Fatalf("authoritative snapshot lost hidden card")
+	}
+}
+
+func TestApplyRemoteActionFaceDownUsesHiddenPath(t *testing.T) {
+	g, err := truco.NewGameWithSeed([]string{"Ana", "Bia"}, []bool{false, false}, 11, 13)
+	if err != nil {
+		t.Fatalf("NewGameWithSeed: %v", err)
+	}
+	advanceGameToSecondRound(t, g)
+
+	turn := g.Snapshot(0).TurnPlayer
+	if err := applyRemoteAction(g, netp2p.ClientAction{Seat: turn, Action: "play", CardIndex: 0, FaceDown: true}); err != nil {
+		t.Fatalf("applyRemoteAction faceDown: %v", err)
+	}
+
+	snap := g.Snapshot(turn)
+	if len(snap.CurrentHand.RoundCards) != 1 || snap.CurrentHand.RoundCards[0].FaceDown != true {
+		t.Fatalf("expected remote face-down card in snapshot")
 	}
 }
 

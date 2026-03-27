@@ -23,6 +23,7 @@ type ClientAction struct {
 	Seat      int
 	Action    string
 	CardIndex int
+	FaceDown  bool
 }
 
 // HostSession gerencia lobby, chat e transporte de ações/estado da partida.
@@ -1352,7 +1353,7 @@ func (h *HostSession) handleConn(conn net.Conn) {
 			if !started {
 				continue
 			}
-			action := ClientAction{Seat: slot, Action: msg.Action, CardIndex: msg.CardIndex}
+			action := ClientAction{Seat: slot, Action: msg.Action, CardIndex: msg.CardIndex, FaceDown: msg.FaceDown}
 			select {
 			case h.actions <- action:
 			case <-time.After(2 * time.Second):

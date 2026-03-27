@@ -33,6 +33,7 @@ type ClientSession struct {
 	started             bool
 	reconnecting        bool
 	closed              bool
+	relayState          RelayReconnectState
 
 	failoverHostSeat             int
 	failoverPort                 int
@@ -85,6 +86,7 @@ type ClientFailoverState struct {
 	AuthorityFingerprint string
 	RouteHint            string
 	RelayHostAdminToken  string
+	Relay                RelayReconnectState
 }
 
 func JoinSession(key, playerName, desiredRole string) (*ClientSession, error) {
@@ -98,7 +100,7 @@ func JoinSession(key, playerName, desiredRole string) (*ClientSession, error) {
 	}
 	desiredRole = normalizeDesiredRole(desiredRole)
 
-	conn, reader, first, err := dialAndJoin(inv, name, desiredRole, "", clientConnectAttempts, supportedProtocolVersions())
+	conn, reader, first, relayState, err := dialAndJoin(inv, name, desiredRole, "", clientConnectAttempts, supportedProtocolVersions(), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -119,19 +121,24 @@ func JoinSession(key, playerName, desiredRole string) (*ClientSession, error) {
 		slots:               append([]string{}, first.Slots...),
 		events:              make(chan string, 128),
 		states:              make(chan truco.Snapshot, 128),
+		relayState:          relayState,
 	}
 	go c.readLoop()
 	go c.heartbeatLoop()
 	return c, nil
 }
 
-func RejoinSession(inv InviteKey, playerName, desiredRole, sessionID string, attempts int) (*ClientSession, error) {
+func RejoinSession(inv InviteKey, playerName, desiredRole, sessionID string, attempts int, relayState ...RelayReconnectState) (*ClientSession, error) {
 	name, err := normalizeName(playerName)
 	if err != nil {
 		return nil, err
 	}
 	desiredRole = normalizeDesiredRole(desiredRole)
-	conn, reader, first, err := dialAndJoin(inv, name, desiredRole, sessionID, attempts, supportedProtocolVersions())
+	var cachedRelayState *RelayReconnectState
+	if len(relayState) > 0 {
+		cachedRelayState = &relayState[0]
+	}
+	conn, reader, first, relayInfo, err := dialAndJoin(inv, name, desiredRole, sessionID, attempts, supportedProtocolVersions(), cachedRelayState)
 	if err != nil {
 		return nil, err
 	}
@@ -151,13 +158,14 @@ func RejoinSession(inv InviteKey, playerName, desiredRole, sessionID string, att
 		slots:               append([]string{}, first.Slots...),
 		events:              make(chan string, 128),
 		states:              make(chan truco.Snapshot, 128),
+		relayState:          relayInfo,
 	}
 	go c.readLoop()
 	go c.heartbeatLoop()
 	return c, nil
 }
 
-func dialAndJoin(inv InviteKey, playerName, desiredRole, sessionID string, attempts int, protocolVersions []int) (net.Conn, *bufio.Reader, Message, error) {
+func dialAndJoin(inv InviteKey, playerName, desiredRole, sessionID string, attempts int, protocolVersions []int, relayState *RelayReconnectState) (net.Conn, *bufio.Reader, Message, RelayReconnectState, error) {
 	if attempts < 1 {
 		attempts = 1
 	}
@@ -178,9 +186,9 @@ func dialAndJoin(inv InviteKey, playerName, desiredRole, sessionID string, attem
 			for _, addr := range addrs {
 				tryInv := inv
 				tryInv.Addr = addr
-				conn, reader, first, err := attemptDialJoin(tryInv, playerName, desiredRole, sessionID, protocolVersionCandidate)
+				conn, reader, first, relayInfo, err := attemptDialJoin(tryInv, playerName, desiredRole, sessionID, protocolVersionCandidate, relayState)
 				if err == nil {
-					return conn, reader, first, nil
+					return conn, reader, first, relayInfo, nil
 				}
 				var protocolErr joinProtocolError
 				if errors.As(err, &protocolErr) {
@@ -189,7 +197,7 @@ func dialAndJoin(inv InviteKey, playerName, desiredRole, sessionID string, attem
 						fallbackToLower = true
 						break
 					}
-					return nil, nil, Message{}, err
+					return nil, nil, Message{}, RelayReconnectState{}, err
 				}
 				lastErr = fmt.Errorf("%s: %w", addr, err)
 			}
@@ -209,9 +217,9 @@ func dialAndJoin(inv InviteKey, playerName, desiredRole, sessionID string, attem
 		lastErr = errors.New("falha de conexão")
 	}
 	if attempts > 1 {
-		return nil, nil, Message{}, fmt.Errorf("falha ao conectar após tentativas: %w", lastErr)
+		return nil, nil, Message{}, RelayReconnectState{}, fmt.Errorf("falha ao conectar após tentativas: %w", lastErr)
 	}
-	return nil, nil, Message{}, lastErr
+	return nil, nil, Message{}, RelayReconnectState{}, lastErr
 }
 
 func inviteDialAddrs(addr string) []string {
@@ -258,10 +266,10 @@ func inviteDialAddrs(addr string) []string {
 	return out
 }
 
-func attemptDialJoin(inv InviteKey, playerName, desiredRole, sessionID string, protocolVersionCandidate int) (net.Conn, *bufio.Reader, Message, error) {
-	conn, err := dialSessionConnWithRelay(inv, 2*time.Second, playerName, desiredRole, sessionID)
+func attemptDialJoin(inv InviteKey, playerName, desiredRole, sessionID string, protocolVersionCandidate int, relayState *RelayReconnectState) (net.Conn, *bufio.Reader, Message, RelayReconnectState, error) {
+	conn, relayInfo, err := dialSessionConnWithRelayState(inv, 2*time.Second, playerName, desiredRole, sessionID, relayState)
 	if err != nil {
-		return nil, nil, Message{}, err
+		return nil, nil, Message{}, RelayReconnectState{}, err
 	}
 	advertiseHost := ""
 	if host, _, splitErr := net.SplitHostPort(conn.LocalAddr().String()); splitErr == nil {
@@ -280,31 +288,34 @@ func attemptDialJoin(inv InviteKey, playerName, desiredRole, sessionID string, p
 	}
 	if err := writeMessage(conn, req); err != nil {
 		closeConnWithLog(conn, "join send")
-		return nil, nil, Message{}, err
+		return nil, nil, Message{}, RelayReconnectState{}, err
 	}
 
 	first, err := readMessage(conn, reader)
 	if err != nil {
 		closeConnWithLog(conn, "join read")
-		return nil, nil, Message{}, err
+		return nil, nil, Message{}, RelayReconnectState{}, err
 	}
 	if first.Type == "error" {
 		closeConnWithLog(conn, "join protocol error")
-		return nil, nil, Message{}, joinProtocolError{msg: first.Error, versionMismatch: isProtocolVersionMismatchMessage(first.Error)}
+		return nil, nil, Message{}, RelayReconnectState{}, joinProtocolError{msg: first.Error, versionMismatch: isProtocolVersionMismatchMessage(first.Error)}
 	}
 	if first.Type != "join_ok" {
 		closeConnWithLog(conn, "join unexpected response")
-		return nil, nil, Message{}, joinProtocolError{msg: fmt.Sprintf("resposta inesperada: %s", first.Type)}
+		return nil, nil, Message{}, RelayReconnectState{}, joinProtocolError{msg: fmt.Sprintf("resposta inesperada: %s", first.Type)}
 	}
 	first.ProtocolVersion = normalizeProtocolVersion(first.ProtocolVersion)
 	if !supportsProtocolVersion(first.ProtocolVersion) {
 		closeConnWithLog(conn, "join protocol version mismatch")
-		return nil, nil, Message{}, joinProtocolError{
+		return nil, nil, Message{}, RelayReconnectState{}, joinProtocolError{
 			msg:             fmt.Sprintf("versão de protocolo incompatível (host=%d, suportado=%v)", first.ProtocolVersion, supportedProtocolVersions()),
 			versionMismatch: true,
 		}
 	}
-	return conn, reader, first, nil
+	if relayInfo == nil {
+		relayInfo = &RelayReconnectState{}
+	}
+	return conn, reader, first, *relayInfo, nil
 }
 
 func (c *ClientSession) Events() <-chan string               { return c.events }
@@ -365,6 +376,7 @@ func (c *ClientSession) FailoverState() ClientFailoverState {
 		AuthorityFingerprint: c.failoverAuthorityFingerprint,
 		RouteHint:            c.failoverRouteHint,
 		RelayHostAdminToken:  c.failoverRelayHostAdminToken,
+		Relay:                c.relayState,
 	}
 	for seat, host := range c.failoverPeers {
 		out.PeerHosts[seat] = host
@@ -377,6 +389,12 @@ func (c *ClientSession) FailoverState() ClientFailoverState {
 		out.FullState = &s
 	}
 	out.Ready = len(out.PeerHosts) > 0 && out.FullState != nil && len(out.Slots) == out.NumPlayers && strings.TrimSpace(out.TLSSeed) != ""
+	if strings.TrimSpace(out.Invite.Transport) == "relay_quic_v2" {
+		out.Ready = out.Ready &&
+			strings.TrimSpace(out.Relay.PeerID) != "" &&
+			strings.TrimSpace(out.Relay.PeerCredential) != "" &&
+			strings.TrimSpace(out.Relay.QuicAddr) != ""
+	}
 	return out
 }
 
@@ -389,10 +407,14 @@ func (c *ClientSession) SendChat(text string) error {
 }
 
 func (c *ClientSession) SendGameAction(action string, cardIndex int) error {
+	return c.SendGameActionWithOptions(action, cardIndex, false)
+}
+
+func (c *ClientSession) SendGameActionWithOptions(action string, cardIndex int, faceDown bool) error {
 	if err := validateGameAction(action, cardIndex); err != nil {
 		return err
 	}
-	return c.send(Message{Type: "game_action", Action: action, CardIndex: cardIndex})
+	return c.send(Message{Type: "game_action", Action: action, CardIndex: cardIndex, FaceDown: faceDown})
 }
 
 func (c *ClientSession) SendHostVote(candidateSeat int) error {
@@ -508,6 +530,7 @@ func (c *ClientSession) tryReconnect() bool {
 	name := c.name
 	role := c.desiredRole
 	sessionID := c.sessionID
+	relayState := c.relayState
 	oldConn := c.conn
 	c.conn = nil
 	c.reader = nil
@@ -520,7 +543,15 @@ func (c *ClientSession) tryReconnect() bool {
 		if c.ctx.Err() != nil {
 			break
 		}
-		conn, reader, first, err := dialAndJoin(inv, name, role, sessionID, 1, protocolVersionCandidates(c.wireProtocolVersion))
+		useRelayState := relayState
+		if strings.TrimSpace(inv.Transport) != "relay_quic_v2" {
+			useRelayState = RelayReconnectState{}
+		}
+		var relayArg *RelayReconnectState
+		if strings.TrimSpace(useRelayState.PeerID) != "" && strings.TrimSpace(useRelayState.PeerCredential) != "" && strings.TrimSpace(useRelayState.QuicAddr) != "" {
+			relayArg = &useRelayState
+		}
+		conn, reader, first, relayInfo, err := dialAndJoin(inv, name, role, sessionID, 1, protocolVersionCandidates(c.wireProtocolVersion), relayArg)
 		if err == nil {
 			c.mu.Lock()
 			if c.closed {
@@ -540,6 +571,7 @@ func (c *ClientSession) tryReconnect() bool {
 			if len(first.Slots) > 0 {
 				c.slots = append([]string{}, first.Slots...)
 			}
+			c.relayState = relayInfo
 			c.reconnecting = false
 			c.mu.Unlock()
 			c.safeEvent("Reconectado ao host.")
@@ -658,6 +690,10 @@ func (c *ClientSession) readLoop() {
 			}
 			if strings.TrimSpace(msg.RouteHint) != "" {
 				c.failoverRouteHint = msg.RouteHint
+				c.invite.RelayAuthorityPeer = msg.RouteHint
+				if c.relayState.PeerID != "" {
+					c.relayState.AuthorityPeer = msg.RouteHint
+				}
 			}
 			if strings.TrimSpace(msg.RelayHostAdminToken) != "" {
 				c.failoverRelayHostAdminToken = msg.RelayHostAdminToken

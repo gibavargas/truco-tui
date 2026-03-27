@@ -789,8 +789,8 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
 
     private static List<TableSeatViewModel> BuildTableLayout(MatchSnapshot match, int localIndex)
     {
-        Dictionary<int, CardState> playedByPlayerId = (match.CurrentHand?.RoundCards ?? [])
-            .ToDictionary(card => card.PlayerId, card => card.Card);
+        Dictionary<int, PlayedCardState> playedByPlayerId = (match.CurrentHand?.RoundCards ?? [])
+            .ToDictionary(card => card.PlayerId, card => card);
 
         int playerCount = match.Players.Count;
         TableSeatViewModel[] seats = [new(), new(), new(), new()];
@@ -819,7 +819,7 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
         return seats.ToList();
     }
 
-    private static TableSeatViewModel ToSeatViewModel(int playerIndex, int relativeIndex, PlayerState player, MatchSnapshot match, IReadOnlyDictionary<int, CardState> playedByPlayerId)
+    private static TableSeatViewModel ToSeatViewModel(int playerIndex, int relativeIndex, PlayerState player, MatchSnapshot match, IReadOnlyDictionary<int, PlayedCardState> playedByPlayerId)
     {
         string role = relativeIndex switch
         {
@@ -846,8 +846,16 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
             IsProvisionalCpu = player.ProvisionalCpu,
             HandCount = player.Hand.Count,
             HandCards = BuildHandVisuals(player.Hand, relativeIndex == 0),
-            PlayedCard = playedByPlayerId.TryGetValue(player.Id, out CardState? played) ? played : null,
-            PlayedCardViewModel = playedByPlayerId.TryGetValue(player.Id, out CardState? playedCard) ? new HandCardViewModel { Card = playedCard, IsFaceUp = true, Scale = 0.85, Rotation = 0 } : null
+            PlayedCard = playedByPlayerId.TryGetValue(player.Id, out PlayedCardState? played) ? played.Card : null,
+            PlayedCardViewModel = playedByPlayerId.TryGetValue(player.Id, out PlayedCardState? playedCard)
+                ? new HandCardViewModel
+                {
+                    Card = playedCard.FaceDown ? new CardState() : playedCard.Card,
+                    IsFaceUp = !playedCard.FaceDown,
+                    Scale = 0.85,
+                    Rotation = 0
+                }
+                : null
         };
     }
 

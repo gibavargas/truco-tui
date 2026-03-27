@@ -46,10 +46,10 @@ final class TrucoAppStore: ObservableObject {
 
     // MARK: - Game Actions
 
-    func dispatchGameAction(action: String, cardIndex: Int = 0) {
+    func dispatchGameAction(action: String, cardIndex: Int = 0, faceDown: Bool = false) {
         let json: String
         if action == "play" {
-            json = "{\"kind\":\"game_action\",\"payload\":{\"action\":\"play\",\"card_index\":\(cardIndex)}}"
+            json = "{\"kind\":\"game_action\",\"payload\":{\"action\":\"play\",\"card_index\":\(cardIndex),\"face_down\":\(faceDown ? "true" : "false")}}"
         } else {
             json = "{\"kind\":\"game_action\",\"payload\":{\"action\":\"\(action)\"}}"
         }

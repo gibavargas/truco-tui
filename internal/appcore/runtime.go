@@ -422,7 +422,7 @@ func (r *Runtime) applyGameActionLocked(payload GameActionPayload) error {
 		if r.client == nil {
 			return r.failLocked("invalid_state", errors.New("cliente ausente"))
 		}
-		if err := r.client.SendGameAction(payload.Action, payload.CardIndex); err != nil {
+		if err := r.client.SendGameActionWithOptions(payload.Action, payload.CardIndex, payload.FaceDown); err != nil {
 			return r.failLocked("game_action_failed", err)
 		}
 		return nil
@@ -908,6 +908,9 @@ func applyGameActionHost(game *truco.Game, playerID int, payload GameActionPaylo
 	}
 	switch payload.Action {
 	case "play":
+		if payload.FaceDown {
+			return game.PlayCardFaceDown(playerID, payload.CardIndex)
+		}
 		return game.PlayCard(playerID, payload.CardIndex)
 	case "truco":
 		return requestOrRaiseTruco(game, playerID)
@@ -947,6 +950,9 @@ func applyCPUActionToGame(g *truco.Game, pid int, a truco.CPUAction) error {
 func applyRemoteAction(game *truco.Game, a netp2p.ClientAction) error {
 	switch a.Action {
 	case "play":
+		if a.FaceDown {
+			return game.PlayCardFaceDown(a.Seat, a.CardIndex)
+		}
 		return game.PlayCard(a.Seat, a.CardIndex)
 	case "truco":
 		return requestOrRaiseTruco(game, a.Seat)
@@ -961,7 +967,7 @@ func applyRemoteAction(game *truco.Game, a netp2p.ClientAction) error {
 
 func pushSnapshotsToClients(host *netp2p.HostSession, game *truco.Game) {
 	slots := host.Slots()
-	full := game.Snapshot(0)
+	full := game.AuthoritativeSnapshot()
 	full.Logs = nil
 	full.CurrentPlayerIdx = -1
 	for seat := 1; seat < len(slots); seat++ {

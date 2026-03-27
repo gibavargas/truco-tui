@@ -108,6 +108,7 @@ type JoinSessionPayload struct {
 type GameActionPayload struct {
 	Action    string `json:"action"`
 	CardIndex int    `json:"card_index,omitempty"`
+	FaceDown  bool   `json:"face_down,omitempty"`
 }
 
 type SendChatPayload struct {

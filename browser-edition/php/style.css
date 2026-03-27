@@ -1091,6 +1091,19 @@ label {
   outline-offset: 2px;
 }
 
+.card-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: center;
+}
+
+.btn-face-down {
+  min-width: 86px;
+  padding: 7px 10px;
+  font-size: 0.72rem;
+}
+
 .card.red {
   color: #bf2525;
 }

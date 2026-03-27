@@ -182,6 +182,7 @@ type Message struct {
 	// Campos de ação de partida (cliente -> host).
 	Action        string `json:"action,omitempty"` // play|truco|accept|refuse
 	CardIndex     int    `json:"card_index"`
+	FaceDown      bool   `json:"face_down,omitempty"`
 	HostCandidate int    `json:"host_candidate,omitempty"`
 	TargetSeat    int    `json:"target_seat,omitempty"`
 

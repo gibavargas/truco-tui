@@ -110,6 +110,11 @@ struct MatchSnapshot: Codable {
     let PendingRaiseBy: Int?
     let PendingRaiseTo: Int?
     let CurrentPlayerIdx: Int?
+    let LastTrickSeq: Int?
+    let LastTrickTeam: Int?
+    let LastTrickWinner: Int?
+    let LastTrickTie: Bool?
+    let LastTrickRound: Int?
     
     /// Helper to get team scores
     var teamScore: (us: Int, them: Int) {
@@ -158,8 +163,9 @@ struct Player: Codable, Identifiable {
 struct PlayedCard: Codable, Identifiable {
     let PlayerID: Int
     let Card: Card
+    let FaceDown: Bool?
     
-    var id: String { "\(PlayerID)-\(Card.Rank)-\(Card.Suit)" }
+    var id: String { "\(PlayerID)-\(Card.Rank)-\(Card.Suit)-\(FaceDown == true ? 1 : 0)" }
 }
 
 // MARK: - Card (matches Go truco.Card)

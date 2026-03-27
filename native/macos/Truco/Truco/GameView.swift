@@ -3,6 +3,8 @@ import SwiftUI
 struct GameView: View {
     let snapshot: MatchSnapshot?
     @EnvironmentObject var store: TrucoAppStore
+    @State private var highlightedPlayerID: Int?
+    @State private var trickHighlightToken = 0
 
     private func seatPlayer(_ snap: MatchSnapshot, offset: Int) -> Player? {
         guard let players = snap.Players, let localID = snap.CurrentPlayerIdx, let count = snap.NumPlayers else { return nil }
@@ -19,9 +21,40 @@ struct GameView: View {
         default: return "TRUCO!"
         }
     }
+
+    private func canPlayCard(_ snap: MatchSnapshot, player: Player) -> Bool {
+        snap.MatchFinished != true &&
+        snap.TurnPlayer == player.playerID &&
+        (snap.PendingRaiseFor ?? -1) == -1
+    }
+
+    private func resolvedHighlightedPlayerID(_ snap: MatchSnapshot) -> Int? {
+        highlightedPlayerID ?? snap.TurnPlayer
+    }
+
+    private func updateTrickHighlight(for snap: MatchSnapshot) {
+        guard snap.LastTrickSeq ?? 0 > 0 else {
+            highlightedPlayerID = nil
+            return
+        }
+        if snap.LastTrickTie == true || (snap.LastTrickWinner ?? -1) < 0 {
+            highlightedPlayerID = nil
+            return
+        }
+        trickHighlightToken += 1
+        let token = trickHighlightToken
+        highlightedPlayerID = snap.LastTrickWinner
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.4) {
+            if trickHighlightToken == token {
+                highlightedPlayerID = nil
+            }
+        }
+    }
     
     var body: some View {
         if let snap = snapshot {
+            let highlightedID = resolvedHighlightedPlayerID(snap)
+            let isOnlineMatch = store.bundle?.connection?.is_online == true || store.mode == "host_match" || store.mode == "client_match"
             ZStack {
                 // Background wood panels
                 HStack(spacing: 0) {
@@ -95,7 +128,7 @@ struct GameView: View {
                 VStack {
                     HStack {
                         Spacer()
-                        LogView(logs: snap.Logs ?? [])
+                        MatchActivityPanel(logs: snap.Logs ?? [], events: store.events, isOnline: isOnlineMatch)
                     }
                     .padding(.top, 120)
                     .padding(.trailing, 50)
@@ -105,7 +138,7 @@ struct GameView: View {
                 // Players & Center Table
                 VStack(spacing: 0) {
                     if let opponent = seatPlayer(snap, offset: snap.NumPlayers == 4 ? 2 : 1) {
-                        OpponentView(player: opponent)
+                        OpponentView(player: opponent, isHighlighted: highlightedID == opponent.playerID)
                             .padding(.top, 60)
                     }
                     
@@ -152,7 +185,12 @@ struct GameView: View {
                                 .padding(.top, 10)
                             }
                             
-                            PlayerHandView(player: me, isMyTurn: snap.TurnPlayer == snap.CurrentPlayerIdx && snap.PendingRaiseFor != 0)
+                            PlayerHandView(
+                                player: me,
+                                canPlayCard: canPlayCard(snap, player: me),
+                                currentRound: snap.CurrentHand?.Round ?? 1,
+                                isHighlighted: highlightedID == me.playerID
+                            )
                         }
                         .padding(.bottom, 60)
                     }
@@ -161,13 +199,13 @@ struct GameView: View {
                 if snap.NumPlayers == 4 {
                     HStack {
                         if let left = seatPlayer(snap, offset: 3) {
-                            SideOpponentView(player: left)
+                            SideOpponentView(player: left, isHighlighted: highlightedID == left.playerID)
                                 .frame(maxWidth: 120)
                                 .padding(.leading, 48)
                         }
                         Spacer()
                         if let right = seatPlayer(snap, offset: 1) {
-                            SideOpponentView(player: right)
+                            SideOpponentView(player: right, isHighlighted: highlightedID == right.playerID)
                                 .frame(maxWidth: 120)
                                 .padding(.trailing, 48)
                         }
@@ -204,6 +242,12 @@ struct GameView: View {
                         .font(.headline.weight(.black))
                     }
                 }
+            }
+            .onAppear {
+                highlightedPlayerID = nil
+            }
+            .onChange(of: snap.LastTrickSeq) { _ in
+                updateTrickHighlight(for: snap)
             }
         } else {
             ProgressView("Carregando snapshot...")
@@ -262,22 +306,45 @@ private struct StakeBadge: View {
     }
 }
 
-private struct LogView: View {
+private struct MatchActivityPanel: View {
     let logs: [String]
+    let events: [AppEvent]
+    let isOnline: Bool
     
     var body: some View {
-        VStack(alignment: .trailing, spacing: 4) {
-            ForEach(logs.suffix(5), id: \.self) { log in
-                Text(log)
+        VStack(alignment: .leading, spacing: 8) {
+            Text(isOnline ? "Atividade Online" : "Log")
+                .font(.caption.bold())
+                .foregroundColor(.white.opacity(0.7))
+            ForEach(entries, id: \.self) { line in
+                Text(line)
                     .font(.caption)
-                    .foregroundColor(.white.opacity(0.7))
-                    .lineLimit(1)
+                    .foregroundColor(.white.opacity(0.78))
+                    .lineLimit(2)
             }
         }
         .padding(12)
         .background(Color.black.opacity(0.3))
         .cornerRadius(12)
         .frame(maxWidth: 280)
+    }
+
+    private var entries: [String] {
+        var out = Array(logs.suffix(isOnline ? 4 : 6))
+        if isOnline {
+            for ev in events.suffix(6) {
+                if ev.kind == "chat" {
+                    let author = ev.payload?.author ?? "Alguém"
+                    let text = ev.payload?.text ?? ""
+                    out.append("[chat] \(author): \(text)")
+                } else if let text = ev.payload?.text, !text.isEmpty {
+                    out.append("[\(ev.kind)] \(text)")
+                } else {
+                    out.append("[\(ev.kind)]")
+                }
+            }
+        }
+        return Array(out.suffix(8))
     }
 }
 
@@ -308,7 +375,7 @@ private struct CenterTableView: View {
                 
                 if let played = hand.RoundCards {
                     ForEach(Array(played.enumerated()), id: \.element.id) { index, pc in
-                        CardView(card: pc.Card)
+                        CardView(card: pc.Card, isFaceUp: pc.FaceDown != true)
                             .rotationEffect(.degrees(Double(index * 15 - 10)))
                             .offset(x: CGFloat(index * 15 - 5), y: CGFloat(index * -10))
                             .transition(.move(edge: .bottom).combined(with: .opacity))
@@ -347,16 +414,17 @@ private struct CenterTableView: View {
 
 private struct OpponentView: View {
     let player: Player
+    let isHighlighted: Bool
     
     var body: some View {
         VStack(spacing: 16) {
             Text(player.Name.uppercased())
                 .font(.subheadline.bold())
-                .foregroundColor(.white)
+                .foregroundColor(isHighlighted ? .black : .white)
                 .tracking(1)
                 .padding(.horizontal, 20)
                 .padding(.vertical, 6)
-                .background(Color.black.opacity(0.5))
+                .background(isHighlighted ? Color.yellow : Color.black.opacity(0.5))
                 .clipShape(Capsule())
             
             HStack(spacing: -24) {
@@ -371,12 +439,13 @@ private struct OpponentView: View {
 
 private struct SideOpponentView: View {
     let player: Player
+    let isHighlighted: Bool
 
     var body: some View {
         VStack(spacing: 14) {
             Text(player.Name.uppercased())
                 .font(.caption.bold())
-                .foregroundColor(.white.opacity(0.85))
+                .foregroundColor(isHighlighted ? .yellow : .white.opacity(0.85))
                 .rotationEffect(.degrees(90))
 
             VStack(spacing: -20) {
@@ -391,14 +460,25 @@ private struct SideOpponentView: View {
 
 private struct PlayerHandView: View {
     let player: Player
-    let isMyTurn: Bool
+    let canPlayCard: Bool
+    let currentRound: Int
+    let isHighlighted: Bool
     @EnvironmentObject var store: TrucoAppStore
     
     @State private var hoveredCard: String?
     
     var body: some View {
         VStack(spacing: 20) {
-            if isMyTurn {
+            Text(player.Name.uppercased())
+                .font(.caption.bold())
+                .foregroundColor(isHighlighted ? .black : .white.opacity(0.9))
+                .tracking(1)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 6)
+                .background(isHighlighted ? Color.yellow : Color.black.opacity(0.45))
+                .clipShape(Capsule())
+
+            if canPlayCard {
                 Text("SUA VEZ")
                     .font(.caption.bold())
                     .foregroundColor(Color(red: 0.35, green: 0.21, blue: 0.12))
@@ -410,27 +490,38 @@ private struct PlayerHandView: View {
                     .shadow(color: .yellow.opacity(0.4), radius: 8)
             }
             
-            HStack(spacing: 16) {
-                if let hand = player.Hand {
-                    ForEach(Array(hand.enumerated()), id: \.element) { index, card in
-                        CardView(card: card)
-                            .offset(y: hoveredCard == card.Rank + card.Suit ? -30 : 0)
-                            .animation(.interactiveSpring(response: 0.3, dampingFraction: 0.6), value: hoveredCard)
-                            .onHover { isHovered in
-                                if isHovered && isMyTurn {
-                                    hoveredCard = card.Rank + card.Suit
-                                } else if hoveredCard == card.Rank + card.Suit {
-                                    hoveredCard = nil
+	            HStack(spacing: 16) {
+	                if let hand = player.Hand {
+	                    ForEach(Array(hand.enumerated()), id: \.element) { index, card in
+	                        VStack(spacing: 8) {
+                            CardView(card: card)
+                                .offset(y: hoveredCard == card.Rank + card.Suit ? -30 : 0)
+                                .animation(.interactiveSpring(response: 0.3, dampingFraction: 0.6), value: hoveredCard)
+                                .onHover { isHovered in
+                                    if isHovered && canPlayCard {
+                                        hoveredCard = card.Rank + card.Suit
+                                    } else if hoveredCard == card.Rank + card.Suit {
+                                        hoveredCard = nil
+                                    }
                                 }
-                            }
-                            .onTapGesture {
-                                if isMyTurn {
-                                    store.dispatchGameAction(action: "play", cardIndex: index)
+                                .onTapGesture {
+                                    if canPlayCard {
+                                        store.dispatchGameAction(action: "play", cardIndex: index)
+                                    }
                                 }
-                            }
-                    }
-                }
-            }
-        }
+
+                            if canPlayCard && currentRound >= 2 {
+                                Button("Virada") {
+                                    store.dispatchGameAction(action: "play", cardIndex: index, faceDown: true)
+                                }
+                                .buttonStyle(.bordered)
+                                .controlSize(.small)
+                                .tint(.white.opacity(0.25))
+	                    }
+	                }
+	            }
+	        }
+	    }
+	}
     }
 }

@@ -510,7 +510,11 @@ fn update_game_ui(window: &window::TrucoWindow, snapshot: &models::GameSnapshot,
                     .and_then(|p| p.iter().find(|pl| pl.id == playing.player_id))
                     .map(|pl| pl.name.as_str()).unwrap_or("?");
                 col.append(&gtk::Label::new(Some(pname)));
-                col.append(&create_card_widget(Some(&playing.card)));
+                if playing.face_down == Some(true) {
+                    col.append(&create_card_widget(None));
+                } else {
+                    col.append(&create_card_widget(Some(&playing.card)));
+                }
                 played_box.append(&col);
             }
         }

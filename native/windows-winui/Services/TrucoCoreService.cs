@@ -90,7 +90,7 @@ public sealed class TrucoCoreService : IDisposable
 
     public AppError? ResetSession() => Dispatch("reset", null);
 
-    public AppError? PlayCard(int cardIndex) => DispatchGameAction("play", cardIndex);
+    public AppError? PlayCard(int cardIndex, bool faceDown = false) => DispatchGameAction("play", cardIndex, faceDown);
 
     public AppError? RequestTruco() => DispatchGameAction("truco", 0);
 
@@ -107,8 +107,8 @@ public sealed class TrucoCoreService : IDisposable
         }
     }
 
-    private AppError? DispatchGameAction(string action, int cardIndex)
-        => Dispatch("game_action", new { action, card_index = cardIndex });
+    private AppError? DispatchGameAction(string action, int cardIndex, bool faceDown = false)
+        => Dispatch("game_action", new { action, card_index = cardIndex, face_down = faceDown });
 
     private AppError? Dispatch(string kind, object? payload)
     {
