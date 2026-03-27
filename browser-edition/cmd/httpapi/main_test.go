@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-func advanceBrowserSessionToSecondRound(t *testing.T, srv *apiServer, sid string) {
+func advanceBrowserSessionUntilPlayableRound(t *testing.T, srv *apiServer, sid string, minRound int) {
 	t.Helper()
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
@@ -22,7 +22,7 @@ func advanceBrowserSessionToSecondRound(t *testing.T, srv *apiServer, sid string
 		turn := int(snap["TurnPlayer"].(float64))
 		roundCards, _ := hand["RoundCards"].([]interface{})
 
-		if round >= 2 && turn == 0 && int(pending) == -1 && len(roundCards) == 0 {
+		if round >= minRound && turn == 0 && int(pending) == -1 && len(roundCards) == 0 {
 			return
 		}
 		if int(pending) == 0 {
@@ -41,7 +41,12 @@ func advanceBrowserSessionToSecondRound(t *testing.T, srv *apiServer, sid string
 		}
 		_ = postAction(t, srv, "autoCpuLoopTick", sid, nil)
 	}
-	t.Fatalf("timeout advancing browser session to second round")
+	t.Fatalf("timeout advancing browser session to playable round %d", minRound)
+}
+
+func advanceBrowserSessionToSecondRound(t *testing.T, srv *apiServer, sid string) {
+	t.Helper()
+	advanceBrowserSessionUntilPlayableRound(t, srv, sid, 2)
 }
 
 // ---------------------------------------------------------------------------
@@ -166,32 +171,11 @@ func TestPlayCard(t *testing.T) {
 	srv := newAPIServer()
 	sid := createAndStart(t, srv)
 
-	// Run CPU loop first to ensure it's our turn
-	_ = postAction(t, srv, "autoCpuLoopTick", sid, nil)
+	advanceBrowserSessionUntilPlayableRound(t, srv, sid, 1)
 
-	res := postAction(t, srv, "snapshot", sid, nil)
-	snap := parseSnap(t, res)
-	turn := int(snap["TurnPlayer"].(float64))
-
-	if turn != 0 {
-		// CPU goes first, play CPU then try
-		_ = postAction(t, srv, "autoCpuLoopTick", sid, nil)
-		res = postAction(t, srv, "snapshot", sid, nil)
-		snap = parseSnap(t, res)
-		turn = int(snap["TurnPlayer"].(float64))
-	}
-
-	if turn == 0 {
-		if pending, ok := snap["PendingRaiseFor"].(float64); ok && int(pending) != -1 {
-			res = postAction(t, srv, "accept", sid, nil)
-			if !res["ok"].(bool) {
-				t.Fatalf("accept pending truco failed: %v", res["error"])
-			}
-		}
-		res = postAction(t, srv, "play", sid, map[string]interface{}{"cardIndex": 0})
-		if !res["ok"].(bool) {
-			t.Fatalf("play card failed: %v", res["error"])
-		}
+	res := postAction(t, srv, "play", sid, map[string]interface{}{"cardIndex": 0})
+	if !res["ok"].(bool) {
+		t.Fatalf("play card failed: %v", res["error"])
 	}
 }
 

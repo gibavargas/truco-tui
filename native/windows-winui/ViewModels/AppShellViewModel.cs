@@ -913,7 +913,6 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
             IsProvisionalCpu = player.ProvisionalCpu,
             HandCount = player.Hand.Count,
             HandCards = BuildHandVisuals(player.Hand, relativeIndex == 0),
-<<<<<<< HEAD
             PlayedCard = playedByPlayerId.TryGetValue(player.Id, out PlayedCardState? played) ? played.Card : null,
             PlayedCardViewModel = playedByPlayerId.TryGetValue(player.Id, out PlayedCardState? playedCard)
                 ? new HandCardViewModel

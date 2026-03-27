@@ -137,7 +137,19 @@ func (srv *apiServer) dispatch(action, sessionID string, body map[string]interfa
 		}
 		return runtimeResult(bs.rt, false)
 
-	case "snapshot", "autoCpuLoopTick", "newHand":
+	case "snapshot":
+		return runtimeResult(bs.rt, false)
+
+	case "autoCpuLoopTick":
+		if err := dispatchIntent(bs.rt, "tick", appcore.TickPayload{MaxSteps: 12}); err != nil {
+			return errResult(err.Error())
+		}
+		return runtimeResult(bs.rt, false)
+
+	case "newHand":
+		if err := dispatchIntent(bs.rt, "new_hand", nil); err != nil {
+			return errResult(err.Error())
+		}
 		return runtimeResult(bs.rt, false)
 
 	case "play":
