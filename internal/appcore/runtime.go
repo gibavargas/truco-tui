@@ -110,6 +110,13 @@ func (r *Runtime) DispatchIntent(intent AppIntent) error {
 		}
 		return r.applyGameActionLocked(payload)
 
+	case "tick":
+		var payload TickPayload
+		if err := decodeIntentPayload(intent.Payload, &payload); err != nil {
+			return r.failLocked("invalid_intent", err)
+		}
+		return r.tickLocked(payload.MaxSteps)
+
 	case "send_chat":
 		var payload SendChatPayload
 		if err := decodeIntentPayload(intent.Payload, &payload); err != nil {
@@ -429,6 +436,33 @@ func (r *Runtime) applyGameActionLocked(payload GameActionPayload) error {
 	default:
 		return r.failLocked("invalid_state", fmt.Errorf("ação de jogo indisponível no modo %s", r.mode))
 	}
+}
+
+func (r *Runtime) tickLocked(maxSteps int) error {
+	if maxSteps <= 0 {
+		maxSteps = 6
+	}
+	changed := false
+	for i := 0; i < maxSteps; i++ {
+		if r.mode == "host_match" {
+			r.syncProvisionalCPUsLocked()
+		}
+		stepChanged, err := r.stepCPUIfNeededLocked()
+		if err != nil {
+			return r.failLocked("cpu_step_failed", err)
+		}
+		if !stepChanged {
+			break
+		}
+		changed = true
+		if r.mode == "host_match" && r.host != nil {
+			pushSnapshotsToClients(r.host, r.game)
+		}
+	}
+	if changed {
+		r.queueEventLocked("tick", map[string]any{"changed": true})
+	}
+	return nil
 }
 
 func (r *Runtime) sendChatLocked(text string) error {

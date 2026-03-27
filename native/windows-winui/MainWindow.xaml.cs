@@ -14,9 +14,12 @@ public sealed partial class MainWindow : Window
     private const double WideLayoutThreshold = 1320;
     private const double CompactLayoutThreshold = 980;
 
+    public AppShellViewModel ViewModel { get; } = new();
+
     public MainWindow()
     {
         InitializeComponent();
+        RootPanel.DataContext = ViewModel;
         Closed += OnClosed;
         ResizeWindow(1400, 900);
     }
@@ -102,18 +105,12 @@ public sealed partial class MainWindow : Window
             return;
         }
 
-        if (Content is FrameworkElement element && element.DataContext is AppShellViewModel viewModel)
-        {
-            viewModel.PlayCardCommand.Execute(card);
-        }
+        ViewModel.PlayCardCommand.Execute(card);
     }
 
     private void OnClosed(object sender, WindowEventArgs args)
     {
-        if (Content is FrameworkElement element && element.DataContext is IDisposable disposable)
-        {
-            disposable.Dispose();
-        }
+        ViewModel.Dispose();
     }
 
 }

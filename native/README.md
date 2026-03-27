@@ -3,9 +3,18 @@
 This folder contains the native desktop shells that consume the shared Go core
 from `cmd/truco-core-ffi`.
 
-- `macos`: SwiftUI app scaffold for macOS.
-- `linux-gtk`: Rust + GTK4/libadwaita scaffold for Linux.
-- `windows-winui`: WinUI 3 + MVVM Toolkit scaffold for Windows.
+Supported variants:
+
+- `macos`: supported native macOS client.
+
+Deprecated variants:
+
+- `windows-winui`: deprecated in favor of the Wails desktop app.
+- `linux-gtk`: deprecated in favor of the Wails desktop app.
+
+- `macos`: SwiftUI app for macOS.
+- `linux-gtk`: Rust + GTK4/libadwaita legacy shell for Linux.
+- `windows-winui`: WinUI 3 + MVVM Toolkit legacy shell for Windows.
 
 Each client is intentionally thin:
 

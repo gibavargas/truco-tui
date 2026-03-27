@@ -111,6 +111,10 @@ type GameActionPayload struct {
 	FaceDown  bool   `json:"face_down,omitempty"`
 }
 
+type TickPayload struct {
+	MaxSteps int `json:"max_steps,omitempty"`
+}
+
 type SendChatPayload struct {
 	Text string `json:"text"`
 }

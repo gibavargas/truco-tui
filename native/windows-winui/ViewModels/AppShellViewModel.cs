@@ -459,16 +459,65 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
         UpdateLobby(bundle.Lobby);
         UpdateTable(bundle.Match);
         UpdateActionState(bundle);
+        NotifyStateChanged();
+    }
+
+    public ObservableCollection<HandCardViewModel> RoundCardsPile { get; } = [];
+
+    public HandCardViewModel? DeckCardViewModel => _bundle.Match?.CurrentHand?.Vira is { Rank: not "" }
+        ? new HandCardViewModel { Card = new CardState { Rank = "", Suit = "" }, IsFaceUp = false, Scale = 1.0, Rotation = -4, TranslateX = -12, TranslateY = 4 }
+        : null;
+
+    private void NotifyStateChanged()
+    {
         OnPropertyChanged(nameof(UsScore));
         OnPropertyChanged(nameof(ThemScore));
         OnPropertyChanged(nameof(StakeText));
         OnPropertyChanged(nameof(ViraText));
         OnPropertyChanged(nameof(ManilhaText));
         OnPropertyChanged(nameof(ViraCardViewModel));
+        OnPropertyChanged(nameof(DeckCardViewModel));
         OnPropertyChanged(nameof(ManilhaCardViewModel));
+        OnPropertyChanged(nameof(Trick1Text));
+        OnPropertyChanged(nameof(Trick2Text));
+        OnPropertyChanged(nameof(Trick3Text));
+        OnPropertyChanged(nameof(Trick1Visibility));
+        OnPropertyChanged(nameof(Trick2Visibility));
+        OnPropertyChanged(nameof(Trick3Visibility));
         OnPropertyChanged(nameof(CurrentTurnText));
         OnPropertyChanged(nameof(WinnerText));
+        OnPropertyChanged(nameof(StatusText));
+        OnPropertyChanged(nameof(GameVisibility));
+        OnPropertyChanged(nameof(LeftSeatVisibility));
+        OnPropertyChanged(nameof(RightSeatVisibility));
+        OnPropertyChanged(nameof(TopSeatVisibility));
+        OnPropertyChanged(nameof(TopSeat));
+        OnPropertyChanged(nameof(LeftSeat));
+        OnPropertyChanged(nameof(RightSeat));
+        OnPropertyChanged(nameof(BottomSeat));
+        OnPropertyChanged(nameof(TopSeat.Name));
+        OnPropertyChanged(nameof(BottomSeat.Name));
+        OnPropertyChanged(nameof(BottomSeat.IsCurrentTurn));
+        OnPropertyChanged(nameof(HandSummary));
     }
+
+    public string Trick1Text => GetTrickText(0);
+    public string Trick2Text => GetTrickText(1);
+    public string Trick3Text => GetTrickText(2);
+
+    private string GetTrickText(int index)
+    {
+        if (_bundle.Match?.CurrentHand?.TrickWins is { } wins && wins.TryGetValue(index, out int winner))
+        {
+            if (winner == -1) return "EMPATE";
+            return winner == BottomSeat.TeamIndex ? "NÓS" : "ELES";
+        }
+        return string.Empty;
+    }
+
+    public Microsoft.UI.Xaml.Visibility Trick1Visibility => string.IsNullOrWhiteSpace(Trick1Text) ? Microsoft.UI.Xaml.Visibility.Collapsed : Microsoft.UI.Xaml.Visibility.Visible;
+    public Microsoft.UI.Xaml.Visibility Trick2Visibility => string.IsNullOrWhiteSpace(Trick2Text) ? Microsoft.UI.Xaml.Visibility.Collapsed : Microsoft.UI.Xaml.Visibility.Visible;
+    public Microsoft.UI.Xaml.Visibility Trick3Visibility => string.IsNullOrWhiteSpace(Trick3Text) ? Microsoft.UI.Xaml.Visibility.Collapsed : Microsoft.UI.Xaml.Visibility.Visible;
 
     public int UsScore => _bundle.Match?.MatchPoints.GetValueOrDefault(0) ?? 0;
     public int ThemScore => _bundle.Match?.MatchPoints.GetValueOrDefault(1) ?? 0;
@@ -549,6 +598,8 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
 
     private void UpdateTable(MatchSnapshot? match)
     {
+        RoundCardsPile.Clear();
+
         if (match is null || match.Players.Count == 0)
         {
             BottomSeat = new TableSeatViewModel();
@@ -575,6 +626,22 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
         RightSeatVisibility = RightSeat.IsVisible ? Visibility.Visible : Visibility.Collapsed;
         HandSummary = $"Mão local: {BottomSeat.HandCount} cartas  |  Rodada {match.CurrentHand.Round + 1}";
         PendingRaiseText = BuildRaiseSummary(match);
+
+        if (match.CurrentHand?.RoundCards is { Count: > 0 } played)
+        {
+            for (int i = 0; i < played.Count; i++)
+            {
+                RoundCardsPile.Add(new HandCardViewModel
+                {
+                    Card = played[i].Card,
+                    IsFaceUp = !string.IsNullOrEmpty(played[i].Card?.Rank),
+                    Scale = 0.9,
+                    Rotation = i * 15 - 10,
+                    TranslateX = i * 15 - 5,
+                    TranslateY = i * -10
+                });
+            }
+        }
     }
 
     private void UpdateActionState(SnapshotBundle bundle)
@@ -846,6 +913,7 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
             IsProvisionalCpu = player.ProvisionalCpu,
             HandCount = player.Hand.Count,
             HandCards = BuildHandVisuals(player.Hand, relativeIndex == 0),
+<<<<<<< HEAD
             PlayedCard = playedByPlayerId.TryGetValue(player.Id, out PlayedCardState? played) ? played.Card : null,
             PlayedCardViewModel = playedByPlayerId.TryGetValue(player.Id, out PlayedCardState? playedCard)
                 ? new HandCardViewModel
@@ -877,7 +945,7 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
             double offset = index - midpoint;
             result.Add(new HandCardViewModel
             {
-                Card = isLocalSeat ? cards[index] : null,
+                Card = isLocalSeat ? cards[index] : new CardState { Rank = string.Empty, Suit = string.Empty },
                 IsFaceUp = isLocalSeat,
                 Rotation = offset * rotationStep,
                 Scale = scale,

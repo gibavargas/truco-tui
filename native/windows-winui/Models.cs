@@ -367,6 +367,8 @@ public sealed class HandCardViewModel
     public bool IsFaceUp { get; set; }
     public double Rotation { get; set; }
     public double Scale { get; set; } = 1.0;
+    public double TranslateX { get; set; }
+    public double TranslateY { get; set; }
     public Microsoft.UI.Xaml.Visibility CardVisibility => Card is null ? Microsoft.UI.Xaml.Visibility.Collapsed : Microsoft.UI.Xaml.Visibility.Visible;
 }
 
