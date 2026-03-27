@@ -176,5 +176,6 @@ func RotateFailoverSnapshot(in truco.Snapshot, pivot int) (truco.Snapshot, error
 	if in.CurrentPlayerIdx >= 0 {
 		out.CurrentPlayerIdx = rotateSeat(in.CurrentPlayerIdx, pivot, n)
 	}
+	out.LastTrickWinner = remapPlayer(in.LastTrickWinner)
 	return out, nil
 }
