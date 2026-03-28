@@ -711,6 +711,9 @@ func (m UIModel) renderCenter(w int, turnName string, compact bool) string {
 		pName := clip(safePlayerName(s.Players, pc.PlayerID), nameMax)
 		label := lipgloss.NewStyle().Foreground(lgDim).Render(pName)
 		card := renderBigCard(pc.Card, leading[i], compact)
+		if pc.FaceDown {
+			card = renderBigCardBack(compact)
+		}
 		if leading[i] {
 			label = leadingCardLabelStyle.Render("★ " + pName)
 		}
@@ -913,6 +916,27 @@ func renderBigCard(c truco.Card, leading bool, compact bool) string {
 	return rendered
 }
 
+func renderBigCardBack(compact bool) string {
+	if compact {
+		return bigCardCompact.
+			Foreground(lgGray).
+			Background(lgPurple).
+			Render("┌▒▒▒┐\n└───┘")
+	}
+
+	lines := []string{
+		"┌─────┐",
+		"│▒▒▒▒▒│",
+		"│▒▒▒▒▒│",
+		"│▒▒▒▒▒│",
+		"└─────┘",
+	}
+	return bigCardBlack.
+		Foreground(lgGray).
+		Background(lgPurple).
+		Render(strings.Join(lines, "\n"))
+}
+
 // renderMiniHand renders N compact card‑backs horizontally (for top opponent).
 func renderMiniHand(n int, compact bool) string {
 	if n == 0 {
@@ -1001,6 +1025,11 @@ func leadingCardIndexes(played []truco.PlayedCard, manilha truco.Rank) map[int]b
 	out := make(map[int]bool, len(played))
 	if len(played) == 0 {
 		return out
+	}
+	for _, pc := range played {
+		if pc.FaceDown {
+			return out
+		}
 	}
 	best := truco.CardPower(played[0].Card, manilha)
 	for i := 1; i < len(played); i++ {

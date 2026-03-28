@@ -1235,6 +1235,10 @@ label {
 }
 
 .card-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: center;
   margin: 0;
   flex: 0 0 auto;
 }
@@ -1260,6 +1264,14 @@ label {
 .card-btn:focus-visible .card {
   filter: drop-shadow(0 20px 28px rgba(0, 0, 0, 0.26));
   transform: translateY(-6px);
+}
+
+.btn-face-down {
+  min-width: 86px;
+  padding: 7px 10px;
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .card-form.is-busy .card-btn,

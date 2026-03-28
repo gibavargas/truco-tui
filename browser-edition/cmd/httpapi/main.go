@@ -43,6 +43,19 @@ func (s *sessionStore) create() string {
 	return id
 }
 
+func (s *sessionStore) delete(id string) bool {
+	s.mu.Lock()
+	bs, ok := s.sessions[id]
+	if ok {
+		delete(s.sessions, id)
+	}
+	s.mu.Unlock()
+	if ok && bs != nil && bs.rt != nil {
+		_ = bs.rt.Close()
+	}
+	return ok
+}
+
 type apiServer struct {
 	store *sessionStore
 }
@@ -132,6 +145,18 @@ func (srv *apiServer) dispatch(action, sessionID string, body map[string]interfa
 	case "snapshot":
 		return http.StatusOK, runtimeResult(bs.rt, false)
 
+	case "autoCpuLoopTick":
+		if err := dispatchIntent(bs.rt, appcore.IntentTick, appcore.TickPayload{MaxSteps: 12}); err != nil {
+			return http.StatusUnprocessableEntity, runtimeErrResult(bs.rt, "tick_failed", err)
+		}
+		return http.StatusOK, runtimeResult(bs.rt, false)
+
+	case "newHand":
+		if err := dispatchIntent(bs.rt, appcore.IntentNewHand, nil); err != nil {
+			return http.StatusUnprocessableEntity, runtimeErrResult(bs.rt, "new_hand_failed", err)
+		}
+		return http.StatusOK, runtimeResult(bs.rt, false)
+
 	case "play":
 		idx := intVal(body, "cardIndex", -1)
 		if idx < 0 {
@@ -140,6 +165,7 @@ func (srv *apiServer) dispatch(action, sessionID string, body map[string]interfa
 		if err := dispatchIntent(bs.rt, appcore.IntentGameAction, appcore.GameActionPayload{
 			Action:    "play",
 			CardIndex: idx,
+			FaceDown:  boolVal(body, "faceDown", false),
 		}); err != nil {
 			return http.StatusUnprocessableEntity, runtimeErrResult(bs.rt, "game_action_failed", err)
 		}
@@ -153,11 +179,17 @@ func (srv *apiServer) dispatch(action, sessionID string, body map[string]interfa
 		}
 		return http.StatusOK, runtimeResult(bs.rt, false)
 
-	case "reset", "leaveSession":
+	case "reset":
 		if err := dispatchIntent(bs.rt, appcore.IntentCloseSession, nil); err != nil {
 			return http.StatusUnprocessableEntity, runtimeErrResult(bs.rt, "close_session_failed", err)
 		}
 		return http.StatusOK, runtimeResult(bs.rt, true)
+
+	case "leaveSession", "closeSession":
+		if !srv.store.delete(sessionID) {
+			return http.StatusNotFound, errResult("session_not_found", "session not found")
+		}
+		return http.StatusOK, map[string]interface{}{"ok": true, "sessionClosed": true}
 
 	case "startOnlineHost":
 		if err := dispatchIntent(bs.rt, appcore.IntentCreateHostSession, appcore.CreateHostPayload{
@@ -289,6 +321,7 @@ func sessionFromBundle(bundle appcore.SnapshotBundle) map[string]interface{} {
 		"connected":    connected,
 		"started":      bundle.Lobby.Started,
 		"role":         bundle.Lobby.Role,
+		"network":      bundle.Connection.Network,
 	}
 }
 
@@ -394,6 +427,25 @@ func intVal(body map[string]interface{}, key string, fallback int) int {
 			if i, err := strconv.Atoi(n); err == nil {
 				return i
 			}
+		}
+	}
+	return fallback
+}
+
+func boolVal(body map[string]interface{}, key string, fallback bool) bool {
+	if v, ok := body[key]; ok {
+		switch b := v.(type) {
+		case bool:
+			return b
+		case string:
+			switch strings.ToLower(strings.TrimSpace(b)) {
+			case "1", "true", "yes", "on":
+				return true
+			case "0", "false", "no", "off":
+				return false
+			}
+		case float64:
+			return b != 0
 		}
 	}
 	return fallback

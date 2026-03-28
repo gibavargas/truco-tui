@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"truco-tui/internal/appcore"
 )
@@ -91,6 +92,19 @@ func eventKinds(t *testing.T, res map[string]interface{}) []string {
 	return out
 }
 
+func requireSessionNetwork(t *testing.T, res map[string]interface{}) map[string]interface{} {
+	t.Helper()
+	session, ok := res["session"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected session in response")
+	}
+	network, ok := session["network"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected session.network in response, got %v", session["network"])
+	}
+	return network
+}
+
 func containsKind(kinds []string, target string) bool {
 	for _, kind := range kinds {
 		if kind == target {
@@ -98,6 +112,53 @@ func containsKind(kinds []string, target string) bool {
 		}
 	}
 	return false
+}
+
+func createAndStart(t *testing.T, srv http.Handler) string {
+	t.Helper()
+	sid := createSession(t, srv)
+	res := postAction(t, srv, "startGame", sid, map[string]interface{}{
+		"numPlayers": 2,
+		"name":       "Tester",
+	})
+	if !res["ok"].(bool) {
+		t.Fatalf("startGame failed: %v", res["error"])
+	}
+	return sid
+}
+
+func advanceBrowserSessionUntilPlayableRound(t *testing.T, srv http.Handler, sid string, minRound int) {
+	t.Helper()
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		res := postAction(t, srv, "snapshot", sid, nil)
+		snap := parseSnapshot(t, res)
+		hand := snap["CurrentHand"].(map[string]interface{})
+		round := int(hand["Round"].(float64))
+		pending, _ := snap["PendingRaiseFor"].(float64)
+		turn := int(snap["TurnPlayer"].(float64))
+		roundCards, _ := hand["RoundCards"].([]interface{})
+
+		if round >= minRound && turn == 0 && int(pending) == -1 && len(roundCards) == 0 {
+			return
+		}
+		if int(pending) == 0 {
+			res = postAction(t, srv, "accept", sid, nil)
+			if !res["ok"].(bool) {
+				t.Fatalf("accept pending truco failed while advancing browser round: %v", res["error"])
+			}
+			continue
+		}
+		if turn == 0 {
+			res = postAction(t, srv, "play", sid, map[string]interface{}{"cardIndex": 0})
+			if !res["ok"].(bool) {
+				t.Fatalf("play while advancing browser round failed: %v", res["error"])
+			}
+			continue
+		}
+		_ = postAction(t, srv, "autoCpuLoopTick", sid, nil)
+	}
+	t.Fatalf("timeout advancing browser session to playable round %d", minRound)
 }
 
 func TestCreateSession(t *testing.T) {
@@ -177,6 +238,35 @@ func TestPlayRequiresCardIndexErrorCode(t *testing.T) {
 	}
 }
 
+func TestPlayFaceDownMasksBrowserSnapshot(t *testing.T) {
+	srv := newAPIServer()
+	sid := createAndStart(t, srv)
+	advanceBrowserSessionUntilPlayableRound(t, srv, sid, 2)
+
+	res := postAction(t, srv, "play", sid, map[string]interface{}{
+		"cardIndex": 0,
+		"faceDown":  true,
+	})
+	if !res["ok"].(bool) {
+		t.Fatalf("play face-down failed: %v", res["error"])
+	}
+
+	snap := parseSnapshot(t, res)
+	roundCardsRaw := snap["CurrentHand"].(map[string]interface{})["RoundCards"]
+	roundCards, ok := roundCardsRaw.([]interface{})
+	if !ok || len(roundCards) != 1 {
+		t.Fatalf("round cards = %v, want one played card", roundCardsRaw)
+	}
+	played := roundCards[0].(map[string]interface{})
+	if played["FaceDown"] != true {
+		t.Fatalf("expected FaceDown=true, got %v", played["FaceDown"])
+	}
+	card := played["Card"].(map[string]interface{})
+	if rank, _ := card["Rank"].(string); rank != "" {
+		t.Fatalf("masked browser snapshot leaked rank %q", rank)
+	}
+}
+
 func TestRuntimeErrorsExposeNormalizedErrorCodeAndBundle(t *testing.T) {
 	srv := newAPIServer()
 	sid := createSession(t, srv)
@@ -200,6 +290,67 @@ func TestRuntimeErrorsExposeNormalizedErrorCodeAndBundle(t *testing.T) {
 	lastError := connection["last_error"].(map[string]interface{})
 	if lastError["code"] != "create_host_failed" {
 		t.Fatalf("last_error.code = %v, want create_host_failed", lastError["code"])
+	}
+}
+
+func TestStartOnlineHostIncludesNetworkSnapshot(t *testing.T) {
+	srv := newAPIServer()
+	sid := createSession(t, srv)
+
+	res := postAction(t, srv, "startOnlineHost", sid, map[string]interface{}{
+		"name":       "Host",
+		"numPlayers": 2,
+	})
+	if !res["ok"].(bool) {
+		t.Fatalf("startOnlineHost failed: %v", res["error"])
+	}
+
+	network := requireSessionNetwork(t, res)
+	if network["transport"] != "tcp_tls" {
+		t.Fatalf("transport = %v, want tcp_tls", network["transport"])
+	}
+	if mixed, _ := network["mixed_protocol_session"].(bool); mixed {
+		t.Fatalf("mixed_protocol_session = %v, want false", mixed)
+	}
+	seatVersions, ok := network["seat_protocol_versions"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected seat_protocol_versions, got %v", network["seat_protocol_versions"])
+	}
+	if seatVersions["0"] != float64(2) {
+		t.Fatalf("seat 0 protocol = %v, want 2", seatVersions["0"])
+	}
+}
+
+func TestJoinOnlineIncludesNegotiatedProtocolVersion(t *testing.T) {
+	srv := newAPIServer()
+	hostSID := createSession(t, srv)
+	clientSID := createSession(t, srv)
+
+	hostRes := postAction(t, srv, "startOnlineHost", hostSID, map[string]interface{}{
+		"name":       "Host",
+		"numPlayers": 2,
+	})
+	if !hostRes["ok"].(bool) {
+		t.Fatalf("startOnlineHost failed: %v", hostRes["error"])
+	}
+	session := hostRes["session"].(map[string]interface{})
+	key := session["inviteKey"].(string)
+
+	res := postAction(t, srv, "joinOnline", clientSID, map[string]interface{}{
+		"name": "Guest",
+		"key":  key,
+		"role": "auto",
+	})
+	if !res["ok"].(bool) {
+		t.Fatalf("joinOnline failed: %v", res["error"])
+	}
+
+	network := requireSessionNetwork(t, res)
+	if network["transport"] != "tcp_tls" {
+		t.Fatalf("transport = %v, want tcp_tls", network["transport"])
+	}
+	if network["negotiated_protocol_version"] != float64(2) {
+		t.Fatalf("negotiated_protocol_version = %v, want 2", network["negotiated_protocol_version"])
 	}
 }
 
@@ -228,6 +379,56 @@ func TestResetReturnsRuntimeToIdleAndEmitsSessionClosed(t *testing.T) {
 	kinds := eventKinds(t, res)
 	if !containsKind(kinds, appcore.EventSessionClosed) {
 		t.Fatalf("expected %q in events, got %v", appcore.EventSessionClosed, kinds)
+	}
+}
+
+func TestNewHandStartsAnotherHandInSameMatch(t *testing.T) {
+	srv := newAPIServer()
+	sid := createAndStart(t, srv)
+
+	res := postAction(t, srv, "newHand", sid, nil)
+	if !res["ok"].(bool) {
+		t.Fatalf("newHand failed: %v", res["error"])
+	}
+	if res["mode"] != appcore.ModeOfflineMatch {
+		t.Fatalf("mode = %v, want %q", res["mode"], appcore.ModeOfflineMatch)
+	}
+}
+
+func TestAutoCpuLoopTickReturnsBundle(t *testing.T) {
+	srv := newAPIServer()
+	sid := createAndStart(t, srv)
+
+	res := postAction(t, srv, "autoCpuLoopTick", sid, nil)
+	if !res["ok"].(bool) {
+		t.Fatalf("autoCpuLoopTick failed: %v", res["error"])
+	}
+	if res["bundle"] == nil {
+		t.Fatalf("expected bundle field in response")
+	}
+}
+
+func TestCloseSessionDeletesBrowserSession(t *testing.T) {
+	srv := newAPIServer()
+	sid := createSession(t, srv)
+
+	code, res := postActionHTTP(t, srv, "closeSession", sid, nil)
+	if code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", code, http.StatusOK)
+	}
+	if !res["ok"].(bool) {
+		t.Fatalf("closeSession failed: %v", res["error"])
+	}
+	if closed, _ := res["sessionClosed"].(bool); !closed {
+		t.Fatalf("sessionClosed = %v, want true", res["sessionClosed"])
+	}
+
+	code, res = postActionHTTP(t, srv, "snapshot", sid, nil)
+	if code != http.StatusNotFound {
+		t.Fatalf("status after close = %d, want %d", code, http.StatusNotFound)
+	}
+	if res["error_code"] != "session_not_found" {
+		t.Fatalf("error_code after close = %v, want session_not_found", res["error_code"])
 	}
 }
 

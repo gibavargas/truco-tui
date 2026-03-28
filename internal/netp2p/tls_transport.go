@@ -26,6 +26,13 @@ func normalizeFingerprint(fp string) string {
 	return fp
 }
 
+type RelayReconnectState struct {
+	PeerID         string
+	PeerCredential string
+	QuicAddr       string
+	AuthorityPeer  string
+}
+
 func buildTLSConfig(tlsSeed string) (*tls.Config, string, time.Time, error) {
 	priv, err := deterministicECDSAKey(tlsSeed)
 	if err != nil {
@@ -57,8 +64,6 @@ func buildTLSConfig(tlsSeed string) (*tls.Config, string, time.Time, error) {
 	}
 	return cfg, fingerprint, tmpl.NotAfter, nil
 }
-
-
 
 func deterministicECDSAKey(seed string) (*ecdsa.PrivateKey, error) {
 	if strings.TrimSpace(seed) == "" {
@@ -148,16 +153,49 @@ func tlsClientConfig(inv InviteKey) (*tls.Config, error) {
 }
 
 func dialSessionConn(inv InviteKey, timeout time.Duration) (net.Conn, error) {
-	return dialSessionConnWithRelay(inv, timeout, "", "", "")
+	conn, _, err := dialSessionConnWithRelayState(inv, timeout, "", "", "", nil)
+	return conn, err
 }
 
 func dialSessionConnWithRelay(inv InviteKey, timeout time.Duration, playerName, desiredRole, playerSession string) (net.Conn, error) {
+	conn, _, err := dialSessionConnWithRelayState(inv, timeout, playerName, desiredRole, playerSession, nil)
+	return conn, err
+}
+
+func dialSessionConnWithRelayState(inv InviteKey, timeout time.Duration, playerName, desiredRole, playerSession string, cachedRelayState *RelayReconnectState) (net.Conn, *RelayReconnectState, error) {
 	transport := strings.TrimSpace(inv.Transport)
 	if transport == "" {
 		transport = "tcp_tls"
 	}
 	if transport == "relay_quic_v2" {
 		sec := relaySecurityFromInvite(inv)
+		if cachedRelayState != nil &&
+			strings.TrimSpace(cachedRelayState.PeerID) != "" &&
+			strings.TrimSpace(cachedRelayState.PeerCredential) != "" &&
+			strings.TrimSpace(cachedRelayState.QuicAddr) != "" {
+			target := strings.TrimSpace(cachedRelayState.AuthorityPeer)
+			if target == "" {
+				target = strings.TrimSpace(inv.RelayAuthorityPeer)
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), timeout)
+			defer cancel()
+			raw, err := netrelay.OpenPeerTunnel(ctx, sec, cachedRelayState.QuicAddr, inv.RelaySessionID, cachedRelayState.PeerID, cachedRelayState.PeerCredential, target)
+			if err != nil {
+				return nil, nil, err
+			}
+			conn, err := wrapTLSClient(raw, inv)
+			if err != nil {
+				return nil, nil, err
+			}
+			state := RelayReconnectState{
+				PeerID:         cachedRelayState.PeerID,
+				PeerCredential: cachedRelayState.PeerCredential,
+				QuicAddr:       cachedRelayState.QuicAddr,
+				AuthorityPeer:  target,
+			}
+			return conn, &state, nil
+		}
+
 		joinResp, err := netrelay.JoinSession(inv.RelayURL, sec, netrelay.JoinSessionRequest{
 			SessionID:     inv.RelaySessionID,
 			JoinTicket:    inv.RelayJoinTicket,
@@ -166,7 +204,7 @@ func dialSessionConnWithRelay(inv InviteKey, timeout time.Duration, playerName, 
 			PlayerSession: playerSession,
 		})
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		target := strings.TrimSpace(joinResp.AuthorityPeerID)
 		if target == "" {
@@ -176,17 +214,31 @@ func dialSessionConnWithRelay(inv InviteKey, timeout time.Duration, playerName, 
 		defer cancel()
 		raw, err := netrelay.OpenPeerTunnel(ctx, sec, joinResp.QuicAddr, inv.RelaySessionID, joinResp.PeerID, joinResp.PeerCredential, target)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
-		return wrapTLSClient(raw, inv)
+		conn, err := wrapTLSClient(raw, inv)
+		if err != nil {
+			return nil, nil, err
+		}
+		state := RelayReconnectState{
+			PeerID:         joinResp.PeerID,
+			PeerCredential: joinResp.PeerCredential,
+			QuicAddr:       joinResp.QuicAddr,
+			AuthorityPeer:  target,
+		}
+		return conn, &state, nil
 	}
 
 	dialer := &net.Dialer{Timeout: timeout}
 	raw, err := dialer.Dial("tcp", inv.Addr)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return wrapTLSClient(raw, inv)
+	conn, err := wrapTLSClient(raw, inv)
+	if err != nil {
+		return nil, nil, err
+	}
+	return conn, nil, nil
 }
 
 func relaySecurityFromInvite(inv InviteKey) netrelay.ClientSecurity {
