@@ -85,6 +85,14 @@ button {
   font-weight: 600;
 }
 
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+.card:focus-visible {
+  outline: 2px solid #ffc95c;
+  outline-offset: 3px;
+}
+
 .actions {
   display: flex;
   flex-wrap: wrap;
