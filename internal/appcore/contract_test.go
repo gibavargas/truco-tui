@@ -9,10 +9,12 @@ func TestContractEnumeratesStableRuntimeSurface(t *testing.T) {
 	wantIntents := []string{
 		"set_locale",
 		"new_offline_game",
+		"new_hand",
 		"create_host_session",
 		"join_session",
 		"start_hosted_match",
 		"game_action",
+		"tick",
 		"send_chat",
 		"vote_host",
 		"request_replacement_invite",

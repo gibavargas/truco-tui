@@ -321,27 +321,6 @@ func TestRelayTunnelForwarding(t *testing.T) {
 	}
 	defer hostAcceptor.Close()
 
-	hostErr := make(chan error, 1)
-	go func() {
-		c, aerr := hostAcceptor.Accept()
-		if aerr != nil {
-			hostErr <- aerr
-			return
-		}
-		defer c.Close()
-		buf := make([]byte, 4)
-		if _, rerr := io.ReadFull(c, buf); rerr != nil {
-			hostErr <- rerr
-			return
-		}
-		if string(buf) != "ping" {
-			hostErr <- io.ErrUnexpectedEOF
-			return
-		}
-		_, werr := c.Write([]byte("pong"))
-		hostErr <- werr
-	}()
-
 	ticket, err := netrelay.MintJoinTicket(srv.httpURL, srv.sec, netrelay.MintJoinTicketRequest{
 		SessionID:      created.SessionID,
 		HostAdminToken: created.HostAdminToken,
@@ -358,28 +337,61 @@ func TestRelayTunnelForwarding(t *testing.T) {
 	if err != nil {
 		t.Fatalf("JoinSession: %v", err)
 	}
-	peerConn, err := netrelay.OpenPeerTunnel(context.Background(), srv.sec, joined.QuicAddr, created.SessionID, joined.PeerID, joined.PeerCredential, joined.AuthorityPeerID)
-	if err != nil {
-		t.Fatalf("OpenPeerTunnel: %v", err)
-	}
-	defer peerConn.Close()
 
-	if _, err := peerConn.Write([]byte("ping")); err != nil {
-		t.Fatalf("peer write: %v", err)
-	}
-	resp := make([]byte, 4)
-	if _, err := io.ReadFull(peerConn, resp); err != nil {
-		t.Fatalf("peer read: %v", err)
-	}
-	if string(resp) != "pong" {
-		t.Fatalf("response = %q, want pong", string(resp))
-	}
-	select {
-	case err := <-hostErr:
+	roundTrip := func(label string) {
+		t.Helper()
+		hostErr := make(chan error, 1)
+		go func() {
+			c, aerr := hostAcceptor.Accept()
+			if aerr != nil {
+				hostErr <- aerr
+				return
+			}
+			defer c.Close()
+			buf := make([]byte, 4)
+			if _, rerr := io.ReadFull(c, buf); rerr != nil {
+				hostErr <- rerr
+				return
+			}
+			if string(buf) != "ping" {
+				hostErr <- io.ErrUnexpectedEOF
+				return
+			}
+			_, werr := c.Write([]byte("pong"))
+			hostErr <- werr
+		}()
+
+		peerConn, err := netrelay.OpenPeerTunnel(context.Background(), srv.sec, joined.QuicAddr, created.SessionID, joined.PeerID, joined.PeerCredential, joined.AuthorityPeerID)
 		if err != nil {
-			t.Fatalf("host stream error: %v", err)
+			t.Fatalf("%s OpenPeerTunnel: %v", label, err)
 		}
-	case <-time.After(2 * time.Second):
-		t.Fatalf("timeout waiting host stream")
+
+		if _, err := peerConn.Write([]byte("ping")); err != nil {
+			_ = peerConn.Close()
+			t.Fatalf("%s peer write: %v", label, err)
+		}
+		resp := make([]byte, 4)
+		if _, err := io.ReadFull(peerConn, resp); err != nil {
+			_ = peerConn.Close()
+			t.Fatalf("%s peer read: %v", label, err)
+		}
+		if string(resp) != "pong" {
+			_ = peerConn.Close()
+			t.Fatalf("%s response = %q, want pong", label, string(resp))
+		}
+		if err := peerConn.Close(); err != nil {
+			t.Fatalf("%s peer close: %v", label, err)
+		}
+		select {
+		case err := <-hostErr:
+			if err != nil {
+				t.Fatalf("%s host stream error: %v", label, err)
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatalf("%s timeout waiting host stream", label)
+		}
 	}
+
+	roundTrip("first")
+	roundTrip("second")
 }

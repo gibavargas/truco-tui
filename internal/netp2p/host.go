@@ -23,40 +23,42 @@ type ClientAction struct {
 	Seat      int
 	Action    string
 	CardIndex int
+	FaceDown  bool
 }
 
 // HostSession gerencia lobby, chat e transporte de ações/estado da partida.
 type HostSession struct {
-	mu              sync.Mutex
-	ctx             context.Context
-	cancel          context.CancelFunc
-	ln              net.Listener
-	relayAcceptor   *netrelay.HostAcceptor
-	cfg             HostConfig
-	tlsNotAfter     time.Time
-	tlsExpiryWarned bool
-	tlsSeed         string
-	token           string
-	handoffPort     int
-	epoch           int
-	inviteBase      InviteKey
-	numPlayers      int
-	hostName        string
-	slots           []string
-	clients         map[int]net.Conn
-	seatID          map[int]string
-	peerHosts       map[int]string
-	tableHostSeat   int
-	hostVotes       map[int]int
-	replaceInvites  map[string]int
-	acceptRate      map[string]acceptRateState
-	seatRate        map[int]seatRateState
-	lastPong        map[int]time.Time
-	lastState       map[int]truco.Snapshot
-	events          chan string
-	actions         chan ClientAction
-	closed          bool
-	started         bool
+	mu                   sync.Mutex
+	ctx                  context.Context
+	cancel               context.CancelFunc
+	ln                   net.Listener
+	relayAcceptor        *netrelay.HostAcceptor
+	cfg                  HostConfig
+	tlsNotAfter          time.Time
+	tlsExpiryWarned      bool
+	tlsSeed              string
+	token                string
+	handoffPort          int
+	epoch                int
+	inviteBase           InviteKey
+	numPlayers           int
+	hostName             string
+	slots                []string
+	clients              map[int]net.Conn
+	seatID               map[int]string
+	seatProtocolVersions map[int]int
+	peerHosts            map[int]string
+	tableHostSeat        int
+	hostVotes            map[int]int
+	replaceInvites       map[string]int
+	acceptRate           map[string]acceptRateState
+	seatRate             map[int]seatRateState
+	lastPong             map[int]time.Time
+	lastState            map[int]truco.Snapshot
+	events               chan string
+	actions              chan ClientAction
+	closed               bool
+	started              bool
 }
 
 type HostConfig struct {
@@ -329,32 +331,33 @@ func newHostSession(bindAddr, hostName string, numPlayers int, token, tlsSeed st
 	}
 
 	hs := &HostSession{
-		ctx:            ctx,
-		cancel:         cancel,
-		ln:             ln,
-		relayAcceptor:  relayAcceptor,
-		cfg:            cfg,
-		tlsNotAfter:    tlsNotAfter,
-		tlsSeed:        tlsSeed,
-		token:          token,
-		handoffPort:    cfg.HandoffPort,
-		epoch:          maxInt(1, cfg.RelayEpoch),
-		inviteBase:     inviteBase,
-		numPlayers:     numPlayers,
-		hostName:       hostName,
-		slots:          make([]string, numPlayers),
-		clients:        map[int]net.Conn{},
-		seatID:         map[int]string{},
-		peerHosts:      map[int]string{},
-		tableHostSeat:  0,
-		hostVotes:      map[int]int{},
-		replaceInvites: map[string]int{},
-		acceptRate:     map[string]acceptRateState{},
-		seatRate:       map[int]seatRateState{},
-		lastPong:       map[int]time.Time{},
-		lastState:      map[int]truco.Snapshot{},
-		events:         make(chan string, 128),
-		actions:        make(chan ClientAction, 256),
+		ctx:                  ctx,
+		cancel:               cancel,
+		ln:                   ln,
+		relayAcceptor:        relayAcceptor,
+		cfg:                  cfg,
+		tlsNotAfter:          tlsNotAfter,
+		tlsSeed:              tlsSeed,
+		token:                token,
+		handoffPort:          cfg.HandoffPort,
+		epoch:                maxInt(1, cfg.RelayEpoch),
+		inviteBase:           inviteBase,
+		numPlayers:           numPlayers,
+		hostName:             hostName,
+		slots:                make([]string, numPlayers),
+		clients:              map[int]net.Conn{},
+		seatID:               map[int]string{},
+		seatProtocolVersions: map[int]int{},
+		peerHosts:            map[int]string{},
+		tableHostSeat:        0,
+		hostVotes:            map[int]int{},
+		replaceInvites:       map[string]int{},
+		acceptRate:           map[string]acceptRateState{},
+		seatRate:             map[int]seatRateState{},
+		lastPong:             map[int]time.Time{},
+		lastState:            map[int]truco.Snapshot{},
+		events:               make(chan string, 128),
+		actions:              make(chan ClientAction, 256),
 	}
 	hs.slots[0] = hostName
 	if hostID, idErr := randomToken(); idErr == nil {
@@ -442,8 +445,8 @@ func (h *HostSession) Close() error {
 	}
 	h.closed = true
 	h.cancel()
-	for _, c := range h.clients {
-		_ = writeMessage(c, Message{Type: "shutdown", Text: "Host encerrou a sessão."})
+	for seat, c := range h.clients {
+		_ = writeMessage(c, Message{Type: "shutdown", Text: "Host encerrou a sessão.", ProtocolVersion: h.protocolVersionForSeatLocked(seat)})
 	}
 	h.mu.Unlock()
 
@@ -532,6 +535,28 @@ func (h *HostSession) ConnectedSeats() map[int]bool {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	return h.connectedSeatsLocked()
+}
+
+func (h *HostSession) TransportMode() string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if strings.TrimSpace(h.cfg.TransportMode) == "" {
+		return "tcp_tls"
+	}
+	return h.cfg.TransportMode
+}
+
+func (h *HostSession) SeatProtocolVersions() map[int]int {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	out := make(map[int]int, len(h.seatProtocolVersions)+1)
+	out[0] = protocolVersion
+	for seat, version := range h.seatProtocolVersions {
+		if supportsProtocolVersion(version) {
+			out[seat] = version
+		}
+	}
+	return out
 }
 
 func (h *HostSession) connectedSeatsLocked() map[int]bool {
@@ -974,6 +999,7 @@ func (h *HostSession) dropClientLocked(seat int, reason string) {
 	delete(h.clients, seat)
 	delete(h.lastPong, seat)
 	delete(h.seatRate, seat)
+	delete(h.seatProtocolVersions, seat)
 	if !h.started {
 		h.slots[seat] = ""
 		delete(h.seatID, seat)
@@ -1019,6 +1045,9 @@ func (h *HostSession) writeToSeatLocked(seat int, msg Message) bool {
 	if !ok {
 		return false
 	}
+	if msg.ProtocolVersion == 0 {
+		msg.ProtocolVersion = h.protocolVersionForSeatLocked(seat)
+	}
 	if err := writeMessage(c, msg); err != nil {
 		h.dropClientLocked(seat, "erro de escrita")
 		return false
@@ -1050,6 +1079,13 @@ func (h *HostSession) broadcastLobbyLocked() {
 		HostSeat:       h.tableHostSeat,
 		NumPlayers:     h.numPlayers,
 	})
+}
+
+func (h *HostSession) protocolVersionForSeatLocked(seat int) int {
+	if pv, ok := h.seatProtocolVersions[seat]; ok && supportsProtocolVersion(pv) {
+		return pv
+	}
+	return protocolVersion
 }
 
 func (h *HostSession) acceptLoop() {
@@ -1131,9 +1167,10 @@ func (h *HostSession) handleConn(conn net.Conn) {
 		closeConnWithLog(conn, "host closed before join")
 		return
 	}
-	if joinMsg.ProtocolVersion != protocolVersion {
+	joinMsg.ProtocolVersion = normalizeProtocolVersion(joinMsg.ProtocolVersion)
+	if !supportsProtocolVersion(joinMsg.ProtocolVersion) {
 		h.mu.Unlock()
-		_ = writeMessage(conn, Message{Type: "error", Error: fmt.Sprintf("versão de protocolo incompatível (cliente=%d, esperado=%d)", joinMsg.ProtocolVersion, protocolVersion)})
+		_ = writeMessage(conn, Message{Type: "error", Error: fmt.Sprintf("versão de protocolo incompatível (cliente=%d, suportado=%v)", joinMsg.ProtocolVersion, supportedProtocolVersions())})
 		closeConnWithLog(conn, "protocol version mismatch")
 		return
 	}
@@ -1227,6 +1264,7 @@ func (h *HostSession) handleConn(conn net.Conn) {
 		closeConnWithLog(old, "replace seat connection")
 	}
 	h.clients[slot] = conn
+	h.seatProtocolVersions[slot] = joinMsg.ProtocolVersion
 	if h.cfg.TransportMode == "relay_quic_v2" {
 		h.peerHosts[slot] = fmt.Sprintf("seat-%d", slot)
 	} else {
@@ -1236,7 +1274,7 @@ func (h *HostSession) handleConn(conn net.Conn) {
 	cachedState, hasCachedState := h.lastState[slot]
 	if err := writeMessage(conn, Message{
 		Type:            "join_ok",
-		ProtocolVersion: protocolVersion,
+		ProtocolVersion: joinMsg.ProtocolVersion,
 		Assigned:        slot,
 		NumPlayers:      h.numPlayers,
 		Slots:           append([]string{}, h.slots...),
@@ -1267,6 +1305,7 @@ func (h *HostSession) handleConn(conn net.Conn) {
 		snap := cloneSnapshot(cachedState)
 		if err := writeMessage(conn, Message{
 			Type:                 "game_state",
+			ProtocolVersion:      joinMsg.ProtocolVersion,
 			State:                &snap,
 			HostSeat:             h.tableHostSeat,
 			HandoffPort:          h.handoffPort,
@@ -1339,7 +1378,7 @@ func (h *HostSession) handleConn(conn net.Conn) {
 			if !started {
 				continue
 			}
-			action := ClientAction{Seat: slot, Action: msg.Action, CardIndex: msg.CardIndex}
+			action := ClientAction{Seat: slot, Action: msg.Action, CardIndex: msg.CardIndex, FaceDown: msg.FaceDown}
 			select {
 			case h.actions <- action:
 			case <-time.After(2 * time.Second):
