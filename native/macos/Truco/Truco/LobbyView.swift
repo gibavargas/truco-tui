@@ -622,6 +622,7 @@ struct OnlineLobbyView: View {
             }
 
             VStack(alignment: .leading, spacing: 12) {
+                let network = connection?.network
                 Text("Conexão")
                     .font(.footnote.bold())
                     .foregroundColor(.white.opacity(0.7))
@@ -629,6 +630,10 @@ struct OnlineLobbyView: View {
                 connectionLine("Modo", connection?.is_online == true ? "online" : "offline")
                 if let role = lobby?.role, !role.isEmpty {
                     connectionLine("Papel", role)
+                }
+                if let network {
+                    connectionLine("Transporte", network.transportLabel)
+                    connectionLine("Protocolo", network.compatibilitySummary(isHost: connection?.is_host == true))
                 }
                 connectionLine("Fila", "\(diagnostics?.event_backlog ?? 0)")
                 if let message = connection?.last_error?.message, !message.isEmpty {
