@@ -250,29 +250,61 @@ func (m UIModel) View() string {
 	return m.renderTable()
 }
 
-// ── Main renderer ───────────────────────────────────────────────────────────
+func (m UIModel) renderHeader(w int) string {
+	headerTitle := tr("header_title")
+	return headerStyle.Width(w).Align(lipgloss.Center).Render(fitSingleLine(headerTitle, maxInt(1, w-headerHorizontalPadding)))
+}
 
-func (m UIModel) renderTable() string {
-	lp := computeLayout(m.width, m.height)
-	w := lp.w
-
-	localIdx := 0
-	if m.snapshot.CurrentPlayerIdx >= 0 {
-		localIdx = m.snapshot.CurrentPlayerIdx
+func (m UIModel) renderTableArea(w int, lp layoutProfile, playersMap map[string]*truco.Player, turnID int, turnName string, localIdx int) string {
+	innerW := w - 2
+	if innerW < 1 {
+		innerW = 1
 	}
-	playersMap := getRelativePlayers(m.snapshot.Players, localIdx)
-	turnID := m.snapshot.TurnPlayer
-	turnName := safePlayerName(m.snapshot.Players, turnID)
+	// Opponent at the top
+	topSection := m.renderTopPlayer(playersMap["top"], turnID, lp.compact)
+
+	// Center section (left player | table center | right player)
+	centerSection := m.renderMiddle(playersMap["left"], playersMap["right"], turnID, turnName, innerW, lp)
+
+	// Local player at the bottom
+	botSection := m.renderBottomPlayer(localIdx, turnID, lp.compact)
+
+	topBlock := fitBlock(topSection, innerW, lp.topH, lipgloss.Center, lipgloss.Center, feltEdgeColor)
+	midBlock := fitBlock(centerSection, innerW, lp.midH, lipgloss.Center, lipgloss.Center, feltMiddleColor)
+	botBlock := fitBlock(botSection, innerW, lp.botH, lipgloss.Center, lipgloss.Bottom, feltEdgeColor)
+
+	tableBody := lipgloss.JoinVertical(lipgloss.Center, topBlock, midBlock, botBlock)
+	// Keep the felt background active after nested style resets so the
+	// "table" area never falls back to terminal default black.
+	tableBody = enforceBackground(tableBody, ansiFeltBG)
+
+	framedTable := frameBorderStyle.Render(tableBody)
+	if m.trucoFlashFrames > 0 {
+		framedTable = m.renderTrucoOverlay(innerW, lp.tableBodyH)
+	} else if m.tableSweepFrames > 0 {
+		framedTable = m.renderTrickSweepOverlay(innerW, lp.tableBodyH)
+	} else if m.trickOverlayMsg != "" {
+		framedTable = m.renderTrickOverlay(innerW, lp.tableBodyH, m.trickOverlayMsg)
+	}
+	return framedTable
+}
+
+func (m UIModel) renderFooter(w int, lp layoutProfile) (string, string, string) {
+	tabBar := tabBarStyle.Width(w).Render(fitSingleLine(m.renderTabs(), maxInt(1, w-tabHorizontalPadding)))
+	tabPanel := m.renderTabPanel(w, lp.panelLines)
+
+	// ─── 4. Status / Help bar ───────────────────────────────────────────
+	statusLine := fitSingleLine(m.buildStatusLine(), maxInt(1, w-statusHorizontalPadding))
+	helpBar := helpStyle.Width(w).Render(statusLine)
+	return tabBar, tabPanel, helpBar
+}
+
+func (m UIModel) renderScoreAndRoleBars(w int, lp layoutProfile, turnName string) (string, string) {
 	scoreTurnName := clip(turnName, defaultTurnNameMax)
 	if lp.compact {
 		scoreTurnName = clip(turnName, compactTurnNameMax)
 	}
 
-	// ─── 1. Header ──────────────────────────────────────────────────────
-	headerTitle := tr("header_title")
-	header := headerStyle.Width(w).Align(lipgloss.Center).Render(fitSingleLine(headerTitle, maxInt(1, w-headerHorizontalPadding)))
-
-	// ─── 2. Score bar ───────────────────────────────────────────────────
 	t1Score := fmt.Sprintf("T1 %d", m.snapshot.MatchPoints[0])
 	t2Score := fmt.Sprintf("T2 %d", m.snapshot.MatchPoints[1])
 	stake := fmt.Sprintf("%s %d", tr("score_stake"), m.snapshot.CurrentHand.Stake)
@@ -311,45 +343,33 @@ func (m UIModel) renderTable() string {
 	roleBar := helpStyle.Width(w).Render(
 		fitSingleLine(m.renderRoleLane(maxInt(1, w-statusHorizontalPadding)), maxInt(1, w-statusHorizontalPadding)),
 	)
+	return scoreBar, roleBar
+}
+
+// ── Main renderer ───────────────────────────────────────────────────────────
+
+func (m UIModel) renderTable() string {
+	lp := computeLayout(m.width, m.height)
+	w := lp.w
+
+	localIdx := 0
+	if m.snapshot.CurrentPlayerIdx >= 0 {
+		localIdx = m.snapshot.CurrentPlayerIdx
+	}
+	playersMap := getRelativePlayers(m.snapshot.Players, localIdx)
+	turnID := m.snapshot.TurnPlayer
+	turnName := safePlayerName(m.snapshot.Players, turnID)
+
+	// ─── 1. Header ──────────────────────────────────────────────────────
+	header := m.renderHeader(w)
+
+	// ─── 2. Score bar ───────────────────────────────────────────────────
+	scoreBar, roleBar := m.renderScoreAndRoleBars(w, lp, turnName)
 
 	// ─── 3. Table area ──────────────────────────────────────────────────
-	innerW := w - 2
-	if innerW < 1 {
-		innerW = 1
-	}
-	// Opponent at the top
-	topSection := m.renderTopPlayer(playersMap["top"], turnID, lp.compact)
+	framedTable := m.renderTableArea(w, lp, playersMap, turnID, turnName, localIdx)
 
-	// Center section (left player | table center | right player)
-	centerSection := m.renderMiddle(playersMap["left"], playersMap["right"], turnID, turnName, innerW, lp)
-
-	// Local player at the bottom
-	botSection := m.renderBottomPlayer(localIdx, turnID, lp.compact)
-
-	topBlock := fitBlock(topSection, innerW, lp.topH, lipgloss.Center, lipgloss.Center, feltEdgeColor)
-	midBlock := fitBlock(centerSection, innerW, lp.midH, lipgloss.Center, lipgloss.Center, feltMiddleColor)
-	botBlock := fitBlock(botSection, innerW, lp.botH, lipgloss.Center, lipgloss.Bottom, feltEdgeColor)
-
-	tableBody := lipgloss.JoinVertical(lipgloss.Center, topBlock, midBlock, botBlock)
-	// Keep the felt background active after nested style resets so the
-	// "table" area never falls back to terminal default black.
-	tableBody = enforceBackground(tableBody, ansiFeltBG)
-
-	framedTable := frameBorderStyle.Render(tableBody)
-	if m.trucoFlashFrames > 0 {
-		framedTable = m.renderTrucoOverlay(innerW, lp.tableBodyH)
-	} else if m.tableSweepFrames > 0 {
-		framedTable = m.renderTrickSweepOverlay(innerW, lp.tableBodyH)
-	} else if m.trickOverlayMsg != "" {
-		framedTable = m.renderTrickOverlay(innerW, lp.tableBodyH, m.trickOverlayMsg)
-	}
-
-	tabBar := tabBarStyle.Width(w).Render(fitSingleLine(m.renderTabs(), maxInt(1, w-tabHorizontalPadding)))
-	tabPanel := m.renderTabPanel(w, lp.panelLines)
-
-	// ─── 4. Status / Help bar ───────────────────────────────────────────
-	statusLine := fitSingleLine(m.buildStatusLine(), maxInt(1, w-statusHorizontalPadding))
-	helpBar := helpStyle.Width(w).Render(statusLine)
+	tabBar, tabPanel, helpBar := m.renderFooter(w, lp)
 
 	// ─── Assemble ───────────────────────────────────────────────────────
 	return lipgloss.JoinVertical(lipgloss.Left,
