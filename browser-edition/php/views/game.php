@@ -169,14 +169,14 @@ if (!$runtimeStateValid) {
 <section class="panel game-panel game-panel-board game-shell state-<?= htmlspecialchars($boardState) ?>"
     data-mode="<?= htmlspecialchars($mode) ?>"
     data-match-finished="<?= $matchFinished ? '1' : '0' ?>"
-    data-last-trick-seq="<?= $lastTrickSeq ?>"
-    data-last-trick-team="<?= (int) ($snap['LastTrickTeam'] ?? -1) ?>"
-    data-last-trick-winner="<?= $lastTrickWinnerID ?>"
+    data-last-trick-seq="<?= htmlspecialchars($lastTrickSeq) ?>"
+    data-last-trick-team="<?= htmlspecialchars((int) ($snap['LastTrickTeam'] ?? -1)) ?>"
+    data-last-trick-winner="<?= htmlspecialchars($lastTrickWinnerID) ?>"
     data-last-trick-tie="<?= $lastTrickTie ? '1' : '0' ?>"
-    data-last-trick-round="<?= $lastTrickRound ?>"
+    data-last-trick-round="<?= htmlspecialchars($lastTrickRound) ?>"
     data-last-trick-round-label="<?= htmlspecialchars(tr('game_trick_round_label', max(1, $lastTrickRound))) ?>"
-    data-local-player-id="<?= $myID ?>"
-    data-num-players="<?= $numPlayers ?>"
+    data-local-player-id="<?= htmlspecialchars($myID) ?>"
+    data-num-players="<?= htmlspecialchars($numPlayers) ?>"
     data-trick-toast-win="<?= htmlspecialchars(tr('game_trick_toast_win')) ?>"
     data-trick-toast-loss="<?= htmlspecialchars(tr('game_trick_toast_loss')) ?>"
     data-trick-toast-tie="<?= htmlspecialchars(tr('game_trick_toast_tie')) ?>"
@@ -190,7 +190,7 @@ if (!$runtimeStateValid) {
         </div>
 
         <div class="game-topline-actions">
-            <div class="ui-mode-toggle" role="group" aria-label="<?= tr('ui_mode_label') ?>">
+            <div class="ui-mode-toggle" role="group" aria-label="<?= htmlspecialchars(tr('ui_mode_label')) ?>">
                 <button type="button" class="btn btn-neutral btn-mini ui-mode-btn" data-ui-mode="wireframe"><?= tr('ui_mode_wireframe') ?></button>
                 <button type="button" class="btn btn-neutral btn-mini ui-mode-btn" data-ui-mode="polished"><?= tr('ui_mode_polished') ?></button>
             </div>
@@ -227,7 +227,7 @@ if (!$runtimeStateValid) {
                     <?php endif; ?>
                 </div>
 
-                <div class="hud-stake-track" aria-label="<?= tr('game_stake_ladder_label') ?>">
+                <div class="hud-stake-track" aria-label="<?= htmlspecialchars(tr('game_stake_ladder_label')) ?>">
                     <?php foreach ($stakeSteps as $step): ?>
                         <span class="track-step <?= $step === $stake ? 'current' : ($step < $stake ? 'past' : ($step === $pendingTo ? 'pending' : '')) ?>">
                             <span class="track-dot"></span>
@@ -292,8 +292,8 @@ if (!$runtimeStateValid) {
             $playerTrickPiles = array_values(array_filter($trickPiles, fn($pile) => (int) ($pile['Winner'] ?? -1) === $playerID));
             ?>
             <div class="board-seat board-seat-<?= $pos ?> <?= $isTurn ? 'is-turn' : '' ?> <?= $isSelf ? 'is-self' : ($isPartner ? 'is-partner' : 'is-opponent') ?>"
-                data-player-id="<?= $playerID ?>"
-                data-team="<?= $team ?>">
+                data-player-id="<?= htmlspecialchars($playerID) ?>"
+                data-team="<?= htmlspecialchars($team) ?>">
                 <div class="board-seat-badge team-<?= $teamNum ?>"><?= htmlspecialchars(strtoupper(substr((string) ($p['Name'] ?? '?'), 0, 1))) ?></div>
                 <div class="board-seat-info">
                     <div class="seat-headline">
@@ -311,7 +311,7 @@ if (!$runtimeStateValid) {
                         </div>
                     <?php endif; ?>
                     <?php if (!empty($playerTrickPiles)): ?>
-                        <div class="board-seat-monte" aria-label="<?= tr('game_monte_label') ?>">
+                        <div class="board-seat-monte" aria-label="<?= htmlspecialchars(tr('game_monte_label')) ?>">
                             <span class="board-seat-monte-label"><?= tr('game_monte_label') ?></span>
                             <div class="board-seat-monte-stack board-seat-monte-stack-multi" aria-hidden="true">
                                 <?php foreach ($playerTrickPiles as $pileIndex => $pile): ?>
@@ -413,7 +413,7 @@ if (!$runtimeStateValid) {
                     <?php if ($canPlayCard): ?>
                         <form method="post" action="index.php" class="card-form" data-ajax="true">
                             <input type="hidden" name="action" value="play">
-                            <input type="hidden" name="cardIndex" value="<?= $idx ?>">
+                            <input type="hidden" name="cardIndex" value="<?= htmlspecialchars($idx) ?>">
                             <button type="submit" class="card-btn" role="listitem"><?= renderCard($card, false, (string) ($idx + 1)) ?></button>
                         </form>
                     <?php else: ?>
@@ -541,14 +541,14 @@ if (!$runtimeStateValid) {
                             <?php if (!empty($slotState['can_vote_host'])): ?>
                                 <form method="post" action="index.php" data-ajax="true">
                                     <input type="hidden" name="action" value="voteHost">
-                                    <input type="hidden" name="slot" value="<?= $idx ?>">
+                                    <input type="hidden" name="slot" value="<?= htmlspecialchars($idx) ?>">
                                     <button type="submit" class="btn btn-neutral"><?= tr('action_vote_host') ?> <?= $idx + 1 ?></button>
                                 </form>
                             <?php endif; ?>
                             <?php if (!empty($slotState['can_request_replacement'])): ?>
                                 <form method="post" action="index.php" data-ajax="true">
                                     <input type="hidden" name="action" value="requestReplacementInvite">
-                                    <input type="hidden" name="slot" value="<?= $idx ?>">
+                                    <input type="hidden" name="slot" value="<?= htmlspecialchars($idx) ?>">
                                     <button type="submit" class="btn btn-truco"><?= tr('action_replacement_invite') ?> <?= $idx + 1 ?></button>
                                 </form>
                             <?php endif; ?>
@@ -556,7 +556,7 @@ if (!$runtimeStateValid) {
                     </div>
                     <form method="post" action="index.php" class="lobby-chat-row" data-ajax="true">
                         <input type="hidden" name="action" value="sendChat">
-                        <input name="message" class="field" type="text" autocomplete="off" placeholder="<?= tr('chat_placeholder') ?>">
+                        <input name="message" class="field" type="text" autocomplete="off" placeholder="<?= htmlspecialchars(tr('chat_placeholder')) ?>">
                         <button type="submit" class="btn btn-neutral"><?= tr('lobby_chat_send') ?></button>
                     </form>
                 </section>

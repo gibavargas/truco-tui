@@ -79,14 +79,14 @@ $roleLabel = trim((string) ($session['role'] ?? ''));
                             <?php if ($canVote): ?>
                                 <form method="post" action="index.php" data-ajax="true">
                                     <input type="hidden" name="action" value="voteHost">
-                                    <input type="hidden" name="slot" value="<?= $idx ?>">
+                                    <input type="hidden" name="slot" value="<?= htmlspecialchars($idx) ?>">
                                     <button type="submit" class="btn btn-neutral"><?= tr('action_vote_host') ?></button>
                                 </form>
                             <?php endif; ?>
                             <?php if ($canReplace): ?>
                                 <form method="post" action="index.php" data-ajax="true">
                                     <input type="hidden" name="action" value="requestReplacementInvite">
-                                    <input type="hidden" name="slot" value="<?= $idx ?>">
+                                    <input type="hidden" name="slot" value="<?= htmlspecialchars($idx) ?>">
                                     <button type="submit" class="btn btn-truco"><?= tr('action_replacement_invite') ?></button>
                                 </form>
                             <?php endif; ?>
@@ -133,7 +133,7 @@ $roleLabel = trim((string) ($session['role'] ?? ''));
                 <h3><?= tr('lobby_chat_send') ?></h3>
                 <form method="post" action="index.php" class="lobby-chat-row" data-ajax="true">
                     <input type="hidden" name="action" value="sendChat">
-                    <input name="message" class="field" type="text" autocomplete="off" placeholder="<?= tr('chat_placeholder') ?>">
+                    <input name="message" class="field" type="text" autocomplete="off" placeholder="<?= htmlspecialchars(tr('chat_placeholder')) ?>">
                     <button type="submit" class="btn btn-neutral">💬 <?= tr('lobby_chat_send') ?></button>
                 </form>
             </section>
