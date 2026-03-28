@@ -61,10 +61,11 @@ final class TrucoAppStore: ObservableObject {
 
     // MARK: - Game Actions
 
-    func dispatchGameAction(action: String, cardIndex: Int = 0) {
+    func dispatchGameAction(action: String, cardIndex: Int = 0, faceDown: Bool = false) {
         var payload: [String: Any] = ["action": action]
         if action == "play" {
             payload["card_index"] = cardIndex
+            payload["face_down"] = faceDown
         }
         Task {
             if let result = bridge.dispatch(intentJSON: makeIntentJSON(kind: "game_action", payload: payload)) {

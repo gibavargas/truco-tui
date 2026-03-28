@@ -2,18 +2,17 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
-using System.Collections.ObjectModel;
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
+using System.Collections.ObjectModel;
+using System.Globalization;
 using System.Linq;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
-using TrucoWinUI.Constants;
+using Windows.ApplicationModel.DataTransfer;
 using TrucoWinUI.Models;
 using TrucoWinUI.Services;
-using Windows.ApplicationModel.DataTransfer;
 
 namespace TrucoWinUI.ViewModels;
 
@@ -21,863 +20,1021 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
 {
     private readonly TrucoCoreService _core;
     private readonly DispatcherQueue _dispatcherQueue;
-    private readonly IStringProvider _stringProvider;
-    private CancellationTokenSource? _pollCts;
-    private string? _lastSnapshotJson;
-    private bool _disposed;
+    private readonly CancellationTokenSource _cts = new();
+
+    private SnapshotBundle _bundle = new();
+    private string _menuPane = "home";
+
+    public ObservableCollection<LobbySeatViewModel> LobbySeats { get; } = [];
+    public ObservableCollection<LobbySeatViewModel> CandidateSeats { get; } = [];
+    public ObservableCollection<LobbySeatViewModel> ReplacementSeats { get; } = [];
+    public ObservableCollection<ActivityEntry> ChatFeed { get; } = [];
+    public ObservableCollection<string> MatchLog { get; } = [];
+    public ObservableCollection<string> DiagnosticsLog { get; } = [];
 
     [ObservableProperty]
-    private string status = StringProviderKeys.StatusWaiting;
+    private string statusText = "Runtime inicializando";
 
     [ObservableProperty]
-    private string setupPlayerName = GameConstants.DefaultPlayerName;
+    private string infoBannerText = string.Empty;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(SetupPlayerLabels))]
-    private int setupNumPlayers = GameConstants.DefaultPlayers;
+    private string errorBannerText = string.Empty;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(SetupPlayerLabels))]
-    [NotifyPropertyChangedFor(nameof(SetupSelectedPlayerCount))]
-    private int setupNumPlayersIndex = 1;
+    private string currentModeText = "idle";
 
     [ObservableProperty]
-    private int setupLocaleIndex;
+    private string versionText = string.Empty;
 
-    public List<string> SetupPlayerLabels
+    [ObservableProperty]
+    private string localeCode = "pt-BR";
+
+    [ObservableProperty]
+    private string localeDisplayText = "Idioma: Português (BR)";
+
+    [ObservableProperty]
+    private string inviteKey = string.Empty;
+
+    [ObservableProperty]
+    private string replacementInviteKey = string.Empty;
+
+    [ObservableProperty]
+    private string connectionDetails = string.Empty;
+
+    [ObservableProperty]
+    private string handSummary = string.Empty;
+
+    [ObservableProperty]
+    private string pendingRaiseText = string.Empty;
+
+    [ObservableProperty]
+    private string offlinePlayerName = Environment.UserName;
+
+    [ObservableProperty]
+    private int offlineNumPlayers = 2;
+
+    [ObservableProperty]
+    private string hostName = Environment.UserName;
+
+    [ObservableProperty]
+    private int hostNumPlayers = 2;
+
+    [ObservableProperty]
+    private string bindAddress = string.Empty;
+
+    [ObservableProperty]
+    private string relayUrl = string.Empty;
+
+    [ObservableProperty]
+    private string transportMode = "tcp_tls";
+
+    [ObservableProperty]
+    private string joinKey = string.Empty;
+
+    [ObservableProperty]
+    private string joinPlayerName = Environment.UserName;
+
+    [ObservableProperty]
+    private string desiredRole = "auto";
+
+    [ObservableProperty]
+    private string chatInput = string.Empty;
+
+    [ObservableProperty]
+    private LobbySeatViewModel? selectedCandidateSeat;
+
+    [ObservableProperty]
+    private LobbySeatViewModel? selectedReplacementSeat;
+
+    [ObservableProperty]
+    private TableSeatViewModel bottomSeat = new();
+
+    [ObservableProperty]
+    private TableSeatViewModel topSeat = new();
+
+    [ObservableProperty]
+    private TableSeatViewModel leftSeat = new();
+
+    [ObservableProperty]
+    private TableSeatViewModel rightSeat = new();
+
+    [ObservableProperty]
+    private Visibility homeVisibility = Visibility.Visible;
+
+    [ObservableProperty]
+    private Visibility offlineVisibility = Visibility.Collapsed;
+
+    [ObservableProperty]
+    private Visibility hostVisibility = Visibility.Collapsed;
+
+    [ObservableProperty]
+    private Visibility joinVisibility = Visibility.Collapsed;
+
+    [ObservableProperty]
+    private Visibility lobbyVisibility = Visibility.Collapsed;
+
+    [ObservableProperty]
+    private Visibility gameVisibility = Visibility.Collapsed;
+
+    [ObservableProperty]
+    private Visibility inviteVisibility = Visibility.Collapsed;
+
+    [ObservableProperty]
+    private Visibility replacementInviteVisibility = Visibility.Collapsed;
+
+    [ObservableProperty]
+    private Visibility leftSeatVisibility = Visibility.Collapsed;
+
+    [ObservableProperty]
+    private Visibility rightSeatVisibility = Visibility.Collapsed;
+
+    [ObservableProperty]
+    private Visibility topSeatVisibility = Visibility.Collapsed;
+
+    [ObservableProperty]
+    private string localSeatTitle = "Você";
+
+    [ObservableProperty]
+    private bool canStartHostedMatch;
+
+    [ObservableProperty]
+    private bool canStartNewHand;
+
+    [ObservableProperty]
+    private bool canRequestTruco;
+
+    [ObservableProperty]
+    private bool canAnswerRaise;
+
+    [ObservableProperty]
+    private bool canPlayCards;
+
+    [ObservableProperty]
+    private bool canSendChat;
+
+    [ObservableProperty]
+    private bool hasActiveSession;
+
+    [ObservableProperty]
+    private bool canResetSession;
+
+    [ObservableProperty]
+    private bool isLobbyScreen;
+
+    [ObservableProperty]
+    private bool isGameScreen;
+
+    [ObservableProperty]
+    private bool isMenuScreen = true;
+
+    [ObservableProperty]
+    private bool isDiagnosticsOpen;
+
+    public AppShellViewModel()
     {
-        get
-        {
-            var labels = new List<string>();
-            var playerName = string.IsNullOrEmpty(SetupPlayerName) 
-                ? _stringProvider.Get(StringProviderKeys.PlayerYou) 
-                : SetupPlayerName;
-            
-            for (int i = 0; i < SetupSelectedPlayerCount; i++)
-            {
-                labels.Add(i switch
-                {
-                    0 => $"{playerName} ({_stringProvider.Get(StringProviderKeys.PlayerHuman)})",
-                    1 when SetupSelectedPlayerCount == 2 => $"{_stringProvider.Get(StringProviderKeys.PlayerCpuOpponent)} ({string.Format(_stringProvider.Get(StringProviderKeys.PlayerCpu), 2)})",
-                    1 => $"{_stringProvider.Get(StringProviderKeys.PlayerCpuRight)} ({string.Format(_stringProvider.Get(StringProviderKeys.PlayerCpu), 2)})",
-                    2 => $"{_stringProvider.Get(StringProviderKeys.PlayerCpuPartner)} ({string.Format(_stringProvider.Get(StringProviderKeys.PlayerCpu), 1)})",
-                    3 => $"{_stringProvider.Get(StringProviderKeys.PlayerCpuLeft)} ({string.Format(_stringProvider.Get(StringProviderKeys.PlayerCpu), 2)})",
-                    _ => $"{_stringProvider.Get(StringProviderKeys.PlayerCpuOpponent)} ({string.Format(_stringProvider.Get(StringProviderKeys.PlayerCpu), 2)})"
-                });
-            }
-            return labels;
-        }
-    }
-
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(VisibilityIfInviteKey))]
-    [NotifyPropertyChangedFor(nameof(InviteKeyText))]
-    [NotifyPropertyChangedFor(nameof(LobbyStatusText))]
-    [NotifyPropertyChangedFor(nameof(ConnectionRoleText))]
-    private LobbySnapshot? lobbySnapshot;
-
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsMyTurn))]
-    [NotifyPropertyChangedFor(nameof(ShowTrucoActions))]
-    [NotifyPropertyChangedFor(nameof(ShowAskTruco))]
-    [NotifyPropertyChangedFor(nameof(CanPlayCards))]
-    [NotifyPropertyChangedFor(nameof(VisibilityIfOnlineMatch))]
-    [NotifyPropertyChangedFor(nameof(CanCloseSession))]
-    [NotifyPropertyChangedFor(nameof(MatchStatusText))]
-    private UIStateSnapshot? uiState;
-
-    public System.Collections.ObjectModel.ObservableCollection<string> ChatEvents { get; } = new();
-    public System.Collections.ObjectModel.ObservableCollection<LobbySlotItem> LobbySlots { get; } = new();
-
-    [ObservableProperty]
-    private string inviteKeyInput = "";
-
-    [ObservableProperty]
-    private string chatMessage = "";
-
-    [ObservableProperty]
-    private string setupRelayUrl = "";
-
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(SetupDesiredRole))]
-    private int setupDesiredRoleIndex;
-
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(Mode))]
-    [NotifyPropertyChangedFor(nameof(IsPlaying))]
-    [NotifyPropertyChangedFor(nameof(IsNotPlaying))]
-    [NotifyPropertyChangedFor(nameof(IsMyTurn))]
-    [NotifyPropertyChangedFor(nameof(UsPoints))]
-    [NotifyPropertyChangedFor(nameof(ThemPoints))]
-    [NotifyPropertyChangedFor(nameof(ShowTrucoActions))]
-    [NotifyPropertyChangedFor(nameof(ShowAskTruco))]
-    [NotifyPropertyChangedFor(nameof(IsMatchOver))]
-    [NotifyPropertyChangedFor(nameof(MatchResultText))]
-    [NotifyPropertyChangedFor(nameof(TrucoLabel))]
-    [NotifyPropertyChangedFor(nameof(AskTrucoLabel))]
-    [NotifyPropertyChangedFor(nameof(MyTeamID))]
-    [NotifyPropertyChangedFor(nameof(TurnIndicatorText))]
-    [NotifyPropertyChangedFor(nameof(Me))]
-    [NotifyPropertyChangedFor(nameof(TopPlayer))]
-    [NotifyPropertyChangedFor(nameof(RightPlayer))]
-    [NotifyPropertyChangedFor(nameof(LeftPlayer))]
-    [NotifyPropertyChangedFor(nameof(LeftPlayerVisibility))]
-    [NotifyPropertyChangedFor(nameof(IsTopPlayerTurn))]
-    [NotifyPropertyChangedFor(nameof(IsRightPlayerTurn))]
-    [NotifyPropertyChangedFor(nameof(IsLeftPlayerTurn))]
-    [NotifyPropertyChangedFor(nameof(RoundText))]
-    [NotifyPropertyChangedFor(nameof(StakeLadder))]
-    [NotifyPropertyChangedFor(nameof(LogEntries))]
-    [NotifyPropertyChangedFor(nameof(IsCpuTurn))]
-    [NotifyPropertyChangedFor(nameof(TurnPlayerName))]
-    [NotifyPropertyChangedFor(nameof(MyRoleBadge))]
-    [NotifyPropertyChangedFor(nameof(TopPlayerRoleBadge))]
-    [NotifyPropertyChangedFor(nameof(MatchStatusText))]
-    private GameSnapshot? snapshot;
-
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(VisibilityIfPlaying))]
-    [NotifyPropertyChangedFor(nameof(VisibilityIfNotPlaying))]
-    [NotifyPropertyChangedFor(nameof(VisibilityIfOnlineLobby))]
-    [NotifyPropertyChangedFor(nameof(VisibilityIfOnlineMatch))]
-    [NotifyPropertyChangedFor(nameof(VisibilityIfHost))]
-    private string mode = UiConstants.IdleMode;
-
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(ConnectionStatusText))]
-    [NotifyPropertyChangedFor(nameof(ConnectionModeText))]
-    [NotifyPropertyChangedFor(nameof(ConnectionRoleText))]
-    [NotifyPropertyChangedFor(nameof(ConnectionErrorText))]
-    [NotifyPropertyChangedFor(nameof(EventBacklogText))]
-    [NotifyPropertyChangedFor(nameof(VisibilityIfConnectionRole))]
-    [NotifyPropertyChangedFor(nameof(VisibilityIfConnectionError))]
-    [NotifyPropertyChangedFor(nameof(VisibilityIfCombinedError))]
-    [NotifyPropertyChangedFor(nameof(LobbyStatusText))]
-    [NotifyPropertyChangedFor(nameof(CombinedErrorText))]
-    private ConnectionSnapshot? connectionState;
-
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(EventBacklogText))]
-    private DiagnosticsSnapshot? diagnosticsState;
-
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(VisibilityIfLastActionError))]
-    [NotifyPropertyChangedFor(nameof(VisibilityIfCombinedError))]
-    [NotifyPropertyChangedFor(nameof(CombinedErrorText))]
-    private string lastActionError = "";
-
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(VisibilityIfLastActionError))]
-    [NotifyPropertyChangedFor(nameof(VisibilityIfCombinedError))]
-    [NotifyPropertyChangedFor(nameof(CombinedErrorText))]
-    private string lastActionErrorCode = "";
-
-    public bool IsPlaying => GameStateHelper.IsPlaying(Snapshot);
-    public bool IsNotPlaying => GameStateHelper.IsNotPlaying(Snapshot);
-    public bool IsMyTurn => UiState?.Actions?.CanPlayCard == true || UiState?.Actions?.MustRespond == true;
-
-    public ObservableCollection<string> MatchLogEntries { get; } = new();
-    public ObservableCollection<string> EventLogEntries { get; } = new();
-    public ObservableCollection<string> LobbyEventEntries { get; } = new();
-
-    public Visibility VisibilityIfPlaying => (Mode == "offline_match" || Mode == "host_match" || Mode == "client_match" || Mode == "match_over")
-        ? Visibility.Visible
-        : Visibility.Collapsed;
-
-    public Visibility VisibilityIfNotPlaying => (Mode == UiConstants.IdleMode)
-        ? Visibility.Visible
-        : Visibility.Collapsed;
-        
-    public Visibility VisibilityIfOnlineLobby => (Mode == "host_lobby" || Mode == "client_lobby")
-        ? Visibility.Visible
-        : Visibility.Collapsed;
-
-    public Visibility VisibilityIfOnlineMatch => (Mode == "host_match" || Mode == "client_match")
-        ? Visibility.Visible
-        : Visibility.Collapsed;
-
-    public Visibility VisibilityIfHost => (Mode == "host_lobby")
-        ? Visibility.Visible
-        : Visibility.Collapsed;
-
-    public Visibility VisibilityIfInviteKey => !string.IsNullOrEmpty(LobbySnapshot?.InviteKey)
-        ? Visibility.Visible
-        : Visibility.Collapsed;
-    public Visibility VisibilityIfConnectionRole => !string.IsNullOrWhiteSpace(ConnectionRoleText)
-        ? Visibility.Visible
-        : Visibility.Collapsed;
-    public Visibility VisibilityIfConnectionError => !string.IsNullOrWhiteSpace(ConnectionErrorText)
-        ? Visibility.Visible
-        : Visibility.Collapsed;
-    public Visibility VisibilityIfLastActionError => !string.IsNullOrWhiteSpace(LastActionError)
-        ? Visibility.Visible
-        : Visibility.Collapsed;
-    public Visibility VisibilityIfCombinedError => !string.IsNullOrWhiteSpace(CombinedErrorText)
-        ? Visibility.Visible
-        : Visibility.Collapsed;
-
-    public Visibility VisibilityIfMatchOver => IsMatchOver
-        ? Visibility.Visible
-        : Visibility.Collapsed;
-
-    public Visibility VisibilityIfShowTruco => ShowTrucoActions
-        ? Visibility.Visible
-        : Visibility.Collapsed;
-
-    public Visibility VisibilityIfAskTruco => ShowAskTruco
-        ? Visibility.Visible
-        : Visibility.Collapsed;
-
-    public int UsPoints => GameStateHelper.GetUsPoints(Snapshot);
-    public int ThemPoints => GameStateHelper.GetThemPoints(Snapshot);
-
-    public int MyTeamID => PlayerHelper.GetMyTeamId(Snapshot);
-
-    public bool ShowTrucoActions => UiState?.Actions?.MustRespond == true;
-    public bool ShowAskTruco => UiState?.Actions?.CanAskOrRaise == true && UiState?.Actions?.MustRespond != true;
-    public bool IsMatchOver => GameStateHelper.IsMatchOver(Snapshot);
-    public bool CanPlayCards => UiState?.Actions?.CanPlayCard == true;
-    public bool CanCloseSession => UiState?.Actions?.CanCloseSession == true;
-    public int SetupSelectedPlayerCount => SetupNumPlayersIndex == 1 ? 4 : 2;
-    public string SetupDesiredRole => SetupDesiredRoleIndex switch
-    {
-        1 => "partner",
-        2 => "opponent",
-        _ => "auto"
-    };
-    public string ConnectionStatusText => ConnectionState?.Status ?? Mode;
-    public string ConnectionModeText => ConnectionState?.IsOnline == true ? "online" : "offline";
-    public string ConnectionRoleText => LobbySnapshot?.Role ?? SetupDesiredRole;
-    public string ConnectionErrorText => ConnectionState?.LastError?.Message ?? "";
-    public string EventBacklogText => $"{DiagnosticsState?.EventBacklog ?? 0}";
-    public string InviteKeyText => string.IsNullOrWhiteSpace(LobbySnapshot?.InviteKey) ? "-" : LobbySnapshot!.InviteKey!;
-    public string MatchStatusText => GameStateHelper.GetMatchStatusText(Snapshot, UiState, MyTeamID, _stringProvider);
-    public string LobbyStatusText => GameStateHelper.GetLobbyStatusText(LobbySnapshot, ConnectionState);
-    public string CombinedErrorText => !string.IsNullOrWhiteSpace(LastActionError)
-        ? (string.IsNullOrWhiteSpace(LastActionErrorCode) ? LastActionError : $"{LastActionErrorCode}: {LastActionError}")
-        : ConnectionErrorText;
-
-    public string MatchResultText => GameStateHelper.GetMatchResultText(Snapshot, MyTeamID);
-
-    public string TurnIndicatorText => GameStateHelper.GetTurnIndicatorText(Snapshot);
-
-    public string RoundText => _stringProvider.Format(StringProviderKeys.RoundFormat, Snapshot?.CurrentHand?.Round ?? 1);
-
-    public string TrucoLabel => GameStateHelper.GetTrucoLabel(Snapshot?.PendingRaiseTo);
-
-    public string AskTrucoLabel => GameStateHelper.GetAskTrucoLabel(Snapshot?.CurrentHand?.Stake);
-
-    public Player? Me => PlayerHelper.GetMe(Snapshot);
-
-    public Player? TopPlayer => PlayerHelper.GetTopPlayer(Snapshot);
-
-    public Player? RightPlayer => PlayerHelper.GetRightPlayer(Snapshot);
-
-    public Player? LeftPlayer => PlayerHelper.GetLeftPlayer(Snapshot);
-
-    public Visibility LeftPlayerVisibility => LeftPlayer != null
-        ? Visibility.Visible
-        : Visibility.Collapsed;
-
-    public bool IsTopPlayerTurn => Snapshot?.TurnPlayer == TopPlayer?.ID;
-    public bool IsRightPlayerTurn => Snapshot?.TurnPlayer == RightPlayer?.ID;
-    public bool IsLeftPlayerTurn => Snapshot?.TurnPlayer == LeftPlayer?.ID;
-
-    public string MyRoleBadge => GameStateHelper.GetRoleBadge(Snapshot, Me?.ID ?? -1);
-    public string TopPlayerRoleBadge => GameStateHelper.GetRoleBadge(Snapshot, TopPlayer?.ID ?? -1);
-
-    public List<(string Label, bool Active)> StakeLadder => GameStateHelper.GetStakeLadder(Snapshot);
-
-    public bool IsCpuTurn => Me != null && PlayerHelper.IsCpuPlayer(Snapshot, Snapshot?.TurnPlayer ?? -1);
-
-    public string TurnPlayerName
-    {
-        get
-        {
-            var turnPlayerId = Snapshot?.TurnPlayer ?? -1;
-            return PlayerHelper.GetPlayerName(Snapshot, turnPlayerId);
-        }
-    }
-
-    public List<string> LogEntries => GameStateHelper.GetLogEntries(Snapshot);
-
-    public AppShellViewModel() : this(new TrucoCoreService(), new StringProvider())
-    {
-    }
-
-    public AppShellViewModel(TrucoCoreService core, IStringProvider stringProvider)
-    {
-        _core = core ?? throw new ArgumentNullException(nameof(core));
-        _stringProvider = stringProvider ?? throw new ArgumentNullException(nameof(stringProvider));
         _dispatcherQueue = DispatcherQueue.GetForCurrentThread();
-        
-        _pollCts = new CancellationTokenSource();
-        _ = PollLoopAsync(_pollCts.Token);
-        RefreshSnapshot();
+        _core = new TrucoCoreService();
+        VersionText = BuildVersionText(_core.GetVersions());
+        RefreshSnapshot(_core.GetSnapshot(), preserveMenuPane: true);
+        _ = PollLoopAsync(_cts.Token);
     }
 
-    private async Task PollLoopAsync(CancellationToken ct)
+    public void Dispose()
     {
-        try
-        {
-            while (!ct.IsCancellationRequested)
-            {
-                await Task.Delay(GameConstants.PollIntervalMs, ct);
-
-                var snapshotJson = _core.SnapshotJson();
-                if (!string.IsNullOrWhiteSpace(snapshotJson) && !string.Equals(snapshotJson, _lastSnapshotJson, StringComparison.Ordinal))
-                {
-                    _lastSnapshotJson = snapshotJson;
-                    ApplySnapshotJson(snapshotJson);
-                }
-
-                var eventJson = _core.PollEventJson();
-                if (!string.IsNullOrEmpty(eventJson))
-                {
-                    try 
-                    {
-                        var ev = JsonSerializer.Deserialize<AppEvent>(eventJson, JsonOptions.Default);
-                        if (ev != null) 
-                        {
-                            string text = "";
-                            if (ev.Kind == "chat") {
-                                var author = ev.Payload?.GetProperty("author").GetString() ?? "?";
-                                var msg = ev.Payload?.GetProperty("text").GetString() ?? "";
-                                text = $"{author}: {msg}";
-                            } 
-                            else if (ev.Kind == "system") {
-                                text = ev.Payload?.GetProperty("text").GetString() ?? "";
-                            } 
-                            else if (ev.Kind == "replacement_invite") {
-                                var link = ev.Payload?.GetProperty("invite_key").GetString() ?? "";
-                                text = $"Link de subs: {link}";
-                            }
-                            if (!string.IsNullOrEmpty(text)) {
-                                _dispatcherQueue.TryEnqueue(() => {
-                                    ChatEvents.Add(text);
-                                    TrimCollection(ChatEvents, 80);
-                                });
-                            }
-                            _dispatcherQueue.TryEnqueue(() => AppendEvent(ev));
-                        }
-                    } 
-                    catch (Exception) { }
-                    var latestSnapshot = _core.SnapshotJson();
-                    if (!string.IsNullOrWhiteSpace(latestSnapshot))
-                    {
-                        _lastSnapshotJson = latestSnapshot;
-                        ApplySnapshotJson(latestSnapshot);
-                    }
-                }
-            }
-        }
-        catch (OperationCanceledException)
-        {
-        }
-        catch (Exception ex)
-        {
-            Debug.WriteLine($"Poll loop error: {ex.Message}");
-        }
-    }
-
-    private void RefreshSnapshot()
-    {
-        var json = _core.SnapshotJson();
-        if (string.IsNullOrEmpty(json)) return;
-        _lastSnapshotJson = json;
-        ApplySnapshotJson(json);
-    }
-
-    private void ApplySnapshotJson(string json)
-    {
-        _dispatcherQueue.TryEnqueue(() =>
-        {
-            try
-            {
-                var bundle = JsonSerializer.Deserialize<SnapshotBundle>(json, JsonOptions.Default);
-                if (bundle != null)
-                {
-                    Snapshot = bundle.Match;
-                    LobbySnapshot = bundle.Lobby;
-                    UiState = bundle.UI;
-                    ConnectionState = bundle.Connection;
-                    DiagnosticsState = bundle.Diagnostics;
-                    Mode = bundle.Mode ?? UiConstants.IdleMode;
-                    if (!string.IsNullOrWhiteSpace(bundle.Locale))
-                    {
-                        _stringProvider.SetLocale(bundle.Locale!);
-                    }
-                    RebuildLobbySlots();
-                    RebuildLogs();
-                }
-            }
-            catch (JsonException ex)
-            {
-                Debug.WriteLine($"Failed to parse snapshot: {ex.Message}");
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"Unexpected error parsing snapshot: {ex.Message}");
-            }
-        });
+        _cts.Cancel();
+        _core.CloseSession();
+        _core.Dispose();
+        _cts.Dispose();
     }
 
     [RelayCommand]
-    private void StartGame()
+    private void ShowHome() => SetMenuPane("home");
+
+    [RelayCommand]
+    private void ShowOfflineSetup() => SetMenuPane("offline");
+
+    [RelayCommand]
+    private void ShowHostSetup() => SetMenuPane("host");
+
+    [RelayCommand]
+    private void ShowJoinSetup() => SetMenuPane("join");
+
+    [RelayCommand]
+    private void ToggleDiagnostics() => IsDiagnosticsOpen = !IsDiagnosticsOpen;
+
+    [RelayCommand]
+    private void OpenDiagnostics() => IsDiagnosticsOpen = true;
+
+    [RelayCommand]
+    private void CloseDiagnostics() => IsDiagnosticsOpen = false;
+
+    [RelayCommand]
+    private void CopyInviteKey() => CopyTextToClipboard(InviteKey);
+
+    [RelayCommand]
+    private void CopyReplacementInvite() => CopyTextToClipboard(ReplacementInviteKey);
+
+    [RelayCommand]
+    private void ToggleLocale()
     {
-        try
+        string nextLocale = LocaleCode == "en-US" ? "pt-BR" : "en-US";
+        AppError? error = _core.SetLocale(nextLocale);
+        HandleDispatchResult(error, nextLocale == "en-US"
+            ? "Idioma alterado para English (US)."
+            : "Idioma alterado para Português (BR).");
+        RefreshSnapshot(_core.GetSnapshot(), preserveMenuPane: true);
+    }
+
+    [RelayCommand]
+    private void StartOfflineGame()
+    {
+        string playerName = NormalizeName(OfflinePlayerName);
+        List<string> names = [playerName, "CPU-2"];
+        List<bool> cpu = [false, true];
+        if (OfflineNumPlayers == 4)
         {
-            LastActionError = "";
-            SetLocaleFromSetup();
-
-            var name = string.IsNullOrEmpty(SetupPlayerName) ? GameConstants.DefaultPlayerName : SetupPlayerName;
-            var payload = new NewOfflineGameIntentPayload();
-
-            if (SetupSelectedPlayerCount == GameConstants.MaxPlayers)
-            {
-                payload.PlayerNames.AddRange(new[]
-                {
-                    name,
-                    _stringProvider.Get(StringProviderKeys.PlayerCpuRight),
-                    _stringProvider.Get(StringProviderKeys.PlayerCpuPartner),
-                    _stringProvider.Get(StringProviderKeys.PlayerCpuLeft),
-                });
-                payload.CpuFlags.AddRange(new[] { false, true, true, true });
-            }
-            else
-            {
-                payload.PlayerNames.AddRange(new[]
-                {
-                    name,
-                    _stringProvider.Get(StringProviderKeys.PlayerCpuOpponent),
-                });
-                payload.CpuFlags.AddRange(new[] { false, true });
-            }
-
-            DispatchIntent(IntentKinds.NewOfflineGame, payload);
-            Status = _stringProvider.Format(StringProviderKeys.StatusPlaying, SetupSelectedPlayerCount);
+            names.Add("CPU-3");
+            names.Add("CPU-4");
+            cpu.Add(true);
+            cpu.Add(true);
         }
-        catch (Exception ex)
+
+        AppError? error = _core.StartOfflineGame(names.ToArray(), cpu.ToArray());
+        HandleDispatchResult(error, "Partida offline criada.");
+        if (error is null)
         {
-            Debug.WriteLine($"Failed to start game: {ex.Message}");
-            Status = $"Error: {ex.Message}";
+            ChatFeed.Clear();
         }
+        RefreshSnapshot(_core.GetSnapshot(), preserveMenuPane: false);
     }
 
     [RelayCommand]
-    private void HostOnlineGame()
+    private void NewHand()
     {
-        LastActionError = "";
-        var name = string.IsNullOrEmpty(SetupPlayerName) ? GameConstants.DefaultPlayerName : SetupPlayerName;
-        SetLocaleFromSetup();
-        DispatchIntent("create_host_session", new CreateHostSessionIntentPayload
-        {
-            HostName = name,
-            NumPlayers = SetupSelectedPlayerCount,
-            RelayUrl = string.IsNullOrWhiteSpace(SetupRelayUrl) ? null : SetupRelayUrl.Trim(),
-        });
+        HandleDispatchResult(_core.NewHand(), "Nova mão iniciada.");
+        RefreshSnapshot(_core.GetSnapshot(), preserveMenuPane: false);
     }
 
     [RelayCommand]
-    private void JoinOnlineGame()
+    private void CreateHostSession()
     {
-        if (string.IsNullOrWhiteSpace(InviteKeyInput)) return;
-        LastActionError = "";
-        var name = string.IsNullOrEmpty(SetupPlayerName) ? GameConstants.DefaultPlayerName : SetupPlayerName;
-        SetLocaleFromSetup();
-        DispatchIntent("join_session", new JoinSessionIntentPayload
+        AppError? error = _core.CreateHostSession(
+            NormalizeName(HostName),
+            HostNumPlayers,
+            NullIfWhitespace(BindAddress),
+            NullIfWhitespace(RelayUrl),
+            NullIfWhitespace(TransportMode));
+        HandleDispatchResult(error, "Sessão host criada.");
+        if (error is null)
         {
-            PlayerName = name,
-            Key = InviteKeyInput.Trim(),
-            DesiredRole = SetupDesiredRole,
-        });
-    }
-
-    [RelayCommand]
-    private void SendChat()
-    {
-        if (string.IsNullOrWhiteSpace(ChatMessage)) return;
-        DispatchIntent("send_chat", new SendChatIntentPayload
-        {
-            Text = ChatMessage.Trim(),
-        });
-        ChatMessage = "";
-    }
-
-    [RelayCommand]
-    private void RequestReplacementInvite(object? seatStr)
-    {
-        if (int.TryParse(seatStr?.ToString(), out int seat))
-        {
-            DispatchIntent("request_replacement_invite", new ReplacementInviteIntentPayload
-            {
-                TargetSeat = seat,
-            });
+            ChatFeed.Clear();
         }
+        RefreshSnapshot(_core.GetSnapshot(), preserveMenuPane: false);
     }
 
     [RelayCommand]
-    private void VoteHost(object? seatStr)
+    private void JoinOnlineSession()
     {
-        if (int.TryParse(seatStr?.ToString(), out int seat))
+        AppError? error = _core.JoinSession(
+            JoinKey.Trim(),
+            NormalizeName(JoinPlayerName),
+            string.IsNullOrWhiteSpace(DesiredRole) ? "auto" : DesiredRole.Trim());
+        HandleDispatchResult(error, "Sessão conectada.");
+        if (error is null)
         {
-            DispatchIntent("vote_host", new HostVoteIntentPayload
-            {
-                CandidateSeat = seat,
-            });
+            ChatFeed.Clear();
         }
+        RefreshSnapshot(_core.GetSnapshot(), preserveMenuPane: false);
     }
 
     [RelayCommand]
     private void StartHostedMatch()
     {
-        DispatchIntent<object?>("start_hosted_match", null);
+        HandleDispatchResult(_core.StartHostedMatch(), "Partida online iniciada.");
+        RefreshSnapshot(_core.GetSnapshot(), preserveMenuPane: false);
     }
 
     [RelayCommand]
-    private void LeaveOnlineGame()
+    private void CloseSession()
     {
-        if (!CanCloseSession)
+        HandleDispatchResult(_core.CloseSession(), "Sessão encerrada.");
+        RefreshSnapshot(_core.GetSnapshot(), preserveMenuPane: false);
+    }
+
+    [RelayCommand]
+    private void ResetSession()
+    {
+        HandleDispatchResult(_core.ResetSession(), "Sessão reiniciada.");
+        RefreshSnapshot(_core.GetSnapshot(), preserveMenuPane: false);
+    }
+
+    [RelayCommand]
+    private void SendChat()
+    {
+        string text = ChatInput.Trim();
+        if (string.IsNullOrWhiteSpace(text))
         {
             return;
         }
 
-        DispatchIntent<object?>("close_session", null);
-        ChatEvents.Clear();
-        LobbyEventEntries.Clear();
-        EventLogEntries.Clear();
-        MatchLogEntries.Clear();
+        HandleDispatchResult(_core.SendChat(text), "Mensagem enviada.");
+        ChatInput = string.Empty;
+        RefreshSnapshot(_core.GetSnapshot(), preserveMenuPane: false);
     }
 
     [RelayCommand]
-    private void LeaveMatch()
+    private void VoteHost()
     {
-        if (!CanCloseSession)
+        if (SelectedCandidateSeat is null)
+        {
+            ErrorBannerText = "Selecione um slot para votar host.";
+            return;
+        }
+
+        HandleDispatchResult(_core.VoteHost(SelectedCandidateSeat.SeatIndex), "Voto de host enviado.");
+        RefreshSnapshot(_core.GetSnapshot(), preserveMenuPane: false);
+    }
+
+    [RelayCommand]
+    private void RequestReplacementInvite()
+    {
+        if (SelectedReplacementSeat is null)
+        {
+            ErrorBannerText = "Selecione um slot para gerar convite de reposição.";
+            return;
+        }
+
+        HandleDispatchResult(_core.RequestReplacementInvite(SelectedReplacementSeat.SeatIndex), "Pedido de substituição enviado.");
+        RefreshSnapshot(_core.GetSnapshot(), preserveMenuPane: false);
+    }
+
+    [RelayCommand]
+    private void PlayCard(CardState? card)
+    {
+        if (card is null || BottomSeat.HandCards.Count == 0)
         {
             return;
         }
 
-        DispatchIntent<object?>("close_session", null);
-        ChatEvents.Clear();
-        LobbyEventEntries.Clear();
-        EventLogEntries.Clear();
-        MatchLogEntries.Clear();
-    }
-
-    [RelayCommand]
-    private void RefreshState()
-    {
-        RefreshSnapshot();
-    }
-
-    [RelayCommand]
-    private void CopyInviteKey()
-    {
-        if (string.IsNullOrWhiteSpace(LobbySnapshot?.InviteKey))
+        int index = BottomSeat.HandCards.FindIndex(c => c.Card is not null && ReferenceEquals(c.Card, card));
+        if (index < 0)
         {
+            index = BottomSeat.HandCards.FindIndex(c => c.Card is not null && c.Card.Rank == card.Rank && c.Card.Suit == card.Suit);
+        }
+
+        if (index < 0)
+        {
+            ErrorBannerText = "Carta não encontrada na mão local.";
             return;
         }
 
-        var data = new DataPackage();
-        data.SetText(LobbySnapshot.InviteKey);
-        Clipboard.SetContent(data);
+        HandleDispatchResult(_core.PlayCard(index), "Carta enviada.");
+        RefreshSnapshot(_core.GetSnapshot(), preserveMenuPane: false);
     }
 
     [RelayCommand]
-    private void BackToSetup()
-    {
-        if (!CanCloseSession)
-        {
-            return;
-        }
-
-        DispatchIntent<object?>("close_session", null);
-        Snapshot = null;
-        LobbySnapshot = null;
-        UiState = null;
-        ConnectionState = null;
-        DiagnosticsState = null;
-        Mode = UiConstants.IdleMode;
-        ChatEvents.Clear();
-        LobbySlots.Clear();
-        MatchLogEntries.Clear();
-        EventLogEntries.Clear();
-        LobbyEventEntries.Clear();
-    }
+    private void RequestTruco() => DispatchGameAction(_core.RequestTruco(), "Pedido de truco enviado.");
 
     [RelayCommand]
-    private void PlayCard(Card? card)
-    {
-        if (card == null || Me?.Hand == null) return;
+    private void AcceptTruco() => DispatchGameAction(_core.AcceptTruco(), "Truco aceito.");
 
-        int idx = Me.Hand.FindIndex(c => c.Rank == card.Rank && c.Suit == card.Suit);
-        if (idx >= 0)
+    [RelayCommand]
+    private void RefuseTruco() => DispatchGameAction(_core.RefuseTruco(), "Truco recusado.");
+
+    private void DispatchGameAction(AppError? error, string successMessage)
+    {
+        HandleDispatchResult(error, successMessage);
+        RefreshSnapshot(_core.GetSnapshot(), preserveMenuPane: false);
+    }
+
+    private async Task PollLoopAsync(CancellationToken token)
+    {
+        while (!token.IsCancellationRequested)
         {
-            DispatchIntent(IntentKinds.GameAction, new GameActionIntentPayload
+            await Task.Delay(120, token);
+            SnapshotBundle bundle = _core.GetSnapshot();
+            List<AppEvent> drained = [];
+            AppEvent? appEvent;
+            while ((appEvent = _core.PollEvent()) is not null)
             {
-                Action = ActionTypes.Play,
-                CardIndex = idx,
+                drained.Add(appEvent);
+            }
+
+            _dispatcherQueue.TryEnqueue(() =>
+            {
+                foreach (AppEvent ev in drained)
+                {
+                    HandleEvent(ev);
+                }
+                RefreshSnapshot(bundle, preserveMenuPane: false);
             });
         }
     }
 
-    [RelayCommand]
-    private void RequestTruco()
+    private void RefreshSnapshot(SnapshotBundle bundle, bool preserveMenuPane)
     {
-        DispatchIntent(IntentKinds.GameAction, new GameActionIntentPayload
+        NormalizeBundle(bundle);
+        _bundle = bundle;
+        if (bundle.Mode == "idle" && !preserveMenuPane)
         {
-            Action = ActionTypes.Truco,
-        });
+            ChatFeed.Clear();
+            InfoBannerText = string.Empty;
+        }
+        LocaleCode = bundle.Locale;
+        LocaleDisplayText = BuildLocaleDisplayText(bundle.Locale);
+        CurrentModeText = bundle.Mode;
+        InviteKey = bundle.Lobby?.InviteKey ?? string.Empty;
+        if (bundle.Mode == "idle")
+        {
+            ReplacementInviteKey = string.Empty;
+        }
+        ConnectionDetails = BuildConnectionDetails(bundle);
+        StatusText = BuildStatusText(bundle);
+        ErrorBannerText = bundle.Connection.LastError?.Message ?? string.Empty;
+
+        MatchLog.ReplaceWith(bundle.Match?.Logs ?? []);
+        DiagnosticsLog.ReplaceWith(bundle.Diagnostics.EventLog ?? []);
+        UpdateScreenState(bundle.Mode, preserveMenuPane);
+        UpdateLobby(bundle.Lobby);
+        UpdateTable(bundle.Match);
+        UpdateActionState(bundle);
+        NotifyStateChanged();
     }
 
-    [RelayCommand]
-    private void AcceptTruco()
+    public ObservableCollection<HandCardViewModel> RoundCardsPile { get; } = [];
+
+    public HandCardViewModel? DeckCardViewModel => _bundle.Match?.CurrentHand?.Vira is { Rank: not "" }
+        ? new HandCardViewModel { Card = new CardState { Rank = "", Suit = "" }, IsFaceUp = false, Scale = 1.0, Rotation = -4, TranslateX = -12, TranslateY = 4 }
+        : null;
+
+    private void NotifyStateChanged()
     {
-        DispatchIntent(IntentKinds.GameAction, new GameActionIntentPayload
-        {
-            Action = ActionTypes.Accept,
-        });
+        OnPropertyChanged(nameof(UsScore));
+        OnPropertyChanged(nameof(ThemScore));
+        OnPropertyChanged(nameof(StakeText));
+        OnPropertyChanged(nameof(ViraText));
+        OnPropertyChanged(nameof(ManilhaText));
+        OnPropertyChanged(nameof(ViraCardViewModel));
+        OnPropertyChanged(nameof(DeckCardViewModel));
+        OnPropertyChanged(nameof(ManilhaCardViewModel));
+        OnPropertyChanged(nameof(Trick1Text));
+        OnPropertyChanged(nameof(Trick2Text));
+        OnPropertyChanged(nameof(Trick3Text));
+        OnPropertyChanged(nameof(Trick1Visibility));
+        OnPropertyChanged(nameof(Trick2Visibility));
+        OnPropertyChanged(nameof(Trick3Visibility));
+        OnPropertyChanged(nameof(CurrentTurnText));
+        OnPropertyChanged(nameof(WinnerText));
+        OnPropertyChanged(nameof(StatusText));
+        OnPropertyChanged(nameof(GameVisibility));
+        OnPropertyChanged(nameof(LeftSeatVisibility));
+        OnPropertyChanged(nameof(RightSeatVisibility));
+        OnPropertyChanged(nameof(TopSeatVisibility));
+        OnPropertyChanged(nameof(TopSeat));
+        OnPropertyChanged(nameof(LeftSeat));
+        OnPropertyChanged(nameof(RightSeat));
+        OnPropertyChanged(nameof(BottomSeat));
+        OnPropertyChanged(nameof(TopSeat.Name));
+        OnPropertyChanged(nameof(BottomSeat.Name));
+        OnPropertyChanged(nameof(BottomSeat.IsCurrentTurn));
+        OnPropertyChanged(nameof(HandSummary));
     }
 
-    [RelayCommand]
-    private void RefuseTruco()
+    public string Trick1Text => GetTrickText(0);
+    public string Trick2Text => GetTrickText(1);
+    public string Trick3Text => GetTrickText(2);
+
+    private string GetTrickText(int index)
     {
-        DispatchIntent(IntentKinds.GameAction, new GameActionIntentPayload
+        if (_bundle.Match?.CurrentHand?.TrickWins is { } wins && wins.TryGetValue(index, out int winner))
         {
-            Action = ActionTypes.Refuse,
-        });
+            if (winner == -1) return "EMPATE";
+            return winner == BottomSeat.TeamIndex ? "NÓS" : "ELES";
+        }
+        return string.Empty;
     }
 
-    public void Dispose()
-    {
-        Dispose(true);
-        GC.SuppressFinalize(this);
-    }
+    public Microsoft.UI.Xaml.Visibility Trick1Visibility => string.IsNullOrWhiteSpace(Trick1Text) ? Microsoft.UI.Xaml.Visibility.Collapsed : Microsoft.UI.Xaml.Visibility.Visible;
+    public Microsoft.UI.Xaml.Visibility Trick2Visibility => string.IsNullOrWhiteSpace(Trick2Text) ? Microsoft.UI.Xaml.Visibility.Collapsed : Microsoft.UI.Xaml.Visibility.Visible;
+    public Microsoft.UI.Xaml.Visibility Trick3Visibility => string.IsNullOrWhiteSpace(Trick3Text) ? Microsoft.UI.Xaml.Visibility.Collapsed : Microsoft.UI.Xaml.Visibility.Visible;
 
-    private void Dispose(bool disposing)
-    {
-        if (_disposed) return;
+    public int UsScore => _bundle.Match?.MatchPoints.GetValueOrDefault(0) ?? 0;
+    public int ThemScore => _bundle.Match?.MatchPoints.GetValueOrDefault(1) ?? 0;
+    public string StakeText => (_bundle.Match?.CurrentHand.Stake ?? 1).ToString(CultureInfo.InvariantCulture);
+    public string ViraText => _bundle.Match?.CurrentHand?.Vira?.ShortLabel ?? "--";
+    public string ManilhaText => _bundle.Match?.CurrentHand?.Manilha ?? "--";
 
-        if (disposing)
+    public HandCardViewModel? ViraCardViewModel => _bundle.Match?.CurrentHand?.Vira is { Rank: not "" } vira
+        ? new HandCardViewModel { Card = vira, IsFaceUp = true, Scale = 1.0, Rotation = 0 }
+        : null;
+
+    public HandCardViewModel? ManilhaCardViewModel => !string.IsNullOrWhiteSpace(_bundle.Match?.CurrentHand?.Manilha)
+        ? new HandCardViewModel { Card = new CardState { Rank = _bundle.Match.CurrentHand.Manilha, Suit = "" }, IsFaceUp = true, Scale = 1.0, Rotation = 0 }
+        : null;
+
+    public string CurrentTurnText => BuildCurrentTurnText(_bundle.Match, BottomSeat);
+    public string WinnerText => _bundle.Match?.MatchFinished == true ? $"Time vencedor: {_bundle.Match.WinnerTeam}" : string.Empty;
+
+    private void UpdateScreenState(string mode, bool preserveMenuPane)
+    {
+        if (!preserveMenuPane && mode.EndsWith("_lobby", StringComparison.Ordinal))
         {
-            _pollCts?.Cancel();
-            _pollCts?.Dispose();
-            _core?.Dispose();
+            _menuPane = "lobby";
+        }
+        else if (!preserveMenuPane && mode.EndsWith("_match", StringComparison.Ordinal))
+        {
+            _menuPane = "game";
+        }
+        else if (!preserveMenuPane && mode == "idle" && (_menuPane == "lobby" || _menuPane == "game"))
+        {
+            _menuPane = "home";
         }
 
-        _disposed = true;
+        HomeVisibility = _menuPane == "home" && mode == "idle" ? Visibility.Visible : Visibility.Collapsed;
+        OfflineVisibility = _menuPane == "offline" && mode == "idle" ? Visibility.Visible : Visibility.Collapsed;
+        HostVisibility = _menuPane == "host" && mode == "idle" ? Visibility.Visible : Visibility.Collapsed;
+        JoinVisibility = _menuPane == "join" && mode == "idle" ? Visibility.Visible : Visibility.Collapsed;
+        LobbyVisibility = mode.EndsWith("_lobby", StringComparison.Ordinal) ? Visibility.Visible : Visibility.Collapsed;
+        GameVisibility = mode.EndsWith("_match", StringComparison.Ordinal) ? Visibility.Visible : Visibility.Collapsed;
+        InviteVisibility = string.IsNullOrWhiteSpace(InviteKey) ? Visibility.Collapsed : Visibility.Visible;
+        ReplacementInviteVisibility = string.IsNullOrWhiteSpace(ReplacementInviteKey) ? Visibility.Collapsed : Visibility.Visible;
+        IsLobbyScreen = LobbyVisibility == Visibility.Visible;
+        IsGameScreen = GameVisibility == Visibility.Visible;
+        IsMenuScreen = !IsLobbyScreen && !IsGameScreen;
     }
 
-    ~AppShellViewModel()
+    private void UpdateLobby(LobbySnapshot? lobby)
     {
-        Dispose(false);
-    }
-
-    private void RebuildLobbySlots()
-    {
-        LobbySlots.Clear();
-        if (UiState?.LobbySlots != null && UiState.LobbySlots.Count > 0)
+        List<LobbySeatViewModel> seats = [];
+        Dictionary<int, int> seatProtocolVersions = _bundle.Connection.Network?.SeatProtocolVersions ?? [];
+        if (lobby is not null)
         {
-            foreach (var slot in UiState.LobbySlots)
+            for (int i = 0; i < lobby.NumPlayers; i++)
             {
-                LobbySlots.Add(new LobbySlotItem
+                string name = i < lobby.Slots.Count ? lobby.Slots[i] : string.Empty;
+                bool connected = lobby.ConnectedSeats.GetValueOrDefault(i) || i == 0 && (lobby.HostSeat == 0 || lobby.AssignedSeat == 0);
+                seats.Add(new LobbySeatViewModel
                 {
-                    Seat = slot.Seat,
-                    Label = string.IsNullOrWhiteSpace(slot.Name) ? "Aguardando..." : slot.Name!,
-                    IsAssigned = slot.IsOccupied,
-                    IsHost = slot.IsHost,
-                    IsConnected = slot.IsConnected,
-                    IsLocal = slot.IsLocal,
-                    IsProvisionalCpu = slot.IsProvisionalCpu,
-                    RuntimeStatus = slot.Status,
-                    CanVote = slot.CanVoteHost,
-                    CanReplace = slot.CanRequestReplacement,
+                    SeatIndex = i,
+                    Name = string.IsNullOrWhiteSpace(name) ? "assento vazio" : name,
+                    IsAssigned = i == lobby.AssignedSeat,
+                    IsConnected = connected,
+                    IsHost = i == lobby.HostSeat,
+                    IsEmpty = string.IsNullOrWhiteSpace(name),
+                    ProtocolVersion = seatProtocolVersions.GetValueOrDefault(i),
+                    StatusText = connected ? "conectado" : lobby.Started && !string.IsNullOrWhiteSpace(name) ? "aguardando reconexão" : "livre",
+                });
+            }
+        }
+
+        LobbySeats.ReplaceWith(seats);
+        CandidateSeats.ReplaceWith(seats.Where(s => !s.IsEmpty));
+        ReplacementSeats.ReplaceWith(seats.Where(s => s.SeatIndex > 0 && !s.IsEmpty));
+        SelectedCandidateSeat = CandidateSeats.FirstOrDefault(s => s.SeatIndex == SelectedCandidateSeat?.SeatIndex) ?? CandidateSeats.FirstOrDefault();
+        SelectedReplacementSeat = ReplacementSeats.FirstOrDefault(s => s.SeatIndex == SelectedReplacementSeat?.SeatIndex) ?? ReplacementSeats.FirstOrDefault();
+        CanStartHostedMatch = _bundle.Mode == "host_lobby" && lobby is not null && lobby.Slots.Count == lobby.NumPlayers && lobby.Slots.All(s => !string.IsNullOrWhiteSpace(s));
+    }
+
+    private void UpdateTable(MatchSnapshot? match)
+    {
+        RoundCardsPile.Clear();
+
+        if (match is null || match.Players.Count == 0)
+        {
+            BottomSeat = new TableSeatViewModel();
+            TopSeat = new TableSeatViewModel();
+            LeftSeat = new TableSeatViewModel();
+            RightSeat = new TableSeatViewModel();
+            LeftSeatVisibility = Visibility.Collapsed;
+            RightSeatVisibility = Visibility.Collapsed;
+            TopSeatVisibility = Visibility.Collapsed;
+            HandSummary = string.Empty;
+            PendingRaiseText = string.Empty;
+            return;
+        }
+
+        int localIndex = match.CurrentPlayerIdx >= 0 ? match.CurrentPlayerIdx : 0;
+        List<TableSeatViewModel> layout = BuildTableLayout(match, localIndex);
+        BottomSeat = layout[0];
+        TopSeat = layout[1];
+        LeftSeat = layout[2];
+        RightSeat = layout[3];
+        LocalSeatTitle = BottomSeat.Name;
+        TopSeatVisibility = TopSeat.IsVisible ? Visibility.Visible : Visibility.Collapsed;
+        LeftSeatVisibility = LeftSeat.IsVisible ? Visibility.Visible : Visibility.Collapsed;
+        RightSeatVisibility = RightSeat.IsVisible ? Visibility.Visible : Visibility.Collapsed;
+        HandSummary = $"Mão local: {BottomSeat.HandCount} cartas  |  Rodada {match.CurrentHand.Round + 1}";
+        PendingRaiseText = BuildRaiseSummary(match);
+
+        if (match.CurrentHand?.RoundCards is { Count: > 0 } played)
+        {
+            for (int i = 0; i < played.Count; i++)
+            {
+                RoundCardsPile.Add(new HandCardViewModel
+                {
+                    Card = played[i].Card,
+                    IsFaceUp = !string.IsNullOrEmpty(played[i].Card?.Rank),
+                    Scale = 0.9,
+                    Rotation = i * 15 - 10,
+                    TranslateX = i * 15 - 5,
+                    TranslateY = i * -10
                 });
             }
         }
     }
 
-    private void RebuildLogs()
+    private void UpdateActionState(SnapshotBundle bundle)
     {
-        ReplaceCollection(MatchLogEntries, Snapshot?.Logs);
-        ReplaceCollection(EventLogEntries, DiagnosticsState?.EventLog);
+        MatchSnapshot? match = bundle.Match;
+        bool hasMatch = match is not null;
+        HasActiveSession = bundle.Mode != "idle";
+        CanResetSession = HasActiveSession;
+        CanSendChat = HasActiveSession;
+        CanStartNewHand = hasMatch && (bundle.Mode == "offline_match" || bundle.Mode == "host_match");
+        CanRequestTruco = hasMatch &&
+            BottomSeat.IsCurrentTurn &&
+            (match!.CanAskTruco || match.PendingRaiseFor == BottomSeat.TeamIndex);
+        CanAnswerRaise = hasMatch && match!.PendingRaiseFor != -1 && BottomSeat.TeamIndex == match.PendingRaiseFor;
+        CanPlayCards = hasMatch && BottomSeat.IsCurrentTurn && match!.PendingRaiseFor == -1 && BottomSeat.HandCount > 0;
     }
 
-    private void ReplaceCollection(ObservableCollection<string> target, IEnumerable<string>? source)
+    private void HandleEvent(AppEvent appEvent)
     {
-        target.Clear();
-        if (source == null)
+        switch (appEvent.Kind)
         {
+            case "error":
+                AppError? error = DeserializePayload<AppError>(appEvent.Payload);
+                if (error is not null)
+                {
+                    ErrorBannerText = error.Message;
+                    AddChatEntry("error", error.Message, "#FF7070", appEvent.Timestamp);
+                }
+                break;
+            case "locale_changed":
+                if (appEvent.Payload.TryGetProperty("locale", out JsonElement localeEl))
+                {
+                    string locale = localeEl.GetString() ?? LocaleCode;
+                    LocaleCode = locale;
+                    LocaleDisplayText = BuildLocaleDisplayText(locale);
+                    AddChatEntry("system", $"Idioma alterado para {BuildLocaleName(locale)}.", "#80C8FF", appEvent.Timestamp);
+                }
+                break;
+            case "chat":
+                string author = appEvent.Payload.TryGetProperty("author", out JsonElement authorEl) ? authorEl.GetString() ?? "chat" : "chat";
+                string text = appEvent.Payload.TryGetProperty("text", out JsonElement textEl) ? textEl.GetString() ?? string.Empty : string.Empty;
+                AddChatEntry("chat", $"{author}: {text}", "#7EE787", appEvent.Timestamp);
+                break;
+            case "system":
+                string systemText = appEvent.Payload.TryGetProperty("text", out JsonElement systemEl) ? systemEl.GetString() ?? string.Empty : appEvent.Payload.ToString();
+                InfoBannerText = systemText;
+                AddChatEntry("system", systemText, "#80C8FF", appEvent.Timestamp);
+                break;
+            case "host_created":
+                if (appEvent.Payload.TryGetProperty("invite_key", out JsonElement inviteEl))
+                {
+                    InviteKey = inviteEl.GetString() ?? string.Empty;
+                    AddChatEntry("system", "Convite do host atualizado.", "#80C8FF", appEvent.Timestamp);
+                }
+                break;
+            case "replacement_invite":
+                if (appEvent.Payload.TryGetProperty("invite_key", out JsonElement replacementEl))
+                {
+                    ReplacementInviteKey = replacementEl.GetString() ?? string.Empty;
+                    AddChatEntry("system", "Convite de reposição gerado.", "#FFD166", appEvent.Timestamp);
+                }
+                break;
+            case "client_joined":
+                AddChatEntry("system", "Jogador entrou na sessão.", "#80C8FF", appEvent.Timestamp);
+                break;
+            case "lobby_updated":
+                AddChatEntry("system", "Lobby atualizado.", "#80C8FF", appEvent.Timestamp);
+                break;
+            case "match_updated":
+                AddChatEntry("system", "Mesa atualizada.", "#80C8FF", appEvent.Timestamp);
+                break;
+            case "failover_promoted":
+            case "failover_rejoined":
+            case "session_ready":
+            case "match_started":
+            case "session_closed":
+                AddChatEntry("system", BuildSystemEventMessage(appEvent.Kind), "#80C8FF", appEvent.Timestamp);
+                break;
+        }
+    }
+
+    private void HandleDispatchResult(AppError? error, string successMessage)
+    {
+        if (error is null)
+        {
+            ErrorBannerText = string.Empty;
+            InfoBannerText = successMessage;
             return;
         }
 
-        foreach (var item in source.TakeLast(80))
-        {
-            target.Add(item);
-        }
+        ErrorBannerText = error.Message;
     }
 
-    private void SetLocaleFromSetup()
+    private void SetMenuPane(string pane)
     {
-        var locale = SetupLocaleIndex == 1 ? GameConstants.SupportedLocales[1] : GameConstants.SupportedLocales[0];
-        _stringProvider.SetLocale(locale);
-        DispatchIntent(IntentKinds.SetLocale, new SetLocaleIntentPayload
-        {
-            Locale = locale,
-        }, refresh: false);
+        _menuPane = pane;
+        RefreshSnapshot(_bundle, preserveMenuPane: true);
     }
 
-    private void DispatchIntent<TPayload>(string kind, TPayload? payload, bool refresh = true)
+    private static string BuildVersionText(CoreVersions versions)
+        => $"Core API {versions.CoreApiVersion}  |  Protocolo {versions.ProtocolVersion}  |  Snapshot {versions.SnapshotSchemaVersion}";
+
+    private static string BuildLocaleDisplayText(string locale)
+        => $"Idioma: {BuildLocaleName(locale)}";
+
+    private static string BuildLocaleName(string locale)
+        => locale == "en-US" ? "English (US)" : "Português (BR)";
+
+    private static string BuildSystemEventMessage(string kind)
+        => kind switch
+        {
+            "session_ready" => "Sessão pronta.",
+            "match_started" => "Partida iniciada.",
+            "session_closed" => "Sessão encerrada.",
+            "failover_promoted" => "Failover promovido.",
+            "failover_rejoined" => "Reconectado após failover.",
+            _ => kind.Replace('_', ' '),
+        };
+
+    private static string BuildStatusText(SnapshotBundle bundle)
     {
-        try
+        if (bundle.Connection.LastError is not null)
         {
-            var response = _core.Dispatch(JsonSerializer.Serialize(new AppIntentEnvelope<TPayload>
-            {
-                Kind = kind,
-                Payload = payload,
-            }, JsonOptions.Default));
-            CaptureActionError(response);
-            if (refresh)
-            {
-                RefreshSnapshot();
-            }
-        }
-        catch (Exception ex)
-        {
-            LastActionError = ex.Message;
-            LastActionErrorCode = "";
-            Debug.WriteLine($"Dispatch failed: {ex.Message}");
-        }
-    }
-
-    private void CaptureActionError(string? response)
-    {
-        if (string.IsNullOrWhiteSpace(response))
-        {
-            LastActionError = "";
-            LastActionErrorCode = "";
-            return;
+            return $"{bundle.Mode} com erro";
         }
 
-        try
+        return bundle.Mode switch
         {
-            var error = JsonSerializer.Deserialize<AppError>(response, JsonOptions.Default);
-            if (!string.IsNullOrWhiteSpace(error?.Message))
-            {
-                LastActionError = error.Message ?? "";
-                LastActionErrorCode = error.Code ?? "";
-                return;
-            }
-        }
-        catch (JsonException)
-        {
-        }
-
-        LastActionError = "";
-        LastActionErrorCode = "";
-    }
-
-    private void AppendEvent(AppEvent ev)
-    {
-        var line = FormatEventLine(ev);
-        if (string.IsNullOrWhiteSpace(line))
-        {
-            return;
-        }
-
-        EventLogEntries.Add(line);
-        TrimCollection(EventLogEntries, 80);
-
-        if (Mode == "host_lobby" || Mode == "client_lobby")
-        {
-            LobbyEventEntries.Add(line);
-            TrimCollection(LobbyEventEntries, 80);
-        }
-    }
-
-    private string FormatEventLine(AppEvent ev)
-    {
-        var stamp = FormatTimestamp(ev.Timestamp);
-        var payload = ev.Payload;
-        return ev.Kind switch
-        {
-            "chat" => $"{stamp}{ReadPayloadString(payload, "author", "?")}: {ReadPayloadString(payload, "text")}",
-            "system" => $"{stamp}{ReadPayloadString(payload, "text", "system")}",
-            "replacement_invite" => $"{stamp}invite: {ReadPayloadString(payload, "invite_key")}",
-            "error" => $"{stamp}error: {ReadPayloadString(payload, "message")}",
-            "lobby_updated" => $"{stamp}lobby updated",
-            "match_updated" => $"{stamp}match updated",
-            _ => ""
+            "idle" => "Pronto",
+            "offline_match" => "Partida offline em andamento",
+            "host_lobby" => "Lobby do host",
+            "host_match" => "Partida online como host",
+            "client_lobby" => "Lobby conectado",
+            "client_match" => "Partida online conectada",
+            _ => bundle.Mode,
         };
     }
 
-    private static string ReadPayloadString(JsonElement? payload, string property, string fallback = "")
+    private static string BuildConnectionDetails(SnapshotBundle bundle)
     {
-        if (payload is JsonElement element &&
-            element.ValueKind == JsonValueKind.Object &&
-            element.TryGetProperty(property, out var value) &&
-            value.ValueKind == JsonValueKind.String)
-        {
-            return value.GetString() ?? fallback;
-        }
-
-        return fallback;
+        NetworkSnapshot? network = bundle.Connection.Network;
+        string transport = FormatTransport(network?.Transport);
+        string supported = FormatSupportedVersions(network);
+        string compatibility = BuildCompatibilitySummary(bundle, network);
+        return $"Status: {bundle.Connection.Status}  |  Rede: {transport}  |  Compat: {compatibility}  |  Build: {supported}";
     }
 
-    private static string FormatTimestamp(string timestamp)
+    private static string BuildCompatibilitySummary(SnapshotBundle bundle, NetworkSnapshot? network)
     {
-        if (DateTimeOffset.TryParse(timestamp, out var parsed))
+        if (network is null)
         {
-            return $"[{parsed.ToLocalTime():HH:mm:ss}] ";
+            return "offline";
         }
 
-        return "";
+        if (bundle.Connection.IsHost)
+        {
+            IEnumerable<string> seatVersions = network.SeatProtocolVersions
+                .Values
+                .Where(version => version > 0)
+                .Distinct()
+                .OrderByDescending(version => version)
+                .Select(version => $"v{version}");
+            string joined = string.Join("/", seatVersions);
+            if (string.IsNullOrWhiteSpace(joined))
+            {
+                joined = FormatSupportedVersions(network);
+            }
+            return network.MixedProtocolSession ? $"misto {joined}" : joined;
+        }
+
+        return network.NegotiatedProtocolVersion > 0
+            ? $"negociado v{network.NegotiatedProtocolVersion}"
+            : FormatSupportedVersions(network);
     }
 
-    private static void TrimCollection<T>(ObservableCollection<T> collection, int maxCount)
+    private static string FormatSupportedVersions(NetworkSnapshot? network)
     {
-        while (collection.Count > maxCount)
+        if (network is null || network.SupportedProtocolVersions.Count == 0)
         {
-            collection.RemoveAt(0);
+            return "-";
+        }
+        return string.Join("/", network.SupportedProtocolVersions.Select(version => $"v{version}"));
+    }
+
+    private static string FormatTransport(string? transport)
+        => transport == "relay_quic_v2" ? "Relay QUIC v2" : "TCP + TLS";
+
+    private static string BuildRaiseSummary(MatchSnapshot match)
+    {
+        if (match.PendingRaiseFor == -1)
+        {
+            return string.Empty;
+        }
+
+        return $"Truco pendente: time {match.PendingRaiseFor} responde por {match.PendingRaiseTo}";
+    }
+
+    private static string BuildCurrentTurnText(MatchSnapshot? match, TableSeatViewModel bottomSeat)
+    {
+        if (match is null)
+        {
+            return string.Empty;
+        }
+
+        if (match.PendingRaiseFor != -1 && bottomSeat.TeamIndex == match.PendingRaiseFor)
+        {
+            return "Seu time responde ao truco";
+        }
+
+        return bottomSeat.IsCurrentTurn ? "Sua vez" : "Aguardando jogada";
+    }
+
+    private static List<TableSeatViewModel> BuildTableLayout(MatchSnapshot match, int localIndex)
+    {
+        Dictionary<int, PlayedCardState> playedByPlayerId = (match.CurrentHand?.RoundCards ?? [])
+            .ToDictionary(card => card.PlayerId, card => card);
+
+        int playerCount = match.Players.Count;
+        TableSeatViewModel[] seats = [new(), new(), new(), new()];
+        for (int relative = 0; relative < Math.Min(playerCount, 4); relative++)
+        {
+            int playerIndex = (localIndex + relative) % playerCount;
+            PlayerState player = match.Players[playerIndex];
+            TableSeatViewModel seat = ToSeatViewModel(playerIndex, relative, player, match, playedByPlayerId);
+            switch (relative)
+            {
+                case 0:
+                    seats[0] = seat;
+                    break;
+                case 1:
+                    seats[playerCount == 2 ? 1 : 3] = seat;
+                    break;
+                case 2:
+                    seats[1] = seat;
+                    break;
+                case 3:
+                    seats[2] = seat;
+                    break;
+            }
+        }
+
+        return seats.ToList();
+    }
+
+    private static TableSeatViewModel ToSeatViewModel(int playerIndex, int relativeIndex, PlayerState player, MatchSnapshot match, IReadOnlyDictionary<int, PlayedCardState> playedByPlayerId)
+    {
+        string role = relativeIndex switch
+        {
+            0 => "Você",
+            1 when match.NumPlayers == 2 => "Oponente",
+            1 => "Direita",
+            2 => "Oponente",
+            3 => "Esquerda",
+            _ => string.Empty,
+        };
+
+        return new TableSeatViewModel
+        {
+            SeatIndex = playerIndex,
+            PlayerId = player.Id,
+            Name = player.Name,
+            RoleLabel = role,
+            TeamIndex = player.Team,
+            TeamLabel = $"Time {player.Team}",
+            IsVisible = true,
+            IsLocal = relativeIndex == 0,
+            IsCurrentTurn = player.Id == match.TurnPlayer,
+            IsCpu = player.Cpu,
+            IsProvisionalCpu = player.ProvisionalCpu,
+            HandCount = player.Hand.Count,
+            HandCards = BuildHandVisuals(player.Hand, relativeIndex == 0),
+            PlayedCard = playedByPlayerId.TryGetValue(player.Id, out PlayedCardState? played) ? played.Card : null,
+            PlayedCardViewModel = playedByPlayerId.TryGetValue(player.Id, out PlayedCardState? playedCard)
+                ? new HandCardViewModel
+                {
+                    Card = playedCard.FaceDown ? new CardState() : playedCard.Card,
+                    IsFaceUp = !playedCard.FaceDown,
+                    Scale = 0.85,
+                    Rotation = 0
+                }
+                : null
+        };
+    }
+
+    private static List<HandCardViewModel> BuildHandVisuals(IReadOnlyList<CardState> cards, bool isLocalSeat)
+    {
+        if (cards.Count == 0)
+        {
+            return [];
+        }
+
+        int visibleCount = isLocalSeat ? cards.Count : Math.Min(cards.Count, 3);
+        double rotationStep = isLocalSeat ? 9.0 : 7.0;
+        double scale = isLocalSeat ? 1.0 : 0.72;
+        double midpoint = (visibleCount - 1) / 2.0;
+        List<HandCardViewModel> result = [];
+
+        for (int index = 0; index < visibleCount; index++)
+        {
+            double offset = index - midpoint;
+            result.Add(new HandCardViewModel
+            {
+                Card = isLocalSeat ? cards[index] : new CardState { Rank = string.Empty, Suit = string.Empty },
+                IsFaceUp = isLocalSeat,
+                Rotation = offset * rotationStep,
+                Scale = scale,
+            });
+        }
+
+        return result;
+    }
+
+    private static T? DeserializePayload<T>(JsonElement payload)
+    {
+        if (payload.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
+        {
+            return default;
+        }
+
+        return JsonSerializer.Deserialize<T>(payload.GetRawText(), new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+    }
+
+    private void AddChatEntry(string channel, string text, string accent, string timestamp)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return;
+        }
+
+        ChatFeed.Add(new ActivityEntry
+        {
+            Channel = channel,
+            Text = text,
+            Accent = accent,
+            Timestamp = string.IsNullOrWhiteSpace(timestamp) ? DateTime.Now.ToString("HH:mm:ss", CultureInfo.InvariantCulture) : timestamp,
+        });
+
+        while (ChatFeed.Count > 200)
+        {
+            ChatFeed.RemoveAt(0);
         }
     }
-}
 
-public class LobbySlotItem
-{
-    public int Seat { get; set; }
-    public string Label { get; set; } = "";
-    public bool IsAssigned { get; set; }
-    public bool IsHost { get; set; }
-    public bool IsConnected { get; set; }
-    public bool IsLocal { get; set; }
-    public bool IsProvisionalCpu { get; set; }
-    public string? RuntimeStatus { get; set; }
-    public bool CanVote { get; set; }
-    public bool CanReplace { get; set; }
-    public string StatusText => IsProvisionalCpu ? "CPU" : (IsHost ? "HOST" : (IsLocal ? "VOCE" : (!string.IsNullOrWhiteSpace(RuntimeStatus) ? RuntimeStatus!.ToUpperInvariant() : (IsConnected ? "ONLINE" : "OFFLINE"))));
-}
+    private static void CopyTextToClipboard(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return;
+        }
 
-public static class StringProviderKeys
-{
-    public const string StatusWaiting = "status.waiting";
-    public const string StatusPlaying = "status.playing";
-    public const string TurnYours = "turn.yours";
-    public const string TurnWaiting = "turn.waiting";
-    public const string TurnFormat = "turn.format";
-    public const string TurnCpu = "turn.cpu";
-    public const string RoundFormat = "round.format";
-    public const string TrucoLabel = "truco.label";
-    public const string SeisLabel = "seis.label";
-    public const string NoveLabel = "nove.label";
-    public const string DozeLabel = "doze.label";
-    public const string ResultVictory = "result.victory";
-    public const string ResultDefeat = "result.defeat";
-    public const string PlayerYou = "player.you";
-    public const string PlayerHuman = "player.human";
-    public const string PlayerCpu = "player.cpu";
-    public const string PlayerCpuOpponent = "player.cpu.opponent";
-    public const string PlayerCpuRight = "player.cpu.right";
-    public const string PlayerCpuPartner = "player.cpu.partner";
-    public const string PlayerCpuLeft = "player.cpu.left";
+        DataPackage package = new();
+        package.SetText(text);
+        Clipboard.SetContent(package);
+    }
+
+    private static string NormalizeName(string? value)
+        => string.IsNullOrWhiteSpace(value) ? "Jogador" : value.Trim();
+
+    private static string? NullIfWhitespace(string? value)
+        => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    private static string FormatSeatIndex(int seatIndex)
+        => seatIndex < 0 ? "-" : (seatIndex + 1).ToString(CultureInfo.InvariantCulture);
+
+    private static void NormalizeBundle(SnapshotBundle bundle)
+    {
+        bundle.Lobby ??= new LobbySnapshot();
+        bundle.Lobby.Slots ??= [];
+        bundle.Lobby.ConnectedSeats ??= [];
+        if (bundle.Connection.Network is not null)
+        {
+            bundle.Connection.Network.SupportedProtocolVersions ??= [];
+            bundle.Connection.Network.SeatProtocolVersions ??= [];
+        }
+
+        if (bundle.Match is null)
+        {
+            bundle.Diagnostics.EventLog ??= [];
+            return;
+        }
+
+        bundle.Match.Players ??= [];
+        bundle.Match.Logs ??= [];
+        bundle.Match.MatchPoints ??= [];
+        bundle.Match.CurrentHand ??= new HandState();
+        bundle.Match.CurrentHand.RoundCards ??= [];
+        bundle.Match.CurrentHand.TrickResults ??= [];
+        bundle.Match.CurrentHand.TrickWins ??= [];
+        foreach (PlayerState player in bundle.Match.Players)
+        {
+            player.Hand ??= [];
+        }
+
+        bundle.Diagnostics.EventLog ??= [];
+    }
 }

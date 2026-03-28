@@ -1,0 +1,25 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 18
+VisualStudioVersion = 18.4.11605.240 stable
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TrucoWinUI", "TrucoWinUI.csproj", "{5FBFC1F3-C560-9D1E-9202-414D97D8E8B8}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|x64 = Debug|x64
+		Release|x64 = Release|x64
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{5FBFC1F3-C560-9D1E-9202-414D97D8E8B8}.Debug|x64.ActiveCfg = Debug|x64
+		{5FBFC1F3-C560-9D1E-9202-414D97D8E8B8}.Debug|x64.Build.0 = Debug|x64
+		{5FBFC1F3-C560-9D1E-9202-414D97D8E8B8}.Release|x64.ActiveCfg = Release|x64
+		{5FBFC1F3-C560-9D1E-9202-414D97D8E8B8}.Release|x64.Build.0 = Release|x64
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {67A70492-9887-4298-B616-A013B896CCDB}
+	EndGlobalSection
+EndGlobal
