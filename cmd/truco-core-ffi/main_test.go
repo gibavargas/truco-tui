@@ -20,17 +20,50 @@ func TestVersionsJSONMatchesRuntimeContract(t *testing.T) {
 	}
 }
 
-func TestDispatchIntentJSONRejectsInvalidPayload(t *testing.T) {
+func TestDispatchIntentJSONErrors(t *testing.T) {
 	handle := createRuntimeHandle()
 	defer destroyRuntimeHandle(handle)
 
-	raw := consumeCString(dispatchIntentJSON(handle, "{invalid"))
-	var out map[string]string
-	if err := json.Unmarshal([]byte(raw), &out); err != nil {
-		t.Fatalf("unmarshal invalid_json result: %v", err)
+	tests := []struct {
+		name    string
+		handle  uintptr
+		payload string
+		want    string
+	}{
+		{
+			name:    "invalid json",
+			handle:  handle,
+			payload: "{invalid",
+			want:    "invalid_json",
+		},
+		{
+			name:    "invalid handle",
+			handle:  999,
+			payload: `{"kind": "PlayCard"}`,
+			want:    "invalid_handle",
+		},
+		{
+			name:    "dispatch failed",
+			handle:  handle,
+			payload: `{"kind": "invalid_intent"}`,
+			want:    "dispatch_failed",
+		},
 	}
-	if out["code"] != "invalid_json" {
-		t.Fatalf("code = %q, want invalid_json", out["code"])
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			raw := consumeCString(dispatchIntentJSON(tt.handle, tt.payload))
+			if raw == "" {
+				t.Fatalf("expected error JSON, got nil/empty string")
+			}
+			var out map[string]string
+			if err := json.Unmarshal([]byte(raw), &out); err != nil {
+				t.Fatalf("unmarshal result: %v", err)
+			}
+			if out["code"] != tt.want {
+				t.Fatalf("code = %q, want %q", out["code"], tt.want)
+			}
+		})
 	}
 }
 
