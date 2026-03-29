@@ -1,6 +1,5 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using TrucoWinUI.Services;
 
 namespace TrucoWinUI.Models;
 
@@ -90,58 +89,6 @@ public static class GameStateHelper
         return IsMyTurn(snapshot) ? "SUA VEZ" : "AGUARDANDO...";
     }
 
-    public static string GetLobbyStatusText(LobbySnapshot? lobby, ConnectionSnapshot? connection)
-    {
-        if (!string.IsNullOrWhiteSpace(connection?.Status))
-        {
-            return connection.Status!;
-        }
-
-        if (lobby?.Started == true)
-        {
-            return "partida iniciada";
-        }
-
-        var filledSeats = lobby?.Slots?.Count(slot => !string.IsNullOrWhiteSpace(slot)) ?? 0;
-        var totalSeats = lobby?.NumPlayers ?? lobby?.Slots?.Count ?? 0;
-        return totalSeats > 0 ? $"{filledSeats}/{totalSeats} lugares ocupados" : "aguardando jogadores";
-    }
-
-    public static string GetMatchStatusText(GameSnapshot? snapshot, UIStateSnapshot? ui, int myTeamId, IStringProvider strings)
-    {
-        if (snapshot == null)
-        {
-            return strings.Get("status.waiting");
-        }
-
-        if (snapshot.MatchFinished == true)
-        {
-            return GetMatchResultText(snapshot, myTeamId);
-        }
-
-        if (ui?.Actions?.MustRespond == true)
-        {
-            return $"Resposta pendente: {GetTrucoLabel(snapshot.PendingRaiseTo)}";
-        }
-
-        if (snapshot.PendingRaiseFor == myTeamId)
-        {
-            return $"Seu time decide {GetTrucoLabel(snapshot.PendingRaiseTo)}";
-        }
-
-        if (ui?.Actions?.CanPlayCard == true)
-        {
-            return strings.Get("turn.yours");
-        }
-
-        if (snapshot.TurnPlayer is int turnPlayer)
-        {
-            return PlayerHelper.GetPlayerName(snapshot, turnPlayer);
-        }
-
-        return strings.Get("turn.waiting");
-    }
-
     public static string GetRoundText(GameSnapshot? snapshot)
     {
         return $"Rodada {snapshot?.CurrentHand?.Round ?? 1}/3";
@@ -209,11 +156,7 @@ public static class JsonOptions
     {
         get
         {
-            _default ??= new JsonSerializerOptions
-            {
-                PropertyNameCaseInsensitive = true,
-                DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
-            };
+            _default ??= new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
             return _default;
         }
     }

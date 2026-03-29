@@ -335,7 +335,7 @@ func TestHeartbeatTimeoutEvictsIdleClient(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DecodeInviteKey: %v", err)
 	}
-	conn, _, _, err := dialAndJoin(inv, "IdleGuest", "auto", "", 1)
+	conn, _, _, _, err := dialAndJoin(inv, "IdleGuest", "auto", "", 1, supportedProtocolVersions(), nil)
 	if err != nil {
 		t.Fatalf("dialAndJoin: %v", err)
 	}
@@ -603,6 +603,7 @@ func TestRotateFailoverSnapshot(t *testing.T) {
 		},
 		TurnPlayer:       1,
 		CurrentPlayerIdx: 3,
+		LastTrickWinner:  3,
 	}
 
 	rot, err := RotateFailoverSnapshot(s, 2)
@@ -617,6 +618,9 @@ func TestRotateFailoverSnapshot(t *testing.T) {
 	}
 	if len(rot.CurrentHand.RoundCards) != 2 || rot.CurrentHand.RoundCards[0].PlayerID != 2 || rot.CurrentHand.RoundCards[1].PlayerID != 0 {
 		t.Fatalf("unexpected rotated round cards: %+v", rot.CurrentHand.RoundCards)
+	}
+	if rot.LastTrickWinner != 1 {
+		t.Fatalf("unexpected rotated last trick winner: %d", rot.LastTrickWinner)
 	}
 }
 

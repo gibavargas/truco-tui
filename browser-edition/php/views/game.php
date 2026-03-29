@@ -17,12 +17,27 @@ $lobby = $bundle['lobby'] ?? [];
 $ui = $bundle['ui'] ?? [];
 $connection = $bundle['connection'] ?? [];
 $diagnostics = $bundle['diagnostics'] ?? [];
+$network = $connection['network'] ?? [];
 $slotStates = $ui['lobby_slots'] ?? [];
 $actions = $ui['actions'] ?? [];
 $locale = $_SESSION['locale'] ?? 'pt-BR';
 $runtimeStateValid = (bool) ($_SESSION['runtime_state_valid'] ?? true);
 $connectionStatus = (string) ($connection['status'] ?? $mode);
 $roleLabel = trim((string) ($lobby['role'] ?? ''));
+$transportLabel = (string) ($network['transport'] ?? '-');
+$protocolLabel = '-';
+if (!empty($network['negotiated_protocol_version'])) {
+    $protocolLabel = 'v' . (int) $network['negotiated_protocol_version'];
+} elseif (!empty($network['seat_protocol_versions']) && is_array($network['seat_protocol_versions'])) {
+    $versions = array_values(array_unique(array_map('intval', $network['seat_protocol_versions'])));
+    $versions = array_values(array_filter($versions, static fn($version) => $version > 0));
+    sort($versions);
+    if (count($versions) > 1) {
+        $protocolLabel = tr('connection_protocol_mixed') . ' (' . implode(', ', array_map(static fn($version) => 'v' . $version, $versions)) . ')';
+    } elseif (count($versions) === 1) {
+        $protocolLabel = 'v' . $versions[0];
+    }
+}
 $eventFeedLines = [];
 foreach (array_reverse(array_slice($events, -12)) as $ev) {
     $eventFeedLines[] = '[' . substr((string) ($ev['timestamp'] ?? ''), 11, 8) . '] ' . formatEventLine($ev);
@@ -360,13 +375,14 @@ if (!$runtimeStateValid) {
                     $cardPos = $seatByID[$ownerID] ?? 'top';
                     $ownerTeam = (int) (($playersByID[$ownerID]['Team'] ?? 0));
                     $ownerClass = $ownerTeam === $myTeam ? 'ally' : 'enemy';
+                    $isFaceDown = !empty($pc['FaceDown']);
                     if ($ownerID === $myID) {
                         $ownerClass = 'self';
                     }
                     ?>
                     <div class="board-played board-played-<?= $cardPos ?> <?= $index === count($roundCards) - 1 ? 'is-last' : '' ?> <?= $lastPlayedPlayerID === $ownerID ? 'is-current' : '' ?> <?= $ownerClass ?>">
                         <span class="board-played-owner"><?= htmlspecialchars($ownerName) ?></span>
-                        <?= renderCard($pc['Card']) ?>
+                        <?= $isFaceDown ? renderCardBack(false) : renderCard($pc['Card']) ?>
                     </div>
                 <?php endforeach; ?>
             </div>
@@ -410,14 +426,19 @@ if (!$runtimeStateValid) {
 
             <div class="my-hand board-hand" role="list">
                 <?php foreach ($myCards as $idx => $card): ?>
+                    <?php $cardActionLabel = tr('card_action_play', cardLabel($card)); ?>
                     <?php if ($canPlayCard): ?>
                         <form method="post" action="index.php" class="card-form" data-ajax="true">
                             <input type="hidden" name="action" value="play">
                             <input type="hidden" name="cardIndex" value="<?= htmlspecialchars($idx) ?>">
-                            <button type="submit" class="card-btn" role="listitem"><?= renderCard($card, false, (string) ($idx + 1)) ?></button>
+                            <button type="submit" class="card-btn" role="listitem" aria-label="<?= htmlspecialchars($cardActionLabel) ?>" title="<?= htmlspecialchars($cardActionLabel) ?>"><?= renderCard($card, false, (string) ($idx + 1)) ?></button>
+                            <?php if (($hand['Round'] ?? 1) >= 2): ?>
+                                <?php $faceDownLabel = tr('card_action_play_face_down', cardLabel($card)); ?>
+                                <button type="submit" name="faceDown" value="1" class="btn btn-neutral btn-face-down" aria-label="<?= htmlspecialchars($faceDownLabel) ?>" title="<?= htmlspecialchars($faceDownLabel) ?>">Virada</button>
+                            <?php endif; ?>
                         </form>
                     <?php else: ?>
-                        <div class="card-btn disabled-card" role="listitem"><?= renderCard($card, false, (string) ($idx + 1)) ?></div>
+                        <div class="card-btn disabled-card" role="listitem" aria-label="<?= htmlspecialchars(cardLabel($card)) ?>" title="<?= htmlspecialchars(cardLabel($card)) ?>"><?= renderCard($card, false, (string) ($idx + 1)) ?></div>
                     <?php endif; ?>
                 <?php endforeach; ?>
             </div>
@@ -512,6 +533,8 @@ if (!$runtimeStateValid) {
                     <div class="connection-grid">
                         <div><span><?= tr('connection_status') ?></span><strong><?= htmlspecialchars($connectionStatus) ?></strong></div>
                         <div><span><?= tr('connection_mode') ?></span><strong><?= !empty($connection['is_online']) ? tr('connection_online') : tr('connection_offline') ?></strong></div>
+                        <div><span><?= tr('connection_transport') ?></span><strong><?= htmlspecialchars($transportLabel) ?></strong></div>
+                        <div><span><?= tr('connection_protocol') ?></span><strong><?= htmlspecialchars($protocolLabel) ?></strong></div>
                         <?php if ($roleLabel !== ''): ?>
                             <div><span><?= tr('connection_role') ?></span><strong><?= htmlspecialchars($roleLabel) ?></strong></div>
                         <?php endif; ?>

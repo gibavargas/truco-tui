@@ -12,9 +12,24 @@ $ui = $bundle['ui'] ?? [];
 $slotStates = $ui['lobby_slots'] ?? [];
 $connection = $bundle['connection'] ?? [];
 $diagnostics = $bundle['diagnostics'] ?? [];
+$network = $connection['network'] ?? [];
 $inviteKey = (string) ($session['invite_key'] ?? '');
 $connectionStatus = (string) ($connection['status'] ?? ($bundle['mode'] ?? 'idle'));
 $roleLabel = trim((string) ($session['role'] ?? ''));
+$transportLabel = (string) ($network['transport'] ?? '-');
+$protocolLabel = '-';
+if (!empty($network['negotiated_protocol_version'])) {
+    $protocolLabel = 'v' . (int) $network['negotiated_protocol_version'];
+} elseif (!empty($network['seat_protocol_versions']) && is_array($network['seat_protocol_versions'])) {
+    $versions = array_values(array_unique(array_map('intval', $network['seat_protocol_versions'])));
+    $versions = array_values(array_filter($versions, static fn($version) => $version > 0));
+    sort($versions);
+    if (count($versions) > 1) {
+        $protocolLabel = tr('connection_protocol_mixed') . ' (' . implode(', ', array_map(static fn($version) => 'v' . $version, $versions)) . ')';
+    } elseif (count($versions) === 1) {
+        $protocolLabel = 'v' . $versions[0];
+    }
+}
 ?>
 <section class="panel lobby-panel">
     <div class="section-head">
@@ -103,6 +118,8 @@ $roleLabel = trim((string) ($session['role'] ?? ''));
                     <div class="connection-grid">
                         <div><span><?= tr('connection_status') ?></span><strong><?= htmlspecialchars($connectionStatus) ?></strong></div>
                         <div><span><?= tr('connection_mode') ?></span><strong><?= !empty($connection['is_online']) ? tr('connection_online') : tr('connection_offline') ?></strong></div>
+                        <div><span><?= tr('connection_transport') ?></span><strong><?= htmlspecialchars($transportLabel) ?></strong></div>
+                        <div><span><?= tr('connection_protocol') ?></span><strong><?= htmlspecialchars($protocolLabel) ?></strong></div>
                         <?php if ($roleLabel !== ''): ?>
                             <div><span><?= tr('connection_role') ?></span><strong><?= htmlspecialchars($roleLabel) ?></strong></div>
                         <?php endif; ?>

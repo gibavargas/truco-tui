@@ -2,621 +2,542 @@
     x:Class="TrucoWinUI.MainWindow"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    Title="Truco - Native Windows">
+    xmlns:converters="using:TrucoWinUI.Converters"
+    xmlns:viewModels="using:TrucoWinUI.ViewModels"
+    Title="Truco Paulista">
 
     <Window.SystemBackdrop>
         <MicaBackdrop />
     </Window.SystemBackdrop>
 
-    <Grid x:Name="RootPanel" Background="#111827">
+    <Grid x:Name="RootPanel" Loaded="RootPanel_Loaded" SizeChanged="RootPanel_SizeChanged">
+        <Grid.DataContext>
+            <viewModels:AppShellViewModel />
+        </Grid.DataContext>
         <Grid.Resources>
-            <Style x:Key="SurfaceCardStyle" TargetType="Border">
-                <Setter Property="Background" Value="#CC172033" />
-                <Setter Property="CornerRadius" Value="20" />
-                <Setter Property="BorderBrush" Value="#33556B93" />
+            <converters:BoolToVisibilityConverter x:Key="BoolToVisibilityConverter" />
+            <converters:HexToBrushConverter x:Key="HexToBrushConverter" />
+            <converters:SuitToBrushConverter x:Key="SuitToBrushConverter" />
+
+            <!-- Core mac-parity colors -->
+            <SolidColorBrush x:Key="MacTextPrimary" Color="#FFFFFFFF" />
+            <SolidColorBrush x:Key="MacTextMuted" Color="#B3FFFFFF" />
+            <SolidColorBrush x:Key="MacTextYellow" Color="#FFFFD54F" />
+            <SolidColorBrush x:Key="MacTextDark" Color="#FF4E342E" />
+
+            <LinearGradientBrush x:Key="MacWoodBackground" StartPoint="0,0" EndPoint="0,1">
+                <GradientStop Color="#5E3622" Offset="0" />
+                <GradientStop Color="#422514" Offset="1" />
+            </LinearGradientBrush>
+
+            <RadialGradientBrush x:Key="MacFeltBrush" Center="0.5,0.5" GradientOrigin="0.5,0.5" RadiusX="0.5" RadiusY="0.5">
+                <GradientStop Color="#1E7338" Offset="0" />
+                <GradientStop Color="#0D331A" Offset="1" />
+            </RadialGradientBrush>
+
+            <Style x:Key="MacPillText" TargetType="Border">
+                <Setter Property="CornerRadius" Value="14" />
+                <Setter Property="Background" Value="#80000000" />
+                <Setter Property="Padding" Value="16,6" />
+                <Setter Property="HorizontalAlignment" Value="Center" />
+            </Style>
+
+            <Style x:Key="MacScoreBadge" TargetType="Border">
+                <Setter Property="CornerRadius" Value="16" />
+                <Setter Property="Background" Value="#66000000" />
+                <Setter Property="BorderBrush" Value="#1AFFFFFF" />
                 <Setter Property="BorderThickness" Value="1" />
-                <Setter Property="Padding" Value="20" />
+                <Setter Property="Width" Value="80" />
+                <Setter Property="Height" Value="80" />
             </Style>
 
-            <Style x:Key="PrimaryButtonStyle" TargetType="Button">
-                <Setter Property="Padding" Value="18,10" />
-                <Setter Property="MinHeight" Value="44" />
+            <Style x:Key="MacStakeBadge" TargetType="Border" BasedOn="{StaticResource MacScoreBadge}">
+                <Setter Property="BorderBrush" Value="#99FFD54F" />
+                <Setter Property="BorderThickness" Value="2" />
+                <Setter Property="Width" Value="90" />
             </Style>
 
-            <Style x:Key="SidebarTitleStyle" TargetType="TextBlock">
-                <Setter Property="FontSize" Value="18" />
-                <Setter Property="FontWeight" Value="SemiBold" />
-                <Setter Property="Foreground" Value="White" />
-            </Style>
+            <DataTemplate x:Key="GameCardTemplate">
+                <Border Width="110" Height="156" CornerRadius="12" BorderBrush="#D6B16A" BorderThickness="1" Visibility="{Binding CardVisibility, FallbackValue=Collapsed}">
+                    <Border.RenderTransform>
+                        <TransformGroup>
+                            <ScaleTransform ScaleX="{Binding Scale}" ScaleY="{Binding Scale}" CenterX="55" CenterY="78" />
+                            <RotateTransform Angle="{Binding Rotation}" CenterX="55" CenterY="78" />
+                        </TransformGroup>
+                    </Border.RenderTransform>
+                    <Border.Background>
+                        <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                            <GradientStop Color="#FFFDF8" Offset="0" />
+                            <GradientStop Color="#EADCC1" Offset="1" />
+                        </LinearGradientBrush>
+                    </Border.Background>
+                    <Grid Margin="8">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
 
-            <Style x:Key="MetricValueStyle" TargetType="TextBlock">
-                <Setter Property="FontSize" Value="30" />
-                <Setter Property="FontWeight" Value="Bold" />
-                <Setter Property="Foreground" Value="White" />
+                        <Grid Visibility="{Binding IsFaceUp, Converter={StaticResource BoolToVisibilityConverter}}">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="*" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+
+                            <StackPanel Spacing="-2">
+                                <TextBlock Text="{Binding Card.Rank}" Foreground="{Binding Card.IsRed, Converter={StaticResource SuitToBrushConverter}}" FontSize="18" FontWeight="SemiBold" />
+                                <TextBlock Text="{Binding Card.SuitSymbol}" Foreground="{Binding Card.IsRed, Converter={StaticResource SuitToBrushConverter}}" FontSize="14" />
+                            </StackPanel>
+
+                            <Grid Grid.Row="1">
+                                <TextBlock Text="{Binding Card.SuitSymbol}" FontSize="52" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="{Binding Card.IsRed, Converter={StaticResource SuitToBrushConverter}}" Opacity="0.8"/>
+                            </Grid>
+
+                            <StackPanel Grid.Row="2" HorizontalAlignment="Right" Spacing="-2">
+                                <StackPanel.RenderTransform>
+                                    <RotateTransform Angle="180" />
+                                </StackPanel.RenderTransform>
+                                <TextBlock Text="{Binding Card.Rank}" Foreground="{Binding Card.IsRed, Converter={StaticResource SuitToBrushConverter}}" FontSize="18" FontWeight="SemiBold" HorizontalAlignment="Right" />
+                                <TextBlock Text="{Binding Card.SuitSymbol}" Foreground="{Binding Card.IsRed, Converter={StaticResource SuitToBrushConverter}}" FontSize="14" HorizontalAlignment="Right" />
+                            </StackPanel>
+                        </Grid>
+
+                        <Grid Visibility="{Binding IsFaceUp, Converter={StaticResource BoolToVisibilityConverter}, ConverterParameter=invert}">
+                            <Border CornerRadius="8" Background="#112433" BorderBrush="#339FC08A" BorderThickness="1">
+                                <Grid>
+                                    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="2">
+                                        <TextBlock Text="TP" FontSize="20" FontWeight="Bold" HorizontalAlignment="Center" Foreground="#F5DE9B" />
+                                    </StackPanel>
+                                </Grid>
+                            </Border>
+                        </Grid>
+                    </Grid>
+                </Border>
+            </DataTemplate>
+
+            <DataTemplate x:Key="ActivityEntryTemplate">
+                <Border CornerRadius="8" Padding="10" Background="#1A000000" Margin="0,0,0,8">
+                    <Grid ColumnSpacing="10">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Border Width="60" Height="24" CornerRadius="12" Background="{Binding Accent, Converter={StaticResource HexToBrushConverter}}">
+                            <TextBlock Text="{Binding ChannelLabel}" FontSize="10" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="#1A1110" />
+                        </Border>
+                        <StackPanel Grid.Column="1" Spacing="2">
+                            <TextBlock Text="{Binding Timestamp}" Foreground="{StaticResource MacTextMuted}" FontSize="11" />
+                            <TextBlock Text="{Binding Text}" Foreground="{StaticResource MacTextPrimary}" TextWrapping="Wrap" />
+                        </StackPanel>
+                    </Grid>
+                </Border>
+            </DataTemplate>
+
+            <DataTemplate x:Key="LogEntryTemplate">
+                <Border CornerRadius="8" Padding="10" Background="#1A000000" Margin="0,0,0,6">
+                    <TextBlock Text="{Binding}" Foreground="{StaticResource MacTextMuted}" TextWrapping="Wrap" FontSize="12"/>
+                </Border>
+            </DataTemplate>
+
+            <Style x:Key="CardButtonStyle" TargetType="Button">
+                <Setter Property="Background" Value="Transparent" />
+                <Setter Property="BorderThickness" Value="0" />
+                <Setter Property="Padding" Value="0" />
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="Button">
+                            <Grid x:Name="RootGrid" Background="Transparent">
+                                <Grid.RenderTransform>
+                                    <TranslateTransform x:Name="HoverTranslate" Y="0" />
+                                </Grid.RenderTransform>
+                                <VisualStateManager.VisualStateGroups>
+                                    <VisualStateGroup x:Name="CommonStates">
+                                        <VisualState x:Name="Normal" />
+                                        <VisualState x:Name="PointerOver">
+                                            <Storyboard>
+                                                <DoubleAnimation Storyboard.TargetName="HoverTranslate" Storyboard.TargetProperty="Y" To="-20" Duration="0:0:0.15">
+                                                    <DoubleAnimation.EasingFunction>
+                                                        <QuadraticEase EasingMode="EaseOut" />
+                                                    </DoubleAnimation.EasingFunction>
+                                                </DoubleAnimation>
+                                            </Storyboard>
+                                        </VisualState>
+                                        <VisualState x:Name="Pressed">
+                                            <Storyboard>
+                                                <DoubleAnimation Storyboard.TargetName="HoverTranslate" Storyboard.TargetProperty="Y" To="-10" Duration="0:0:0.1" />
+                                            </Storyboard>
+                                        </VisualState>
+                                        <VisualState x:Name="Disabled">
+                                            <Storyboard>
+                                                <DoubleAnimation Storyboard.TargetName="RootGrid" Storyboard.TargetProperty="Opacity" To="0.5" Duration="0" />
+                                            </Storyboard>
+                                        </VisualState>
+                                    </VisualStateGroup>
+                                </VisualStateManager.VisualStateGroups>
+                                <ContentPresenter Content="{TemplateBinding Content}" />
+                            </Grid>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
             </Style>
         </Grid.Resources>
 
-        <Border Margin="20" CornerRadius="28" Background="#CC0F172A">
-            <Grid Margin="24">
+        <Grid Background="{StaticResource MacWoodBackground}">
+            <!-- Wood Planks Effect -->
+            <Grid Opacity="0.2">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <Border Grid.Column="0" BorderBrush="Black" BorderThickness="0,0,2,0"/>
+                <Border Grid.Column="1" BorderBrush="Black" BorderThickness="0,0,2,0"/>
+                <Border Grid.Column="2" BorderBrush="Black" BorderThickness="0,0,2,0"/>
+                <Border Grid.Column="3" BorderBrush="Black" BorderThickness="0,0,2,0"/>
+                <Border Grid.Column="4" BorderBrush="Black" BorderThickness="0,0,2,0"/>
+                <Border Grid.Column="5" BorderBrush="Black" BorderThickness="0,0,2,0"/>
+                <Border Grid.Column="6" BorderBrush="Black" BorderThickness="0,0,2,0"/>
+                <Border Grid.Column="7" BorderBrush="Black" BorderThickness="0,0,2,0"/>
+            </Grid>
+
+            <!-- Main Layout -->
+            <Grid Margin="20" RowSpacing="16" x:Name="GameLayoutGrid">
                 <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="*" />
+                    <RowDefinition Height="Auto" x:Name="GameMainRow" />
+                    <RowDefinition Height="*" x:Name="GameSidebarRow" />
                 </Grid.RowDefinitions>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" x:Name="GameMainColumn" />
+                    <ColumnDefinition Width="340" x:Name="GameSidebarColumn" />
+                </Grid.ColumnDefinitions>
 
-                <Grid Grid.Row="0" Margin="0,0,0,20">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-
-                    <StackPanel Grid.Column="0" Spacing="4">
-                        <TextBlock Text="Truco" FontSize="36" FontWeight="Bold" Foreground="White" />
-                        <TextBlock Text="{Binding MatchStatusText}" Foreground="#FFD6E4FF" />
-                    </StackPanel>
-
-                    <Border Grid.Column="1"
-                            Background="#331D4ED8"
-                            BorderBrush="#664F46E5"
-                            BorderThickness="1"
-                            CornerRadius="999"
-                            Padding="14,8"
-                            VerticalAlignment="Center">
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <TextBlock Text="Modo" Foreground="#FF93C5FD" />
-                            <TextBlock Text="{Binding Mode}" Foreground="White" />
+                <!-- Modern translucent header replacing the rustic one -->
+                <Border Grid.Row="0" Grid.ColumnSpan="2" CornerRadius="20" Padding="16,12" Background="#66000000" BorderBrush="#1AFFFFFF" BorderThickness="1">
+                    <Grid>
+                        <StackPanel Orientation="Horizontal" Spacing="16" VerticalAlignment="Center">
+                            <TextBlock Text="Truco Paulista" FontSize="20" FontWeight="Bold" Foreground="{StaticResource MacTextPrimary}" />
+                            <TextBlock Text="{Binding StatusText}" Foreground="{StaticResource MacTextYellow}" VerticalAlignment="Center"/>
+                            <TextBlock Text="{Binding ConnectionDetails}" Foreground="{StaticResource MacTextMuted}" VerticalAlignment="Center" FontSize="12"/>
                         </StackPanel>
-                    </Border>
-                </Grid>
 
-                <Grid Grid.Row="1">
-                    <Grid Visibility="{Binding VisibilityIfNotPlaying}">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="2*" />
-                            <ColumnDefinition Width="*" />
-                        </Grid.ColumnDefinitions>
-
-                        <Border Grid.Column="0" Style="{StaticResource SurfaceCardStyle}" Margin="0,0,16,0">
-                            <ScrollViewer VerticalScrollBarVisibility="Auto">
-                                <StackPanel Spacing="20">
-                                    <StackPanel Spacing="8">
-                                        <TextBlock Text="Portable Windows client" FontSize="14" Foreground="#FF93C5FD" />
-                                        <TextBlock Text="WinUI 3 front-end backed by the shared Go runtime." FontSize="28" FontWeight="Bold" Foreground="White" TextWrapping="Wrap" />
-                                        <TextBlock Text="Offline, host, and join flows all talk to the same FFI runtime used by the other native clients." Foreground="#FFC7D2FE" TextWrapping="Wrap" />
-                                    </StackPanel>
-
-                                    <Grid ColumnSpacing="16">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="*" />
-                                        </Grid.ColumnDefinitions>
-
-                                        <StackPanel Grid.Column="0" Spacing="12">
-                                            <TextBox Header="Player name" Text="{Binding SetupPlayerName, Mode=TwoWay}" />
-                                            <ComboBox Header="Players" SelectedIndex="{Binding SetupNumPlayersIndex, Mode=TwoWay}">
-                                                <ComboBoxItem Content="2 players" />
-                                                <ComboBoxItem Content="4 players" />
-                                            </ComboBox>
-                                            <ComboBox Header="Locale" SelectedIndex="{Binding SetupLocaleIndex, Mode=TwoWay}">
-                                                <ComboBoxItem Content="Portuguese (Brazil)" />
-                                                <ComboBoxItem Content="English (US)" />
-                                            </ComboBox>
-                                        </StackPanel>
-
-                                        <StackPanel Grid.Column="1" Spacing="12">
-                                            <TextBox Header="Relay URL (optional)" Text="{Binding SetupRelayUrl, Mode=TwoWay}" />
-                                            <ComboBox Header="Desired role" SelectedIndex="{Binding SetupDesiredRoleIndex, Mode=TwoWay}">
-                                                <ComboBoxItem Content="Auto" />
-                                                <ComboBoxItem Content="Partner" />
-                                                <ComboBoxItem Content="Opponent" />
-                                            </ComboBox>
-                                            <TextBox Header="Invite key" PlaceholderText="Paste an online invite key" Text="{Binding InviteKeyInput, Mode=TwoWay}" />
-                                        </StackPanel>
-                                    </Grid>
-
-                                    <Border Background="#331E293B" CornerRadius="16" Padding="16">
-                                        <StackPanel Spacing="8">
-                                            <TextBlock Text="Table preview" Style="{StaticResource SidebarTitleStyle}" />
-                                            <ItemsControl ItemsSource="{Binding SetupPlayerLabels}">
-                                                <ItemsControl.ItemTemplate>
-                                                    <DataTemplate>
-                                                        <Border Background="#3326364D" CornerRadius="12" Padding="12" Margin="0,0,0,8">
-                                                            <TextBlock Text="{Binding}" Foreground="White" TextWrapping="Wrap" />
-                                                        </Border>
-                                                    </DataTemplate>
-                                                </ItemsControl.ItemTemplate>
-                                            </ItemsControl>
-                                        </StackPanel>
-                                    </Border>
-
-                                    <Border Background="#66B91C1C"
-                                            BorderBrush="#66FCA5A5"
-                                            BorderThickness="1"
-                                            CornerRadius="16"
-                                            Padding="14"
-                                            Visibility="{Binding VisibilityIfLastActionError}">
-                                        <TextBlock Text="{Binding CombinedErrorText}" Foreground="#FFFEE2E2" TextWrapping="Wrap" />
-                                    </Border>
-
-                                    <Grid ColumnSpacing="12">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="Auto" />
-                                        </Grid.ColumnDefinitions>
-                                        <Button Grid.Column="0"
-                                                Style="{StaticResource PrimaryButtonStyle}"
-                                                Content="Start offline"
-                                                Command="{Binding StartGameCommand}"
-                                                Background="#FFF59E0B"
-                                                Foreground="Black" />
-                                        <Button Grid.Column="1"
-                                                Style="{StaticResource PrimaryButtonStyle}"
-                                                Content="Host online"
-                                                Command="{Binding HostOnlineGameCommand}"
-                                                Background="#FF1D4ED8"
-                                                Foreground="White" />
-                                        <Button Grid.Column="2"
-                                                Style="{StaticResource PrimaryButtonStyle}"
-                                                Content="Join"
-                                                Command="{Binding JoinOnlineGameCommand}"
-                                                Background="#FF0F766E"
-                                                Foreground="White" />
-                                    </Grid>
-                                </StackPanel>
-                            </ScrollViewer>
-                        </Border>
-
-                        <StackPanel Grid.Column="1" Spacing="16">
-                            <Border Style="{StaticResource SurfaceCardStyle}">
-                                <StackPanel Spacing="12">
-                                    <TextBlock Text="Runtime diagnostics" Style="{StaticResource SidebarTitleStyle}" />
-                                    <StackPanel Orientation="Horizontal" Spacing="8">
-                                        <TextBlock Text="Connection" Foreground="#FF93C5FD" />
-                                        <TextBlock Text="{Binding ConnectionStatusText}" Foreground="White" />
-                                    </StackPanel>
-                                    <StackPanel Orientation="Horizontal" Spacing="8">
-                                        <TextBlock Text="Mode" Foreground="#FF93C5FD" />
-                                        <TextBlock Text="{Binding ConnectionModeText}" Foreground="White" />
-                                    </StackPanel>
-                                    <StackPanel Orientation="Horizontal" Spacing="8" Visibility="{Binding VisibilityIfConnectionRole}">
-                                        <TextBlock Text="Role" Foreground="#FF93C5FD" />
-                                        <TextBlock Text="{Binding ConnectionRoleText}" Foreground="White" />
-                                    </StackPanel>
-                                    <StackPanel Orientation="Horizontal" Spacing="8">
-                                        <TextBlock Text="Queued events" Foreground="#FF93C5FD" />
-                                        <TextBlock Text="{Binding EventBacklogText}" Foreground="White" />
-                                    </StackPanel>
-                                    <Button Content="Refresh state" Command="{Binding RefreshStateCommand}" HorizontalAlignment="Left" />
-                                </StackPanel>
-                            </Border>
-
-                            <Border Style="{StaticResource SurfaceCardStyle}">
-                                <StackPanel Spacing="12">
-                                    <TextBlock Text="Readiness" Style="{StaticResource SidebarTitleStyle}" />
-                                    <TextBlock Text="This portable client prefers `truco-core-ffi.dll` next to the executable and falls back to an embedded runtime when needed." Foreground="#FFC7D2FE" TextWrapping="Wrap" />
-                                    <TextBlock Text="Use the WinUI build script to publish into the repository's `bin/gui/winui` portable bundle." Foreground="#FFC7D2FE" TextWrapping="Wrap" />
-                                </StackPanel>
-                            </Border>
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+                            <Button Content="Idioma" Command="{Binding ToggleLocaleCommand}" Background="#33FFFFFF" Foreground="White" BorderThickness="0" CornerRadius="8"/>
+                            <Button Content="Sair" Command="{Binding CloseSessionCommand}" IsEnabled="{Binding HasActiveSession}" Background="#33FF5252" Foreground="White" BorderThickness="0" CornerRadius="8"/>
                         </StackPanel>
                     </Grid>
+                </Border>
 
-                    <Grid Visibility="{Binding VisibilityIfOnlineLobby}">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="2*" />
-                            <ColumnDefinition Width="*" />
-                        </Grid.ColumnDefinitions>
+                <!-- Main Board Area -->
+                <Border x:Name="MainBoardBorder" Grid.Row="1" Grid.Column="0" CornerRadius="120" Background="{StaticResource MacFeltBrush}" BorderBrush="#26FFFFFF" BorderThickness="2" Margin="16" Padding="32">
+                    <Grid>
+                        <!-- Top left/right HUD (Scores and Stakes) -->
+                        <Grid Visibility="{Binding GameVisibility}" VerticalAlignment="Top" Margin="0,20,0,0">
+                            <!-- Left: Nos -->
+                            <StackPanel HorizontalAlignment="Left" Margin="40,0,0,0">
+                                <Border Style="{StaticResource MacScoreBadge}">
+                                    <StackPanel VerticalAlignment="Center">
+                                        <TextBlock Text="NÓS" FontSize="11" FontWeight="Bold" Foreground="{StaticResource MacTextMuted}" HorizontalAlignment="Center"/>
+                                        <TextBlock Text="{Binding UsScore}" FontSize="32" FontWeight="Black" Foreground="{StaticResource MacTextPrimary}" HorizontalAlignment="Center"/>
+                                    </StackPanel>
+                                </Border>
+                            </StackPanel>
+                            <!-- Center: Vale -->
+                            <StackPanel HorizontalAlignment="Center">
+                                <Border Style="{StaticResource MacStakeBadge}">
+                                    <StackPanel VerticalAlignment="Center">
+                                        <TextBlock Text="VALE" FontSize="11" FontWeight="Bold" Foreground="{StaticResource MacTextMuted}" HorizontalAlignment="Center"/>
+                                        <TextBlock Text="{Binding StakeText}" FontSize="28" FontWeight="Black" Foreground="{StaticResource MacTextYellow}" HorizontalAlignment="Center"/>
+                                    </StackPanel>
+                                </Border>
+                            </StackPanel>
+                            <!-- Right: Eles -->
+                            <StackPanel HorizontalAlignment="Right" Margin="0,0,40,0">
+                                <Border Style="{StaticResource MacScoreBadge}">
+                                    <StackPanel VerticalAlignment="Center">
+                                        <TextBlock Text="ELES" FontSize="11" FontWeight="Bold" Foreground="{StaticResource MacTextMuted}" HorizontalAlignment="Center"/>
+                                        <TextBlock Text="{Binding ThemScore}" FontSize="32" FontWeight="Black" Foreground="{StaticResource MacTextPrimary}" HorizontalAlignment="Center"/>
+                                    </StackPanel>
+                                </Border>
+                            </StackPanel>
+                        </Grid>
 
-                        <StackPanel Grid.Column="0" Spacing="16" Margin="0,0,16,0">
-                            <Border Style="{StaticResource SurfaceCardStyle}">
+                        <Grid Visibility="{Binding GameVisibility}">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+
+                            <!-- Opponent -->
+                            <StackPanel Grid.Row="0" HorizontalAlignment="Center" Margin="0,110,0,0" Spacing="16">
+                                <Border Style="{StaticResource MacPillText}">
+                                    <TextBlock Text="{Binding TopSeat.Name}" FontSize="14" FontWeight="Bold" Foreground="{StaticResource MacTextPrimary}" CharacterSpacing="10"/>
+                                </Border>
+                                <!-- Opponent played card summary if any -->
+                                <ContentControl Content="{Binding TopSeat.PlayedCardViewModel}" ContentTemplate="{StaticResource GameCardTemplate}" />
+                            </StackPanel>
+
+                            <!-- Center Table Area -->
+                            <Grid Grid.Row="1" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="160"/>
+                                    <ColumnDefinition Width="440"/>
+                                    <ColumnDefinition Width="160"/>
+                                </Grid.ColumnDefinitions>
+
+                                <!-- Left/Right seat summaries if 4 players -->
+                                <StackPanel Grid.Column="0" HorizontalAlignment="Left" VerticalAlignment="Center" Visibility="{Binding LeftSeatVisibility}">
+                                    <Border Style="{StaticResource MacPillText}">
+                                        <TextBlock Text="{Binding LeftSeat.Name}" FontSize="12" Foreground="{StaticResource MacTextPrimary}"/>
+                                    </Border>
+                                    <ContentControl Content="{Binding LeftSeat.PlayedCardViewModel}" ContentTemplate="{StaticResource GameCardTemplate}" Margin="0,8,0,0" />
+                                </StackPanel>
+
+                                <StackPanel Grid.Column="2" HorizontalAlignment="Right" VerticalAlignment="Center" Visibility="{Binding RightSeatVisibility}">
+                                    <Border Style="{StaticResource MacPillText}">
+                                        <TextBlock Text="{Binding RightSeat.Name}" FontSize="12" Foreground="{StaticResource MacTextPrimary}"/>
+                                    </Border>
+                                    <ContentControl Content="{Binding RightSeat.PlayedCardViewModel}" ContentTemplate="{StaticResource GameCardTemplate}" Margin="0,8,0,0" />
+                                </StackPanel>
+
+                                <Grid Grid.Column="1" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="120"/>
+                                        <ColumnDefinition Width="200"/>
+                                        <ColumnDefinition Width="120"/>
+                                    </Grid.ColumnDefinitions>
+
+                                    <!-- Vira -->
+                                    <StackPanel Grid.Column="0" Spacing="8" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                        <TextBlock Text="VIRA" FontSize="11" FontWeight="Bold" Foreground="{StaticResource MacTextMuted}" HorizontalAlignment="Center" CharacterSpacing="20"/>
+                                        <ContentControl Content="{Binding ViraCardViewModel}" ContentTemplate="{StaticResource GameCardTemplate}" />
+                                    </StackPanel>
+
+                                    <!-- Played Cards Circle -->
+                                    <Grid Grid.Column="1" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                        <Ellipse Width="160" Height="160" Fill="#0AFFFFFF"/>
+                                        <TextBlock Text="{Binding HandSummary}" Foreground="{StaticResource MacTextMuted}" FontSize="12" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                        <TextBlock Text="{Binding WinnerText}" Foreground="{StaticResource MacTextMuted}" FontSize="14" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,20" TextWrapping="Wrap"/>
+                                        <ContentControl Content="{Binding BottomSeat.PlayedCardViewModel}" ContentTemplate="{StaticResource GameCardTemplate}" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,-60" />
+                                    </Grid>
+
+                                    <!-- Manilha -->
+                                    <StackPanel Grid.Column="2" Spacing="8" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                        <TextBlock Text="MANILHA" FontSize="11" FontWeight="Bold" Foreground="{StaticResource MacTextMuted}" HorizontalAlignment="Center" CharacterSpacing="20"/>
+                                        <ContentControl Content="{Binding ManilhaCardViewModel}" ContentTemplate="{StaticResource GameCardTemplate}" />
+                                    </StackPanel>
+                                </Grid>
+                            </Grid>
+
+                            <!-- Player Area -->
+                            <StackPanel Grid.Row="2" HorizontalAlignment="Center" Margin="0,0,0,30" Spacing="16">
+
+                                <Grid>
+                                    <Border Background="{StaticResource MacTextYellow}" CornerRadius="12" Padding="16,6" HorizontalAlignment="Center" Visibility="{Binding BottomSeat.IsCurrentTurn, Converter={StaticResource BoolToVisibilityConverter}}">
+                                        <TextBlock Text="SUA VEZ" FontSize="11" FontWeight="Bold" Foreground="{StaticResource MacTextDark}" CharacterSpacing="15"/>
+                                    </Border>
+                                </Grid>
+
+                                <!-- Player Hand -->
+                                <ItemsControl ItemsSource="{Binding BottomSeat.HandCards}">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Spacing="-8" />
+                                        </ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Button Style="{StaticResource CardButtonStyle}" Command="{Binding ElementName=RootPanel, Path=DataContext.PlayCardCommand}" CommandParameter="{Binding Card}" Margin="0,0,16,0">
+                                                <ContentControl Content="{Binding}" ContentTemplate="{StaticResource GameCardTemplate}" />
+                                            </Button>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+
+                                <!-- Action Buttons -->
+                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Spacing="12">
+                                    <Button Content="TRUCO" Command="{Binding RequestTrucoCommand}" IsEnabled="{Binding CanRequestTruco}" Background="#FFF57F17" Foreground="White" FontWeight="Bold" Padding="20,10" CornerRadius="8" BorderThickness="0"/>
+                                    <Button Content="Aceitar" Command="{Binding AcceptTrucoCommand}" IsEnabled="{Binding CanAnswerRaise}" Background="#FF43A047" Foreground="White" FontWeight="Bold" Padding="20,10" CornerRadius="8" BorderThickness="0"/>
+                                    <Button Content="Recusar" Command="{Binding RefuseTrucoCommand}" IsEnabled="{Binding CanAnswerRaise}" Background="#FFE53935" Foreground="White" FontWeight="Bold" Padding="20,10" CornerRadius="8" BorderThickness="0"/>
+                                    <Button Content="Nova mão" Command="{Binding NewHandCommand}" IsEnabled="{Binding CanStartNewHand}" Background="#33FFFFFF" Foreground="White" FontWeight="Bold" Padding="20,10" CornerRadius="8" BorderThickness="0"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </Grid>
+
+                        <!-- Non Game Screens Overlay -->
+                        <!-- Home Overlay -->
+                        <Grid Visibility="{Binding HomeVisibility}">
+                            <Border Background="#D9000000" CornerRadius="24" Padding="40" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                <StackPanel Spacing="20" MaxWidth="560">
+                                    <TextBlock Text="Truco Paulista" FontSize="36" FontWeight="Black" Foreground="{StaticResource MacTextPrimary}" HorizontalAlignment="Center" />
+                                    <TextBlock Text="O clássico reintepretado." Foreground="{StaticResource MacTextMuted}" HorizontalAlignment="Center" FontSize="16"/>
+                                    <StackPanel Orientation="Horizontal" Spacing="12" HorizontalAlignment="Center" Margin="0,20,0,0">
+                                        <Button Content="Partida Offline" Command="{Binding ShowOfflineSetupCommand}" Padding="24,12" CornerRadius="8" Background="{StaticResource MacTextYellow}" Foreground="{StaticResource MacTextDark}" FontWeight="Bold" BorderThickness="0"/>
+                                        <Button Content="Criar Host" Command="{Binding ShowHostSetupCommand}" Padding="24,12" CornerRadius="8" Background="#33FFFFFF" Foreground="White" BorderThickness="0"/>
+                                        <Button Content="Entrar Online" Command="{Binding ShowJoinSetupCommand}" Padding="24,12" CornerRadius="8" Background="#33FFFFFF" Foreground="White" BorderThickness="0"/>
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+                        </Grid>
+
+                        <Grid Visibility="{Binding OfflineVisibility}">
+                            <Border Background="#D9000000" CornerRadius="24" Padding="40" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                <StackPanel MaxWidth="500" Spacing="16">
+                                    <TextBlock Text="Partida Offline" FontSize="28" FontWeight="Bold" Foreground="{StaticResource MacTextPrimary}"/>
+                                    <TextBox Text="{Binding OfflinePlayerName, Mode=TwoWay}" PlaceholderText="Seu nome" Background="#33FFFFFF" Foreground="White" BorderThickness="0" Padding="12" CornerRadius="8"/>
+                                    <ComboBox SelectedValue="{Binding OfflineNumPlayers, Mode=TwoWay}" SelectedValuePath="Tag" Width="200" Background="#33FFFFFF" Foreground="White" BorderThickness="0" CornerRadius="8">
+                                        <ComboBoxItem Content="2 jogadores" Tag="2" />
+                                        <ComboBoxItem Content="4 jogadores" Tag="4" />
+                                    </ComboBox>
+                                    <StackPanel Orientation="Horizontal" Spacing="16" Margin="0,24,0,0">
+                                        <Button Content="Iniciar" Command="{Binding StartOfflineGameCommand}" Padding="24,10" Background="{StaticResource MacTextYellow}" Foreground="{StaticResource MacTextDark}" FontWeight="Bold" CornerRadius="8" BorderThickness="0"/>
+                                        <Button Content="Voltar" Command="{Binding ShowHomeCommand}" Padding="24,10" Background="Transparent" Foreground="White" BorderThickness="0"/>
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+                        </Grid>
+
+                        <Grid Visibility="{Binding HostVisibility}">
+                            <Border Background="#D9000000" CornerRadius="24" Padding="40" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                <StackPanel MaxWidth="520" Spacing="16">
+                                    <TextBlock Text="Criar Mesa Online" FontSize="28" FontWeight="Bold" Foreground="{StaticResource MacTextPrimary}"/>
+                                    <TextBox Text="{Binding HostName, Mode=TwoWay}" PlaceholderText="Seu nome" Background="#33FFFFFF" Foreground="White" BorderThickness="0" Padding="12" CornerRadius="8"/>
+                                    <ComboBox SelectedValue="{Binding HostNumPlayers, Mode=TwoWay}" SelectedValuePath="Tag" Width="220" Background="#33FFFFFF" Foreground="White" BorderThickness="0" CornerRadius="8">
+                                        <ComboBoxItem Content="2 jogadores" Tag="2" />
+                                        <ComboBoxItem Content="4 jogadores" Tag="4" />
+                                    </ComboBox>
+                                    <TextBox Text="{Binding BindAddress, Mode=TwoWay}" PlaceholderText="Bind address (opcional)" Background="#33FFFFFF" Foreground="White" BorderThickness="0" Padding="12" CornerRadius="8"/>
+                                    <TextBox Text="{Binding RelayUrl, Mode=TwoWay}" PlaceholderText="Relay URL (opcional)" Background="#33FFFFFF" Foreground="White" BorderThickness="0" Padding="12" CornerRadius="8"/>
+                                    <ComboBox SelectedValue="{Binding TransportMode, Mode=TwoWay}" SelectedValuePath="Tag" Width="220" Background="#33FFFFFF" Foreground="White" BorderThickness="0" CornerRadius="8">
+                                        <ComboBoxItem Content="TCP + TLS" Tag="tcp_tls" />
+                                        <ComboBoxItem Content="Relay QUIC v2" Tag="relay_quic_v2" />
+                                    </ComboBox>
+                                    <StackPanel Orientation="Horizontal" Spacing="16" Margin="0,24,0,0">
+                                        <Button Content="Criar sala" Command="{Binding CreateHostSessionCommand}" Padding="24,10" Background="{StaticResource MacTextYellow}" Foreground="{StaticResource MacTextDark}" FontWeight="Bold" CornerRadius="8" BorderThickness="0"/>
+                                        <Button Content="Voltar" Command="{Binding ShowHomeCommand}" Padding="24,10" Background="Transparent" Foreground="White" BorderThickness="0"/>
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+                        </Grid>
+
+                        <Grid Visibility="{Binding JoinVisibility}">
+                            <Border Background="#D9000000" CornerRadius="24" Padding="40" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                <StackPanel MaxWidth="500" Spacing="16">
+                                    <TextBlock Text="Entrar em Mesa" FontSize="28" FontWeight="Bold" Foreground="{StaticResource MacTextPrimary}"/>
+                                    <TextBox Text="{Binding JoinKey, Mode=TwoWay}" PlaceholderText="Código do Convite" Background="#33FFFFFF" Foreground="White" BorderThickness="0" Padding="12" CornerRadius="8"/>
+                                    <TextBox Text="{Binding JoinPlayerName, Mode=TwoWay}" PlaceholderText="Seu nome" Background="#33FFFFFF" Foreground="White" BorderThickness="0" Padding="12" CornerRadius="8"/>
+                                    <ComboBox SelectedValue="{Binding DesiredRole, Mode=TwoWay}" SelectedValuePath="Tag" Width="200" Background="#33FFFFFF" Foreground="White" BorderThickness="0" CornerRadius="8">
+                                        <ComboBoxItem Content="Automático" Tag="auto" />
+                                        <ComboBoxItem Content="Parceiro" Tag="partner" />
+                                        <ComboBoxItem Content="Oponente" Tag="opponent" />
+                                    </ComboBox>
+                                    <StackPanel Orientation="Horizontal" Spacing="16" Margin="0,24,0,0">
+                                        <Button Content="Conectar" Command="{Binding JoinOnlineSessionCommand}" Padding="24,10" Background="{StaticResource MacTextYellow}" Foreground="{StaticResource MacTextDark}" FontWeight="Bold" CornerRadius="8" BorderThickness="0"/>
+                                        <Button Content="Voltar" Command="{Binding ShowHomeCommand}" Padding="24,10" Background="Transparent" Foreground="White" BorderThickness="0"/>
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+                        </Grid>
+
+                        <Grid Visibility="{Binding LobbyVisibility}">
+                            <Border Background="#D9000000" CornerRadius="24" Padding="32" HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="760">
                                 <StackPanel Spacing="16">
-                                    <TextBlock Text="Online lobby" FontSize="28" FontWeight="Bold" Foreground="White" />
-                                    <TextBlock Text="{Binding LobbyStatusText}" Foreground="#FFD6E4FF" TextWrapping="Wrap" />
+                                    <TextBlock Text="Lobby Online" FontSize="28" FontWeight="Bold" Foreground="{StaticResource MacTextPrimary}"/>
+                                    <TextBlock Text="{Binding ConnectionDetails}" TextWrapping="Wrap" Foreground="{StaticResource MacTextMuted}"/>
 
-                                    <Border Background="#331D4ED8" CornerRadius="14" Padding="12" Visibility="{Binding VisibilityIfInviteKey}">
-                                        <Grid ColumnSpacing="12">
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="*" />
-                                                <ColumnDefinition Width="Auto" />
-                                            </Grid.ColumnDefinitions>
-                                            <StackPanel Spacing="4">
-                                                <TextBlock Text="Invite key" Foreground="#FF93C5FD" />
-                                                <TextBlock Text="{Binding InviteKeyText}" FontSize="24" FontWeight="Bold" Foreground="White" />
-                                            </StackPanel>
-                                            <Button Grid.Column="1" Content="Copy" Command="{Binding CopyInviteKeyCommand}" VerticalAlignment="Center" />
-                                        </Grid>
+                                    <Border Background="#1AFFFFFF" CornerRadius="12" Padding="12" Visibility="{Binding InviteVisibility}">
+                                        <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+                                            <TextBlock Text="Convite" Foreground="{StaticResource MacTextMuted}" VerticalAlignment="Center"/>
+                                            <TextBlock Text="{Binding InviteKey}" Foreground="{StaticResource MacTextYellow}" FontFamily="Consolas" FontSize="16" VerticalAlignment="Center"/>
+                                            <Button Content="Copiar" Command="{Binding CopyInviteKeyCommand}" Background="#33FFFFFF" Foreground="White" BorderThickness="0" CornerRadius="8"/>
+                                        </StackPanel>
                                     </Border>
 
-                                    <ItemsControl ItemsSource="{Binding LobbySlots}">
+                                    <ItemsControl ItemsSource="{Binding LobbySeats}">
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate>
-                                                <Border Background="#3326364D" CornerRadius="14" Padding="14" Margin="0,0,0,10">
+                                                <Border Background="#14000000" BorderBrush="#1AFFFFFF" BorderThickness="1" CornerRadius="12" Padding="12" Margin="0,0,0,8">
                                                     <Grid ColumnSpacing="12">
                                                         <Grid.ColumnDefinitions>
                                                             <ColumnDefinition Width="*" />
                                                             <ColumnDefinition Width="Auto" />
-                                                            <ColumnDefinition Width="Auto" />
                                                         </Grid.ColumnDefinitions>
-                                                        <StackPanel Spacing="4">
-                                                            <TextBlock Text="{Binding Label}" Foreground="White" FontWeight="SemiBold" />
-                                                            <TextBlock Text="{Binding StatusText}" Foreground="#FFF59E0B" />
+                                                        <StackPanel>
+                                                            <TextBlock Text="{Binding DisplayLabel}" Foreground="{StaticResource MacTextPrimary}" FontWeight="SemiBold"/>
+                                                            <TextBlock Text="{Binding StatusText}" Foreground="{StaticResource MacTextMuted}" FontSize="12"/>
                                                         </StackPanel>
-                                                        <Button Grid.Column="1"
-                                                                Content="Vote host"
-                                                                Command="{Binding DataContext.VoteHostCommand, ElementName=RootPanel}"
-                                                                CommandParameter="{Binding Seat}"
-                                                                IsEnabled="{Binding CanVote}"
-                                                                Margin="0,0,8,0" />
-                                                        <Button Grid.Column="2"
-                                                                Content="Replacement invite"
-                                                                Command="{Binding DataContext.RequestReplacementInviteCommand, ElementName=RootPanel}"
-                                                                CommandParameter="{Binding Seat}"
-                                                                IsEnabled="{Binding CanReplace}" />
+                                                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                                            <Border Background="#1AFFFFFF" CornerRadius="999" Padding="8,4">
+                                                                <TextBlock Text="{Binding ConnectionBadge}" Foreground="{StaticResource MacTextPrimary}" FontSize="11"/>
+                                                            </Border>
+                                                            <Border Background="#1AFFFFFF" CornerRadius="999" Padding="8,4">
+                                                                <TextBlock Text="{Binding RoleBadge}" Foreground="{StaticResource MacTextPrimary}" FontSize="11"/>
+                                                            </Border>
+                                                            <Border Background="#33FFD54F" CornerRadius="999" Padding="8,4">
+                                                                <TextBlock Text="{Binding ProtocolBadge}" Foreground="{StaticResource MacTextDark}" FontSize="11" FontWeight="Bold"/>
+                                                            </Border>
+                                                        </StackPanel>
                                                     </Grid>
                                                 </Border>
                                             </DataTemplate>
                                         </ItemsControl.ItemTemplate>
                                     </ItemsControl>
 
-                                    <Grid ColumnSpacing="12">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="Auto" />
-                                            <ColumnDefinition Width="Auto" />
-                                            <ColumnDefinition Width="*" />
-                                        </Grid.ColumnDefinitions>
-                                        <Button Grid.Column="0"
-                                                Content="Start match"
-                                                Command="{Binding StartHostedMatchCommand}"
-                                                Visibility="{Binding VisibilityIfHost}"
-                                                Background="#FF15803D"
-                                                Foreground="White" />
-                                        <Button Grid.Column="1"
-                                                Content="Refresh"
-                                                Command="{Binding RefreshStateCommand}" />
-                                        <Button Grid.Column="2"
-                                                Content="Leave lobby"
-                                                Command="{Binding LeaveOnlineGameCommand}"
-                                                IsEnabled="{Binding CanCloseSession}"
-                                                HorizontalAlignment="Right" />
-                                    </Grid>
-                                </StackPanel>
-                            </Border>
-                        </StackPanel>
-
-                        <StackPanel Grid.Column="1" Spacing="16">
-                            <Border Style="{StaticResource SurfaceCardStyle}">
-                                <StackPanel Spacing="12">
-                                    <TextBlock Text="Lobby chat" Style="{StaticResource SidebarTitleStyle}" />
-                                    <ScrollViewer Height="280" VerticalScrollBarVisibility="Auto">
-                                        <ItemsControl ItemsSource="{Binding ChatEvents}">
-                                            <ItemsControl.ItemTemplate>
-                                                <DataTemplate>
-                                                    <TextBlock Text="{Binding}" Foreground="White" TextWrapping="Wrap" Margin="0,0,0,8" />
-                                                </DataTemplate>
-                                            </ItemsControl.ItemTemplate>
-                                        </ItemsControl>
-                                    </ScrollViewer>
-                                    <TextBox PlaceholderText="Say something to the table" Text="{Binding ChatMessage, Mode=TwoWay}" />
-                                    <Button Content="Send" Command="{Binding SendChatCommand}" HorizontalAlignment="Left" />
-                                </StackPanel>
-                            </Border>
-
-                            <Border Style="{StaticResource SurfaceCardStyle}">
-                                <StackPanel Spacing="12">
-                                    <TextBlock Text="Lobby event feed" Style="{StaticResource SidebarTitleStyle}" />
-                                    <ScrollViewer Height="220" VerticalScrollBarVisibility="Auto">
-                                        <ItemsControl ItemsSource="{Binding LobbyEventEntries}">
-                                            <ItemsControl.ItemTemplate>
-                                                <DataTemplate>
-                                                    <TextBlock Text="{Binding}" Foreground="#FFC7D2FE" TextWrapping="Wrap" Margin="0,0,0,8" />
-                                                </DataTemplate>
-                                            </ItemsControl.ItemTemplate>
-                                        </ItemsControl>
-                                    </ScrollViewer>
-                                </StackPanel>
-                            </Border>
-                        </StackPanel>
-                    </Grid>
-
-                    <Grid Visibility="{Binding VisibilityIfPlaying}">
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="*" />
-                            <RowDefinition Height="Auto" />
-                        </Grid.RowDefinitions>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="280" />
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="320" />
-                        </Grid.ColumnDefinitions>
-
-                        <Border Grid.Row="0" Grid.ColumnSpan="3" Background="#331E293B" CornerRadius="18" Padding="16" Margin="0,0,0,16">
-                            <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="*" />
-                                </Grid.ColumnDefinitions>
-                                <StackPanel Grid.Column="0" Spacing="4">
-                                    <TextBlock Text="Us" Foreground="#FF93C5FD" />
-                                    <TextBlock Text="{Binding UsPoints}" Style="{StaticResource MetricValueStyle}" />
-                                </StackPanel>
-                                <Border Grid.Column="1" Background="#FFF59E0B" CornerRadius="16" Padding="18,10" HorizontalAlignment="Center">
-                                    <StackPanel Spacing="2">
-                                        <TextBlock Text="Stake" HorizontalAlignment="Center" Foreground="Black" />
-                                        <TextBlock Text="{Binding Snapshot.CurrentHand.Stake, FallbackValue=1}" FontSize="26" FontWeight="Bold" HorizontalAlignment="Center" Foreground="Black" />
+                                    <StackPanel Orientation="Horizontal" Spacing="16" VerticalAlignment="Center">
+                                        <Button Content="Iniciar partida" Command="{Binding StartHostedMatchCommand}" IsEnabled="{Binding CanStartHostedMatch}" Padding="24,10" Background="{StaticResource MacTextYellow}" Foreground="{StaticResource MacTextDark}" FontWeight="Bold" CornerRadius="8" BorderThickness="0"/>
+                                        <TextBlock Text="O host inicia quando todos os assentos ocupados estiverem conectados." Foreground="{StaticResource MacTextMuted}" TextWrapping="Wrap" VerticalAlignment="Center"/>
                                     </StackPanel>
+                                </StackPanel>
+                            </Border>
+                        </Grid>
+
+                    </Grid>
+                </Border>
+
+                <!-- Floating Sidebar (Chat/Logs) -->
+                <Border x:Name="SidebarBorder" Grid.Row="1" Grid.Column="1" Background="#B3111111" CornerRadius="20" Margin="0,16,0,16" Padding="16">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                        <StackPanel Spacing="16">
+                            <TextBlock Text="Painel da Mesa" FontSize="20" FontWeight="Bold" Foreground="{StaticResource MacTextPrimary}"/>
+
+                            <Border Background="#1AFFFFFF" CornerRadius="12" Padding="12">
+                                <StackPanel Spacing="4">
+                                    <TextBlock Text="Eventos" FontWeight="SemiBold" Foreground="{StaticResource MacTextPrimary}"/>
+                                    <TextBlock Text="{Binding InfoBannerText}" Foreground="#FF81C784" TextWrapping="Wrap"/>
+                                    <TextBlock Text="{Binding ErrorBannerText}" Foreground="#FFE57373" TextWrapping="Wrap"/>
+                                </StackPanel>
+                            </Border>
+
+                            <StackPanel Spacing="8">
+                                <TextBlock Text="Chat" FontSize="16" FontWeight="SemiBold" Foreground="{StaticResource MacTextPrimary}"/>
+                                <Border Background="#0AFFFFFF" CornerRadius="8" MaxHeight="300" Padding="8">
+                                    <ScrollViewer>
+                                        <ItemsControl ItemsSource="{Binding ChatFeed}" ItemTemplate="{StaticResource ActivityEntryTemplate}" />
+                                    </ScrollViewer>
                                 </Border>
-                                <StackPanel Grid.Column="2" Spacing="4" HorizontalAlignment="Right">
-                                    <TextBlock Text="Them" Foreground="#FF93C5FD" HorizontalAlignment="Right" />
-                                    <TextBlock Text="{Binding ThemPoints}" Style="{StaticResource MetricValueStyle}" HorizontalAlignment="Right" />
-                                </StackPanel>
-                            </Grid>
-                        </Border>
+                                <TextBox Text="{Binding ChatInput, Mode=TwoWay}" PlaceholderText="Mensagem..." Background="#1AFFFFFF" Foreground="White" BorderThickness="0" CornerRadius="8" Padding="10"/>
+                                <Button Content="Enviar" Command="{Binding SendChatCommand}" IsEnabled="{Binding CanSendChat}" Background="#33FFFFFF" Foreground="White" CornerRadius="8" HorizontalAlignment="Right" BorderThickness="0"/>
+                            </StackPanel>
 
-                        <StackPanel Grid.Row="1" Grid.Column="0" Spacing="16">
-                            <Border Style="{StaticResource SurfaceCardStyle}">
-                                <StackPanel Spacing="12">
-                                    <TextBlock Text="Round" Style="{StaticResource SidebarTitleStyle}" />
-                                    <TextBlock Text="{Binding RoundText}" Foreground="White" />
-                                    <TextBlock Text="{Binding TurnIndicatorText}" FontSize="22" FontWeight="Bold" Foreground="#FFF59E0B" />
-                                    <TextBlock Text="{Binding TurnPlayerName}" Foreground="#FFD6E4FF" TextWrapping="Wrap" />
-                                    <TextBlock Text="{Binding CombinedErrorText}" Foreground="#FFFCA5A5" TextWrapping="Wrap" Visibility="{Binding VisibilityIfCombinedError}" />
-                                </StackPanel>
-                            </Border>
-
-                            <Border Style="{StaticResource SurfaceCardStyle}">
-                                <StackPanel Spacing="12">
-                                    <TextBlock Text="Match log" Style="{StaticResource SidebarTitleStyle}" />
-                                    <ScrollViewer Height="220" VerticalScrollBarVisibility="Auto">
-                                        <ItemsControl ItemsSource="{Binding MatchLogEntries}">
-                                            <ItemsControl.ItemTemplate>
-                                                <DataTemplate>
-                                                    <TextBlock Text="{Binding}" Foreground="#FFC7D2FE" TextWrapping="Wrap" Margin="0,0,0,8" />
-                                                </DataTemplate>
-                                            </ItemsControl.ItemTemplate>
-                                        </ItemsControl>
+                            <StackPanel Spacing="8" Margin="0,16,0,0">
+                                <TextBlock Text="Histórico" FontSize="16" FontWeight="SemiBold" Foreground="{StaticResource MacTextPrimary}"/>
+                                <Border Background="#0AFFFFFF" CornerRadius="8" MaxHeight="200" Padding="8">
+                                    <ScrollViewer>
+                                        <ItemsControl ItemsSource="{Binding MatchLog}" ItemTemplate="{StaticResource LogEntryTemplate}" />
                                     </ScrollViewer>
-                                </StackPanel>
-                            </Border>
+                                </Border>
+                            </StackPanel>
+
                         </StackPanel>
-
-                        <Border Grid.Row="1" Grid.Column="1" Style="{StaticResource SurfaceCardStyle}" Margin="16,0">
-                            <Grid>
-                                <Grid.RowDefinitions>
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="*" />
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="Auto" />
-                                </Grid.RowDefinitions>
-
-                                <StackPanel Grid.Row="0" HorizontalAlignment="Center" Spacing="8" Margin="0,0,0,20">
-                                    <TextBlock Text="{Binding TopPlayer.Name}" Foreground="White" FontSize="20" FontWeight="SemiBold" HorizontalAlignment="Center" />
-                                    <TextBlock Text="{Binding TopPlayerRoleBadge}" Foreground="#FFF59E0B" HorizontalAlignment="Center" />
-                                    <ItemsControl ItemsSource="{Binding TopPlayer.Hand}">
-                                        <ItemsControl.ItemsPanel>
-                                            <ItemsPanelTemplate>
-                                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" />
-                                            </ItemsPanelTemplate>
-                                        </ItemsControl.ItemsPanel>
-                                        <ItemsControl.ItemTemplate>
-                                            <DataTemplate>
-                                                <Border Width="56" Height="88" Margin="4,0,4,0" Background="#334155" CornerRadius="10" BorderBrush="#66748AA6" BorderThickness="1">
-                                                    <TextBlock Text="✦" Foreground="#FFD6E4FF" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="24" />
-                                                </Border>
-                                            </DataTemplate>
-                                        </ItemsControl.ItemTemplate>
-                                    </ItemsControl>
-                                </StackPanel>
-
-                                <Grid Grid.Row="1">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto" />
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-
-                                    <StackPanel Grid.Column="0"
-                                                Spacing="8"
-                                                VerticalAlignment="Center"
-                                                Visibility="{Binding LeftPlayerVisibility}">
-                                        <TextBlock Text="{Binding LeftPlayer.Name}" Foreground="White" HorizontalAlignment="Center" />
-                                        <ItemsControl ItemsSource="{Binding LeftPlayer.Hand}">
-                                            <ItemsControl.ItemsPanel>
-                                                <ItemsPanelTemplate>
-                                                    <StackPanel />
-                                                </ItemsPanelTemplate>
-                                            </ItemsControl.ItemsPanel>
-                                            <ItemsControl.ItemTemplate>
-                                                <DataTemplate>
-                                                    <Border Width="78" Height="48" Margin="0,4,0,4" Background="#334155" CornerRadius="10" BorderBrush="#66748AA6" BorderThickness="1">
-                                                        <TextBlock Text="✦" Foreground="#FFD6E4FF" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="18" />
-                                                    </Border>
-                                                </DataTemplate>
-                                            </ItemsControl.ItemTemplate>
-                                        </ItemsControl>
-                                    </StackPanel>
-
-                                    <StackPanel Grid.Column="1" Spacing="18" HorizontalAlignment="Center" VerticalAlignment="Center">
-                                        <Grid HorizontalAlignment="Center">
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="Auto" />
-                                                <ColumnDefinition Width="Auto" />
-                                                <ColumnDefinition Width="Auto" />
-                                            </Grid.ColumnDefinitions>
-
-                                            <Border Grid.Column="0" Width="96" Height="136" Margin="0,0,16,0" Background="#FFF8FAFC" CornerRadius="16" Padding="12">
-                                                <StackPanel>
-                                                    <TextBlock Text="Vira" Foreground="#FF334155" />
-                                                    <TextBlock Text="{Binding Snapshot.CurrentHand.Vira.Rank, FallbackValue=?}" FontSize="20" FontWeight="Bold" Foreground="#FF0F172A" />
-                                                    <TextBlock Text="{Binding Snapshot.CurrentHand.Vira.SuitSymbol, FallbackValue=♠}" FontSize="42" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="{Binding Snapshot.CurrentHand.Vira.ColorBrush, FallbackValue=Black}" />
-                                                </StackPanel>
-                                            </Border>
-
-                                            <ItemsControl Grid.Column="1" ItemsSource="{Binding Snapshot.CurrentHand.RoundCards}">
-                                                <ItemsControl.ItemsPanel>
-                                                    <ItemsPanelTemplate>
-                                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" />
-                                                    </ItemsPanelTemplate>
-                                                </ItemsControl.ItemsPanel>
-                                                <ItemsControl.ItemTemplate>
-                                                    <DataTemplate>
-                                                        <Border Width="96" Height="136" Margin="4,0,4,0" Background="#FFF8FAFC" CornerRadius="16" Padding="12" BorderBrush="#FFE2E8F0" BorderThickness="1">
-                                                            <StackPanel>
-                                                                <TextBlock Text="{Binding Card.Rank}" FontSize="20" FontWeight="Bold" Foreground="#FF0F172A" />
-                                                                <TextBlock Text="{Binding Card.SuitSymbol}" FontSize="42" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="{Binding Card.ColorBrush, FallbackValue=Black}" />
-                                                            </StackPanel>
-                                                        </Border>
-                                                    </DataTemplate>
-                                                </ItemsControl.ItemTemplate>
-                                            </ItemsControl>
-
-                                            <Border Grid.Column="2" Width="96" Height="136" Margin="16,0,0,0" Background="#332C5282" CornerRadius="16" Padding="12" BorderBrush="#665FA7FF" BorderThickness="1">
-                                                <StackPanel>
-                                                    <TextBlock Text="Manilha" Foreground="#FFBFDBFE" />
-                                                    <TextBlock Text="{Binding Snapshot.CurrentHand.Manilha, FallbackValue=4}" FontSize="42" FontWeight="Bold" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center" />
-                                                </StackPanel>
-                                            </Border>
-                                        </Grid>
-
-                                        <Border Background="#FFF59E0B" CornerRadius="999" Padding="14,8" HorizontalAlignment="Center">
-                                            <TextBlock Text="{Binding MatchStatusText}" Foreground="Black" FontWeight="SemiBold" />
-                                        </Border>
-                                    </StackPanel>
-
-                                    <StackPanel Grid.Column="2" Spacing="8" VerticalAlignment="Center">
-                                        <TextBlock Text="{Binding RightPlayer.Name}" Foreground="White" HorizontalAlignment="Center" />
-                                        <ItemsControl ItemsSource="{Binding RightPlayer.Hand}">
-                                            <ItemsControl.ItemsPanel>
-                                                <ItemsPanelTemplate>
-                                                    <StackPanel />
-                                                </ItemsPanelTemplate>
-                                            </ItemsControl.ItemsPanel>
-                                            <ItemsControl.ItemTemplate>
-                                                <DataTemplate>
-                                                    <Border Width="78" Height="48" Margin="0,4,0,4" Background="#334155" CornerRadius="10" BorderBrush="#66748AA6" BorderThickness="1">
-                                                        <TextBlock Text="✦" Foreground="#FFD6E4FF" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="18" />
-                                                    </Border>
-                                                </DataTemplate>
-                                            </ItemsControl.ItemTemplate>
-                                        </ItemsControl>
-                                    </StackPanel>
-                                </Grid>
-
-                                <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Center" Spacing="12" Margin="0,20,0,16">
-                                    <Button Content="{Binding AskTrucoLabel}"
-                                            Command="{Binding RequestTrucoCommand}"
-                                            Visibility="{Binding VisibilityIfAskTruco}"
-                                            Background="#FFB91C1C"
-                                            Foreground="White" />
-                                    <Button Content="Accept"
-                                            Command="{Binding AcceptTrucoCommand}"
-                                            Visibility="{Binding VisibilityIfShowTruco}"
-                                            Background="#FF15803D"
-                                            Foreground="White" />
-                                    <Button Content="{Binding TrucoLabel}"
-                                            Command="{Binding RequestTrucoCommand}"
-                                            Visibility="{Binding VisibilityIfShowTruco}"
-                                            Background="#FFEA580C"
-                                            Foreground="White" />
-                                    <Button Content="Fold"
-                                            Command="{Binding RefuseTrucoCommand}"
-                                            Visibility="{Binding VisibilityIfShowTruco}" />
-                                </StackPanel>
-
-                                <StackPanel Grid.Row="3" Spacing="14">
-                                    <Border Background="#660F172A" CornerRadius="16" Padding="14" Visibility="{Binding VisibilityIfMatchOver}">
-                                        <StackPanel Spacing="12" HorizontalAlignment="Center">
-                                            <TextBlock Text="{Binding MatchResultText}" FontSize="36" FontWeight="Bold" Foreground="#FFF59E0B" HorizontalAlignment="Center" />
-                                            <Button Content="Back to setup" Command="{Binding BackToSetupCommand}" IsEnabled="{Binding CanCloseSession}" HorizontalAlignment="Center" />
-                                        </StackPanel>
-                                    </Border>
-
-                                    <ItemsControl ItemsSource="{Binding Me.Hand}">
-                                        <ItemsControl.ItemsPanel>
-                                            <ItemsPanelTemplate>
-                                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" />
-                                            </ItemsPanelTemplate>
-                                        </ItemsControl.ItemsPanel>
-                                        <ItemsControl.ItemTemplate>
-                                            <DataTemplate>
-                                                <Button Command="{Binding DataContext.PlayCardCommand, ElementName=RootPanel}"
-                                                        CommandParameter="{Binding}"
-                                                        IsEnabled="{Binding DataContext.CanPlayCards, ElementName=RootPanel}"
-                                                        Margin="8,0,8,0"
-                                                        Padding="0"
-                                                        Background="Transparent"
-                                                        BorderThickness="0">
-                                                    <Border Width="108" Height="156" Background="#FFF8FAFC" CornerRadius="18" Padding="14" BorderBrush="#FFE2E8F0" BorderThickness="1">
-                                                        <StackPanel>
-                                                            <TextBlock Text="{Binding Rank}" FontSize="24" FontWeight="Bold" Foreground="#FF0F172A" />
-                                                            <TextBlock Text="{Binding SuitSymbol}" FontSize="54" Foreground="{Binding ColorBrush, FallbackValue=Black}" HorizontalAlignment="Center" VerticalAlignment="Center" />
-                                                        </StackPanel>
-                                                    </Border>
-                                                </Button>
-                                            </DataTemplate>
-                                        </ItemsControl.ItemTemplate>
-                                    </ItemsControl>
-                                </StackPanel>
-                            </Grid>
-                        </Border>
-
-                        <StackPanel Grid.Row="1" Grid.Column="2" Spacing="16">
-                            <Border Style="{StaticResource SurfaceCardStyle}" Visibility="{Binding VisibilityIfOnlineMatch}">
-                                <StackPanel Spacing="12">
-                                    <TextBlock Text="Live chat" Style="{StaticResource SidebarTitleStyle}" />
-                                    <ScrollViewer Height="220" VerticalScrollBarVisibility="Auto">
-                                        <ItemsControl ItemsSource="{Binding ChatEvents}">
-                                            <ItemsControl.ItemTemplate>
-                                                <DataTemplate>
-                                                    <TextBlock Text="{Binding}" Foreground="White" TextWrapping="Wrap" Margin="0,0,0,8" />
-                                                </DataTemplate>
-                                            </ItemsControl.ItemTemplate>
-                                        </ItemsControl>
-                                    </ScrollViewer>
-                                    <TextBox PlaceholderText="Message the table" Text="{Binding ChatMessage, Mode=TwoWay}" />
-                                    <Button Content="Send" Command="{Binding SendChatCommand}" HorizontalAlignment="Left" />
-                                </StackPanel>
-                            </Border>
-
-                            <Border Style="{StaticResource SurfaceCardStyle}">
-                                <StackPanel Spacing="12">
-                                    <TextBlock Text="Runtime events" Style="{StaticResource SidebarTitleStyle}" />
-                                    <ScrollViewer Height="220" VerticalScrollBarVisibility="Auto">
-                                        <ItemsControl ItemsSource="{Binding EventLogEntries}">
-                                            <ItemsControl.ItemTemplate>
-                                                <DataTemplate>
-                                                    <TextBlock Text="{Binding}" Foreground="#FFC7D2FE" TextWrapping="Wrap" Margin="0,0,0,8" />
-                                                </DataTemplate>
-                                            </ItemsControl.ItemTemplate>
-                                        </ItemsControl>
-                                    </ScrollViewer>
-                                </StackPanel>
-                            </Border>
-
-                            <Border Style="{StaticResource SurfaceCardStyle}">
-                                <StackPanel Spacing="12">
-                                    <TextBlock Text="Session controls" Style="{StaticResource SidebarTitleStyle}" />
-                                    <StackPanel Orientation="Horizontal" Spacing="8">
-                                        <TextBlock Text="Connection" Foreground="#FF93C5FD" />
-                                        <TextBlock Text="{Binding ConnectionStatusText}" Foreground="White" />
-                                    </StackPanel>
-                                    <StackPanel Orientation="Horizontal" Spacing="8">
-                                        <TextBlock Text="Backlog" Foreground="#FF93C5FD" />
-                                        <TextBlock Text="{Binding EventBacklogText}" Foreground="White" />
-                                    </StackPanel>
-                                    <Button Content="Refresh state" Command="{Binding RefreshStateCommand}" HorizontalAlignment="Left" />
-                                    <Button Content="Leave match"
-                                            Command="{Binding LeaveMatchCommand}"
-                                            IsEnabled="{Binding CanCloseSession}"
-                                            HorizontalAlignment="Left"
-                                            Visibility="{Binding VisibilityIfOnlineMatch}" />
-                                    <Button Content="Back to setup" Command="{Binding BackToSetupCommand}" IsEnabled="{Binding CanCloseSession}" HorizontalAlignment="Left" />
-                                </StackPanel>
-                            </Border>
-                        </StackPanel>
-                    </Grid>
-                </Grid>
+                    </ScrollViewer>
+                </Border>
             </Grid>
-        </Border>
+        </Grid>
     </Grid>
 </Window>

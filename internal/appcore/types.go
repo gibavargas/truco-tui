@@ -28,10 +28,12 @@ const (
 const (
 	IntentSetLocale                = "set_locale"
 	IntentNewOfflineGame           = "new_offline_game"
+	IntentNewHand                  = "new_hand"
 	IntentCreateHostSession        = "create_host_session"
 	IntentJoinSession              = "join_session"
 	IntentStartHostedMatch         = "start_hosted_match"
 	IntentGameAction               = "game_action"
+	IntentTick                     = "tick"
 	IntentSendChat                 = "send_chat"
 	IntentVoteHost                 = "vote_host"
 	IntentRequestReplacementInvite = "request_replacement_invite"
@@ -69,10 +71,12 @@ var (
 	supportedIntentKinds = []string{
 		IntentSetLocale,
 		IntentNewOfflineGame,
+		IntentNewHand,
 		IntentCreateHostSession,
 		IntentJoinSession,
 		IntentStartHostedMatch,
 		IntentGameAction,
+		IntentTick,
 		IntentSendChat,
 		IntentVoteHost,
 		IntentRequestReplacementInvite,
@@ -194,12 +198,21 @@ type UIStateSnapshot struct {
 	Actions    ActionSnapshot   `json:"actions"`
 }
 
+type NetworkSnapshot struct {
+	Transport                 string      `json:"transport,omitempty"`
+	SupportedProtocolVersions []int       `json:"supported_protocol_versions,omitempty"`
+	NegotiatedProtocolVersion int         `json:"negotiated_protocol_version,omitempty"`
+	SeatProtocolVersions      map[int]int `json:"seat_protocol_versions,omitempty"`
+	MixedProtocolSession      bool        `json:"mixed_protocol_session,omitempty"`
+}
+
 type ConnectionSnapshot struct {
-	Status       string    `json:"status"`
-	IsOnline     bool      `json:"is_online"`
-	IsHost       bool      `json:"is_host"`
-	LastError    *AppError `json:"last_error,omitempty"`
-	LastEventSeq int64     `json:"last_event_sequence"`
+	Status       string           `json:"status"`
+	IsOnline     bool             `json:"is_online"`
+	IsHost       bool             `json:"is_host"`
+	Network      *NetworkSnapshot `json:"network,omitempty"`
+	LastError    *AppError        `json:"last_error,omitempty"`
+	LastEventSeq int64            `json:"last_event_sequence"`
 }
 
 type DiagnosticsSnapshot struct {
@@ -248,6 +261,11 @@ type JoinSessionPayload struct {
 type GameActionPayload struct {
 	Action    string `json:"action"`
 	CardIndex int    `json:"card_index,omitempty"`
+	FaceDown  bool   `json:"face_down,omitempty"`
+}
+
+type TickPayload struct {
+	MaxSteps int `json:"max_steps,omitempty"`
 }
 
 type SendChatPayload struct {
