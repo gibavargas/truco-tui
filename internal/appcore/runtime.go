@@ -35,8 +35,9 @@ type Runtime struct {
 	events    []AppEvent
 	eventLog  []string
 
-	match *truco.Snapshot
-	lobby *LobbySnapshot
+	match   *truco.Snapshot
+	lobby   *LobbySnapshot
+	network *NetworkSnapshot
 }
 
 func NewRuntime() *Runtime {
@@ -82,6 +83,9 @@ func (r *Runtime) DispatchIntent(intent AppIntent) error {
 		}
 		return r.startOfflineLocked(payload)
 
+	case IntentNewHand:
+		return r.newHandLocked()
+
 	case IntentCreateHostSession:
 		var payload CreateHostPayload
 		if err := decodeIntentPayload(intent.Payload, &payload); err != nil {
@@ -105,6 +109,13 @@ func (r *Runtime) DispatchIntent(intent AppIntent) error {
 			return r.failLocked("invalid_intent", err)
 		}
 		return r.applyGameActionLocked(payload)
+
+	case IntentTick:
+		var payload TickPayload
+		if err := decodeIntentPayload(intent.Payload, &payload); err != nil {
+			return r.failLocked("invalid_intent", err)
+		}
+		return r.tickLocked(payload.MaxSteps)
 
 	case IntentSendChat:
 		var payload SendChatPayload
@@ -132,6 +143,7 @@ func (r *Runtime) DispatchIntent(intent AppIntent) error {
 		r.mode = ModeIdle
 		r.match = nil
 		r.lobby = nil
+		r.network = nil
 		r.queueEventLocked(EventSessionClosed, nil)
 		return nil
 	}
@@ -197,6 +209,7 @@ func (r *Runtime) snapshotBundleLocked() SnapshotBundle {
 			Status:       r.mode,
 			IsOnline:     strings.Contains(r.mode, "host") || strings.Contains(r.mode, "client"),
 			IsHost:       strings.Contains(r.mode, "host"),
+			Network:      r.currentNetworkSnapshotLocked(),
 			LastError:    cloneError(r.lastError),
 			LastEventSeq: r.nextSeq,
 		},
@@ -254,6 +267,9 @@ func (r *Runtime) teardownSessionLocked() {
 	r.host = nil
 	r.client = nil
 	r.game = nil
+	r.match = nil
+	r.lobby = nil
+	r.network = nil
 	r.localSeat = -1
 	r.inviteKey = ""
 }
@@ -282,10 +298,30 @@ func (r *Runtime) startOfflineLocked(payload NewOfflineGamePayload) error {
 	snap := game.Snapshot(0)
 	r.setMatchLocked(snap)
 	r.lobby = nil
+	r.network = nil
 	gen := r.sessionGen
 	go r.runGameTicker(gen)
 	r.queueEventLocked(EventSessionReady, map[string]any{"mode": r.mode})
 	return nil
+}
+
+func (r *Runtime) newHandLocked() error {
+	switch r.mode {
+	case ModeOfflineMatch, ModeHostMatch:
+		if r.game == nil {
+			return r.failLocked("invalid_state", errors.New("partida ausente"))
+		}
+		r.clearErrorLocked()
+		r.game.StartNewHand()
+		r.setMatchLocked(r.game.Snapshot(r.localSeat))
+		if r.mode == ModeHostMatch && r.host != nil {
+			pushSnapshotsToClients(r.host, r.game)
+			r.updateHostLobbyLocked()
+		}
+		return nil
+	default:
+		return r.failLocked("invalid_state", fmt.Errorf("nova mão indisponível no modo %s", r.mode))
+	}
 }
 
 func (r *Runtime) createHostLocked(payload CreateHostPayload) error {
@@ -379,13 +415,40 @@ func (r *Runtime) applyGameActionLocked(payload GameActionPayload) error {
 		if r.client == nil {
 			return r.failLocked("invalid_state", errors.New("cliente ausente"))
 		}
-		if err := r.client.SendGameAction(payload.Action, payload.CardIndex); err != nil {
+		if err := r.client.SendGameActionWithOptions(payload.Action, payload.CardIndex, payload.FaceDown); err != nil {
 			return r.failLocked("game_action_failed", err)
 		}
 		return nil
 	default:
 		return r.failLocked("invalid_state", fmt.Errorf("ação de jogo indisponível no modo %s", r.mode))
 	}
+}
+
+func (r *Runtime) tickLocked(maxSteps int) error {
+	if maxSteps <= 0 {
+		maxSteps = 6
+	}
+	changed := false
+	for i := 0; i < maxSteps; i++ {
+		if r.mode == ModeHostMatch {
+			r.syncProvisionalCPUsLocked()
+		}
+		stepChanged, err := r.stepCPUIfNeededLocked()
+		if err != nil {
+			return r.failLocked("cpu_step_failed", err)
+		}
+		if !stepChanged {
+			break
+		}
+		changed = true
+		if r.mode == ModeHostMatch && r.host != nil {
+			pushSnapshotsToClients(r.host, r.game)
+		}
+	}
+	if changed {
+		r.queueEventLocked("tick", map[string]any{"changed": true})
+	}
+	return nil
 }
 
 func (r *Runtime) sendChatLocked(text string) error {
@@ -452,6 +515,7 @@ func (r *Runtime) setMatchLocked(s truco.Snapshot) {
 func (r *Runtime) updateHostLobbyLocked() {
 	if r.host == nil {
 		r.lobby = nil
+		r.network = nil
 		return
 	}
 	r.lobby = &LobbySnapshot{
@@ -463,12 +527,14 @@ func (r *Runtime) updateHostLobbyLocked() {
 		HostSeat:       r.host.CurrentHostSeat(),
 		ConnectedSeats: r.host.ConnectedSeats(),
 	}
+	r.network = r.buildHostNetworkSnapshotLocked()
 	r.queueEventLocked(EventLobbyUpdated, r.lobby)
 }
 
 func (r *Runtime) updateClientLobbyLocked() {
 	if r.client == nil {
 		r.lobby = nil
+		r.network = nil
 		return
 	}
 	role := ""
@@ -484,7 +550,81 @@ func (r *Runtime) updateClientLobbyLocked() {
 		ConnectedSeats: r.client.ConnectedSeats(),
 		Role:           role,
 	}
+	r.network = r.buildClientNetworkSnapshotLocked()
 	r.queueEventLocked(EventLobbyUpdated, r.lobby)
+}
+
+func (r *Runtime) currentNetworkSnapshotLocked() *NetworkSnapshot {
+	if r.network != nil {
+		return cloneNetworkSnapshot(r.network)
+	}
+	switch {
+	case r.host != nil:
+		return cloneNetworkSnapshot(r.buildHostNetworkSnapshotLocked())
+	case r.client != nil:
+		return cloneNetworkSnapshot(r.buildClientNetworkSnapshotLocked())
+	default:
+		return nil
+	}
+}
+
+func (r *Runtime) buildHostNetworkSnapshotLocked() *NetworkSnapshot {
+	if r.host == nil {
+		return nil
+	}
+	seatVersions := r.host.SeatProtocolVersions()
+	return &NetworkSnapshot{
+		Transport:                 r.host.TransportMode(),
+		SupportedProtocolVersions: netp2p.SupportedProtocolVersions(),
+		SeatProtocolVersions:      seatVersions,
+		MixedProtocolSession:      hasMixedProtocolVersions(seatVersions),
+	}
+}
+
+func (r *Runtime) buildClientNetworkSnapshotLocked() *NetworkSnapshot {
+	if r.client == nil {
+		return nil
+	}
+	return &NetworkSnapshot{
+		Transport:                 r.client.TransportMode(),
+		SupportedProtocolVersions: netp2p.SupportedProtocolVersions(),
+		NegotiatedProtocolVersion: r.client.WireProtocolVersion(),
+	}
+}
+
+func hasMixedProtocolVersions(seatVersions map[int]int) bool {
+	seen := map[int]struct{}{}
+	for _, version := range seatVersions {
+		if version == 0 {
+			continue
+		}
+		seen[version] = struct{}{}
+		if len(seen) > 1 {
+			return true
+		}
+	}
+	return false
+}
+
+func cloneNetworkSnapshot(src *NetworkSnapshot) *NetworkSnapshot {
+	if src == nil {
+		return nil
+	}
+	out := &NetworkSnapshot{
+		Transport:                 src.Transport,
+		NegotiatedProtocolVersion: src.NegotiatedProtocolVersion,
+		MixedProtocolSession:      src.MixedProtocolSession,
+	}
+	if len(src.SupportedProtocolVersions) > 0 {
+		out.SupportedProtocolVersions = append([]int(nil), src.SupportedProtocolVersions...)
+	}
+	if len(src.SeatProtocolVersions) > 0 {
+		out.SeatProtocolVersions = make(map[int]int, len(src.SeatProtocolVersions))
+		for seat, version := range src.SeatProtocolVersions {
+			out.SeatProtocolVersions[seat] = version
+		}
+	}
+	return out
 }
 
 func (r *Runtime) runHostEventLoop(gen uint64, host *netp2p.HostSession) {
@@ -869,6 +1009,9 @@ func applyGameActionHost(game *truco.Game, playerID int, payload GameActionPaylo
 	}
 	switch payload.Action {
 	case "play":
+		if payload.FaceDown {
+			return game.PlayCardFaceDown(playerID, payload.CardIndex)
+		}
 		return game.PlayCard(playerID, payload.CardIndex)
 	case "truco":
 		return requestOrRaiseTruco(game, playerID)
@@ -908,6 +1051,9 @@ func applyCPUActionToGame(g *truco.Game, pid int, a truco.CPUAction) error {
 func applyRemoteAction(game *truco.Game, a netp2p.ClientAction) error {
 	switch a.Action {
 	case "play":
+		if a.FaceDown {
+			return game.PlayCardFaceDown(a.Seat, a.CardIndex)
+		}
 		return game.PlayCard(a.Seat, a.CardIndex)
 	case "truco":
 		return requestOrRaiseTruco(game, a.Seat)
@@ -922,7 +1068,7 @@ func applyRemoteAction(game *truco.Game, a netp2p.ClientAction) error {
 
 func pushSnapshotsToClients(host *netp2p.HostSession, game *truco.Game) {
 	slots := host.Slots()
-	full := game.Snapshot(0)
+	full := game.AuthoritativeSnapshot()
 	full.Logs = nil
 	full.CurrentPlayerIdx = -1
 	for seat := 1; seat < len(slots); seat++ {

@@ -315,6 +315,7 @@ struct GameView: View {
                             PlayerHandView(
                                 player: me,
                                 isMyTurn: actions?.can_play_card == true,
+                                currentRound: snap.CurrentHand?.Round ?? 1,
                                 trickPiles: trickPiles(for: snap, playerID: me.playerID),
                                 placement: .bottom
                             )
@@ -361,6 +362,7 @@ struct GameView: View {
                 }
 
                 if isOnline {
+                    let network = connection?.network
                     VStack {
                         HStack(alignment: .top, spacing: 16) {
                             Spacer()
@@ -371,6 +373,10 @@ struct GameView: View {
                                         .foregroundColor(.white.opacity(0.6))
                                     connectionLine("Status", connection?.status ?? store.mode)
                                     connectionLine("Modo", connection?.is_online == true ? "online" : "offline")
+                                    if let network {
+                                        connectionLine("Transporte", network.transportLabel)
+                                        connectionLine("Protocolo", network.compatibilitySummary(isHost: connection?.is_host == true))
+                                    }
                                     connectionLine("Fila", "\(diagnostics?.event_backlog ?? 0)")
                                     if let message = connection?.last_error?.message, !message.isEmpty {
                                         connectionLine("Erro", message, tint: .red.opacity(0.9))
@@ -787,7 +793,7 @@ private struct CenterTableView: View {
                         let playerName = players.first(where: { $0.playerID == pc.PlayerID })?.Name ?? "Jogador"
                         
                         ZStack {
-                            CardView(card: pc.Card)
+                            CardView(card: pc.Card, isFaceUp: pc.FaceDown != true)
                                 .overlay(
                                     RoundedRectangle(cornerRadius: 12)
                                         .stroke(Color.yellow, lineWidth: isWinning ? 3 : 0)
@@ -1177,6 +1183,7 @@ private struct TrickPileCardView: View {
 private struct PlayerHandView: View {
     let player: Player
     let isMyTurn: Bool
+    let currentRound: Int
     let trickPiles: [TrickPile]
     let placement: GameView.TrickPilePlacement
     @EnvironmentObject var store: TrucoAppStore
@@ -1206,21 +1213,32 @@ private struct PlayerHandView: View {
                 HStack(spacing: 16) {
                     if let hand = player.Hand {
                         ForEach(Array(hand.enumerated()), id: \.element) { index, card in
-                            CardView(card: card)
-                                .offset(y: hoveredCard == card.Rank + card.Suit ? -30 : 0)
-                                .animation(.interactiveSpring(response: 0.3, dampingFraction: 0.6), value: hoveredCard)
-                                .onHover { isHovered in
-                                    if isHovered && isMyTurn {
-                                        hoveredCard = card.Rank + card.Suit
-                                    } else if hoveredCard == card.Rank + card.Suit {
-                                        hoveredCard = nil
+                            VStack(spacing: 8) {
+                                CardView(card: card)
+                                    .offset(y: hoveredCard == card.Rank + card.Suit ? -30 : 0)
+                                    .animation(.interactiveSpring(response: 0.3, dampingFraction: 0.6), value: hoveredCard)
+                                    .onHover { isHovered in
+                                        if isHovered && isMyTurn {
+                                            hoveredCard = card.Rank + card.Suit
+                                        } else if hoveredCard == card.Rank + card.Suit {
+                                            hoveredCard = nil
+                                        }
                                     }
-                                }
-                                .onTapGesture {
-                                    if isMyTurn {
-                                        store.dispatchGameAction(action: "play", cardIndex: index)
+                                    .onTapGesture {
+                                        if isMyTurn {
+                                            store.dispatchGameAction(action: "play", cardIndex: index)
+                                        }
                                     }
+
+                                if isMyTurn && currentRound >= 2 {
+                                    Button("Virada") {
+                                        store.dispatchGameAction(action: "play", cardIndex: index, faceDown: true)
+                                    }
+                                    .buttonStyle(.bordered)
+                                    .controlSize(.small)
+                                    .tint(.white.opacity(0.25))
                                 }
+                            }
                         }
                     }
                 }

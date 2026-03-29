@@ -1,5 +1,16 @@
 <?php
 /**
+ * Return a localized card label for assistive text and tooltips.
+ */
+function cardLabel(array $card): string
+{
+    $rank = (string) ($card['Rank'] ?? '?');
+    $suit = (string) ($card['Suit'] ?? '');
+
+    return tr('card_of', $rank, tr('suit_' . $suit));
+}
+
+/**
  * Render a face-up card as HTML.
  *
  * @param array  $card     Card with 'Rank' and 'Suit'

@@ -303,6 +303,9 @@ func (m UIModel) renderFlightRow(width int, compact bool) string {
 	pName := clip(safePlayerName(s.Players, pc.PlayerID), nameMax)
 	label := lipgloss.NewStyle().Foreground(lgCyan).Bold(true).Render(fmt.Sprintf("%s %s", animArrow(rel), pName))
 	card := renderBigCard(pc.Card, false, compact)
+	if pc.FaceDown {
+		card = renderBigCardBack(compact)
+	}
 	flight := lipgloss.JoinHorizontal(lipgloss.Center, label, " ", card)
 	row := lipgloss.PlaceHorizontal(width, lipgloss.Position(pos), flight, lipgloss.WithWhitespaceBackground(lgGreen))
 	lead, trail := animVerticalPadding(rel, progress)

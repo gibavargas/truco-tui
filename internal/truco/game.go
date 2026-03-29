@@ -29,6 +29,7 @@ type Player struct {
 type PlayedCard struct {
 	PlayerID int
 	Card     Card
+	FaceDown bool
 }
 
 // TrickPile mantém o monte de uma vaza já resolvida.
@@ -297,6 +298,14 @@ func (g *Game) playerIndexByIDLocked(id int) int {
 }
 
 func (g *Game) PlayCard(playerID, handIndex int) error {
+	return g.playCard(playerID, handIndex, false)
+}
+
+func (g *Game) PlayCardFaceDown(playerID, handIndex int) error {
+	return g.playCard(playerID, handIndex, true)
+}
+
+func (g *Game) playCard(playerID, handIndex int, faceDown bool) error {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
@@ -320,11 +329,18 @@ func (g *Game) PlayCard(playerID, handIndex int) error {
 	if handIndex < 0 || handIndex >= len(g.players[pi].Hand) {
 		return errors.New("índice de carta inválido")
 	}
+	if faceDown && g.hand.Round < 2 {
+		return errors.New("carta virada só é permitida a partir da segunda vaza")
+	}
 
 	card := g.players[pi].Hand[handIndex]
 	g.players[pi].Hand = append(g.players[pi].Hand[:handIndex], g.players[pi].Hand[handIndex+1:]...)
-	g.hand.RoundCards = append(g.hand.RoundCards, PlayedCard{PlayerID: playerID, Card: card})
-	g.addLogLocked(fmt.Sprintf("%s jogou %s.", g.players[pi].Name, card))
+	g.hand.RoundCards = append(g.hand.RoundCards, PlayedCard{PlayerID: playerID, Card: card, FaceDown: faceDown})
+	if faceDown {
+		g.addLogLocked(fmt.Sprintf("%s jogou carta virada.", g.players[pi].Name))
+	} else {
+		g.addLogLocked(fmt.Sprintf("%s jogou %s.", g.players[pi].Name, card))
+	}
 
 	if len(g.hand.RoundCards) < g.numPlayers {
 		g.hand.Turn = g.nextSeatLocked(g.hand.Turn)
@@ -602,14 +618,27 @@ func (g *Game) RaiseTruco(playerID int) error {
 	return nil
 }
 
-func (g *Game) Snapshot(forPlayer int) Snapshot {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-
+func (g *Game) snapshotLocked(forPlayer int, maskFaceDown bool) Snapshot {
 	players := make([]Player, len(g.players))
 	copy(players, g.players)
 	logs := make([]string, len(g.logs))
 	copy(logs, g.logs)
+	hand := g.hand
+	hand.RoundCards = append([]PlayedCard(nil), g.hand.RoundCards...)
+	hand.TrickResults = append([]int(nil), g.hand.TrickResults...)
+	if g.hand.TrickWins != nil {
+		hand.TrickWins = make(map[int]int, len(g.hand.TrickWins))
+		for k, v := range g.hand.TrickWins {
+			hand.TrickWins[k] = v
+		}
+	}
+	if maskFaceDown {
+		for i := range hand.RoundCards {
+			if hand.RoundCards[i].FaceDown {
+				hand.RoundCards[i].Card = Card{}
+			}
+		}
+	}
 
 	currTeam := -1
 	currIdx := g.playerIndexByIDLocked(g.hand.Turn)
@@ -627,7 +656,7 @@ func (g *Game) Snapshot(forPlayer int) Snapshot {
 	return Snapshot{
 		Players:          players,
 		NumPlayers:       g.numPlayers,
-		CurrentHand:      g.hand,
+		CurrentHand:      hand,
 		LastTrickCards:   append([]PlayedCard(nil), g.lastTrickCards...),
 		TrickPiles:       append([]TrickPile(nil), g.trickPiles...),
 		MatchPoints:      map[int]int{0: g.points[0], 1: g.points[1]},
@@ -647,6 +676,18 @@ func (g *Game) Snapshot(forPlayer int) Snapshot {
 		LastTrickTie:     g.lastTrickTie,
 		LastTrickRound:   g.lastTrickRound,
 	}
+}
+
+func (g *Game) Snapshot(forPlayer int) Snapshot {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.snapshotLocked(forPlayer, true)
+}
+
+func (g *Game) AuthoritativeSnapshot() Snapshot {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.snapshotLocked(0, false)
 }
 
 func (g *Game) IsCPUTurn() (bool, int) {

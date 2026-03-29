@@ -11,13 +11,19 @@ if (!isset($_SESSION['locale'])) {
 $apiUrl = getenv('TRUCO_API_URL') ?: 'http://localhost:9090';
 $api = new TrucoApiClient($apiUrl);
 
-if (empty($_SESSION['api_session_id'])) {
-    $res = $api->call('createSession');
-    if (!empty($res['ok']) && !empty($res['sessionId'])) {
-        $_SESSION['api_session_id'] = $res['sessionId'];
+function ensureApiSession(TrucoApiClient $api): string
+{
+    if (empty($_SESSION['api_session_id'])) {
+        $res = $api->call('createSession');
+        if (!empty($res['ok']) && !empty($res['sessionId'])) {
+            $_SESSION['api_session_id'] = $res['sessionId'];
+        }
     }
+
+    return (string) ($_SESSION['api_session_id'] ?? '');
 }
-$sid = $_SESSION['api_session_id'] ?? '';
+
+$sid = ensureApiSession($api);
 
 function storeBrowserState(array $result): void
 {
@@ -159,6 +165,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $payload = [];
             if ($action === 'play') {
                 $payload['cardIndex'] = (int) ($_POST['cardIndex'] ?? -1);
+                $payload['faceDown'] = !empty($_POST['faceDown']);
             }
             $res = $api->call($action, $sid, $payload);
             if (!empty($res['ok'])) {
@@ -171,11 +178,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             break;
 
         case 'reset':
-        case 'leaveLobby':
-            $res = $api->call('leaveSession', $sid);
+            $res = $api->call('reset', $sid);
             if (!empty($res['ok'])) {
                 storeBrowserState($res);
                 unset($_SESSION['runtime_events']);
+            } else {
+                $errorMsg = $res['error'] ?? 'Failed to reset session';
+                markBrowserRuntimeError($errorMsg);
+            }
+            break;
+
+        case 'leaveLobby':
+            $res = $api->call('closeSession', $sid);
+            if (!empty($res['ok'])) {
+                unset($_SESSION['api_session_id']);
+                unset($_SESSION['runtime_bundle']);
+                unset($_SESSION['online_session']);
+                unset($_SESSION['runtime_events']);
+                unset($_SESSION['runtime_error']);
+                $_SESSION['runtime_state_valid'] = true;
+                $sid = '';
             } else {
                 $errorMsg = $res['error'] ?? 'Failed to close session';
                 markBrowserRuntimeError($errorMsg);
@@ -269,6 +291,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
+$sid = ensureApiSession($api);
 $bundle = refreshRuntimeState($api, $sid, true) ?? ($_SESSION['runtime_bundle'] ?? null);
 $view = currentViewFromBundle($bundle);
 $snap = is_array($bundle['match'] ?? null) ? $bundle['match'] : null;
