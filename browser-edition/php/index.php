@@ -362,11 +362,11 @@ $langAttr = ($locale === 'en-US') ? 'en' : 'pt-BR';
                 <form method="post" action="index.php" class="locale-form">
                     <input type="hidden" name="action" value="setLocale">
                     <label for="locale-sel"><?= tr('locale_label') ?></label>
-                    <select id="locale-sel" name="locale" class="field field-sm">
+                    <select id="locale-sel" name="locale" class="field field-sm" onchange="this.form.submit()">
                         <option value="pt-BR" <?= $locale === 'pt-BR' ? 'selected' : '' ?>>Português (BR)</option>
                         <option value="en-US" <?= $locale === 'en-US' ? 'selected' : '' ?>>English (US)</option>
                     </select>
-                    <button type="submit" class="btn btn-neutral btn-mini">OK</button>
+                    <noscript><button type="submit" class="btn btn-neutral btn-mini">OK</button></noscript>
                 </form>
             </div>
         </header>

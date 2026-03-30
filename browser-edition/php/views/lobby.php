@@ -150,7 +150,7 @@ if (!empty($network['negotiated_protocol_version'])) {
                 <h3><?= tr('lobby_chat_send') ?></h3>
                 <form method="post" action="index.php" class="lobby-chat-row" data-ajax="true">
                     <input type="hidden" name="action" value="sendChat">
-                    <input name="message" class="field" type="text" autocomplete="off" placeholder="<?= htmlspecialchars(tr('chat_placeholder')) ?>">
+                    <input name="message" class="field" type="text" autocomplete="off" placeholder="<?= htmlspecialchars(tr('chat_placeholder')) ?>" aria-label="<?= htmlspecialchars(tr('chat_placeholder')) ?>">
                     <button type="submit" class="btn btn-neutral">💬 <?= tr('lobby_chat_send') ?></button>
                 </form>
             </section>
