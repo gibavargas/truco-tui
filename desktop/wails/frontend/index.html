@@ -1,82 +1,21 @@
 <!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Truco Wails</title>
-  <link rel="stylesheet" href="./style.css">
-</head>
-<body>
-  <div class="shell">
-    <header class="topbar">
-      <div>
-        <h1>Truco Wails</h1>
-        <p>Windows and Linux desktop shell backed by appcore</p>
-      </div>
-      <div class="actions">
-        <button id="locale-toggle">Toggle Locale</button>
-        <button id="close-session">Close Session</button>
-      </div>
-    </header>
-
-    <main class="layout">
-      <section class="panel">
-        <h2>Session</h2>
-        <div class="grid">
-          <label>
-            Name
-            <input id="player-name" value="Player">
-          </label>
-          <label>
-            Players
-            <select id="num-players">
-              <option value="2">2</option>
-              <option value="4">4</option>
-            </select>
-          </label>
-        </div>
-        <div class="actions">
-          <button id="start-offline">Start Offline</button>
-          <button id="create-host">Create Host</button>
-          <button id="start-match">Start Match</button>
-        </div>
-        <label>
-          Invite Key
-          <input id="invite-key" placeholder="Paste invite key">
-        </label>
-        <div class="actions">
-          <button id="join-session">Join Session</button>
-          <button id="new-hand">New Hand</button>
-          <button id="tick">Tick CPU</button>
-        </div>
-      </section>
-
-      <section class="panel">
-        <h2>Table</h2>
-        <div id="summary" class="summary">No match loaded.</div>
-        <div id="cards" class="cards"></div>
-        <div class="actions">
-          <button id="truco">Truco</button>
-          <button id="accept">Accept</button>
-          <button id="refuse">Refuse</button>
-        </div>
-      </section>
-
-      <section class="panel">
-        <h2>Online</h2>
-        <label>
-          Chat
-          <input id="chat-text" placeholder="Type a message">
-        </label>
-        <div class="actions">
-          <button id="send-chat">Send Chat</button>
-          <button id="vote-host">Vote Host Seat 0</button>
-          <button id="replacement">Replacement Seat 1</button>
-        </div>
-        <pre id="events" class="log"></pre>
-      </section>
-    </main>
-  </div>
-  <script src="./app.js"></script>
-</body>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Truco Paulista</title>
+    <meta
+      name="description"
+      content="Truco Paulista no desktop com cliente Wails e runtime Go compartilhado."
+    >
+    <link rel="icon" type="image/svg+xml" href="./favicon.svg">
+    <link rel="icon" type="image/png" sizes="512x512" href="./favicon.png">
+    <link rel="icon" href="./favicon.ico" sizes="any">
+    <link rel="apple-touch-icon" href="./apple-touch-icon.png">
+    <link rel="stylesheet" href="./assets/app.css">
+    <script type="module" src="./assets/app.js"></script>
+  </head>
+  <body>
+    <div id="app"></div>
+  </body>
 </html>

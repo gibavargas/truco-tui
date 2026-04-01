@@ -30,6 +30,10 @@ export function PlayCard(arg1) {
   return window['go']['main']['App']['PlayCard'](arg1);
 }
 
+export function PlayFaceDownCard(arg1) {
+  return window['go']['main']['App']['PlayFaceDownCard'](arg1);
+}
+
 export function PollEvents() {
   return window['go']['main']['App']['PollEvents']();
 }
@@ -48,6 +52,10 @@ export function RequestTruco() {
 
 export function Reset() {
   return window['go']['main']['App']['Reset']();
+}
+
+export function RuntimeUpdateEventName() {
+  return window['go']['main']['App']['RuntimeUpdateEventName']();
 }
 
 export function SendChat(arg1) {
