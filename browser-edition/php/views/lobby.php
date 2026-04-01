@@ -53,7 +53,7 @@ if (!empty($network['negotiated_protocol_version'])) {
             <?php if ($isHost): ?>
                 <form method="post" action="index.php" data-ajax="true">
                     <input type="hidden" name="action" value="startOnlineMatch">
-                    <button type="submit" class="btn btn-primary">▶ <?= tr('lobby_start') ?></button>
+                    <button type="submit" class="btn btn-primary"><span aria-hidden="true">▶</span> <?= tr('lobby_start') ?></button>
                 </form>
             <?php endif; ?>
         </div>
@@ -151,7 +151,7 @@ if (!empty($network['negotiated_protocol_version'])) {
                 <form method="post" action="index.php" class="lobby-chat-row" data-ajax="true">
                     <input type="hidden" name="action" value="sendChat">
                     <input name="message" class="field" type="text" autocomplete="off" placeholder="<?= htmlspecialchars(tr('chat_placeholder')) ?>">
-                    <button type="submit" class="btn btn-neutral">💬 <?= tr('lobby_chat_send') ?></button>
+                    <button type="submit" class="btn btn-neutral"><span aria-hidden="true">💬</span> <?= tr('lobby_chat_send') ?></button>
                 </form>
             </section>
         </article>
@@ -160,11 +160,11 @@ if (!empty($network['negotiated_protocol_version'])) {
     <div class="action-row lobby-actions">
         <form method="post" action="index.php" data-ajax="true">
             <input type="hidden" name="action" value="refreshLobby">
-            <button type="submit" class="btn btn-neutral">⟳ <?= tr('lobby_refresh') ?></button>
+            <button type="submit" class="btn btn-neutral"><span aria-hidden="true">⟳</span> <?= tr('lobby_refresh') ?></button>
         </form>
         <form method="post" action="index.php" data-ajax="true">
             <input type="hidden" name="action" value="leaveLobby">
-            <button type="submit" class="btn btn-refuse">⎋ <?= tr('lobby_leave') ?></button>
+            <button type="submit" class="btn btn-refuse"><span aria-hidden="true">⎋</span> <?= tr('lobby_leave') ?></button>
         </form>
     </div>
 </section>
