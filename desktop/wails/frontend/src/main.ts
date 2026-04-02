@@ -1,5 +1,12 @@
 import { layout, prepare } from "@chenglou/pretext";
 import { translate } from "./i18n";
+import {
+  expectedModesForAction,
+  recoveryStateForBundle,
+  shouldApplyIncomingSequence,
+  viewForMode,
+} from "./runtime-state";
+import type { ViewName } from "./runtime-state";
 import type {
   Card,
   LocaleCode,
@@ -11,8 +18,9 @@ import type {
 } from "./types";
 import { copyText, invoke, onRuntimeUpdate, snapshot } from "./wails";
 
-type ViewName = "setup" | "lobby" | "game";
 type ClientAction = "refresh" | "toggle-diagnostics";
+type MutationExpectation = { modes: string[]; timeoutLabel: string };
+type RefreshState = "idle" | "ok" | "error" | "stale";
 
 interface AppState {
   locale: LocaleCode;
@@ -25,6 +33,14 @@ interface AppState {
   busyForm: string;
   initialized: boolean;
   diagnosticsOpen: boolean;
+  pendingAction: string;
+  lastSubmittedAction: string;
+  lastExpectedModes: string[];
+  lastSeenSequence: number;
+  lastMode: string;
+  lastRefreshState: RefreshState;
+  lastRefreshError: string;
+  lastRenderError: string;
 }
 
 const LOCALE_KEY = "truco-wails-locale";
@@ -32,6 +48,8 @@ const PLAYER_KEY = "truco-wails-player-name";
 const RELAY_KEY = "truco-wails-relay-url";
 const TRANSPORT_KEY = "truco-wails-transport-mode";
 const EVENT_LIMIT = 80;
+const ACTION_TIMEOUT_MS = 4000;
+const SNAPSHOT_TIMEOUT_MS = 2500;
 const rootElement = document.querySelector<HTMLElement>("#app");
 
 if (!rootElement) {
@@ -53,6 +71,14 @@ const state: AppState = {
   busyForm: "",
   initialized: false,
   diagnosticsOpen: false,
+  pendingAction: "",
+  lastSubmittedAction: "",
+  lastExpectedModes: [],
+  lastSeenSequence: 0,
+  lastMode: "idle",
+  lastRefreshState: "idle",
+  lastRefreshError: "",
+  lastRenderError: "",
 };
 
 root.addEventListener("submit", (event) => {
@@ -119,17 +145,13 @@ async function bootstrap(): Promise<void> {
 
 async function refreshSnapshot(): Promise<void> {
   const bundle = await snapshot();
-  state.bundle = bundle;
-  state.locale = bundle.locale || state.locale;
-  document.documentElement.lang = state.locale === "en-US" ? "en" : "pt-BR";
-  localStorage.setItem(LOCALE_KEY, state.locale);
+  applyBundle(bundle, "snapshot");
 }
 
 function applyRuntimeUpdate(update: RuntimeUpdate): void {
-  state.bundle = update.bundle;
-  state.locale = update.bundle.locale || state.locale;
-  document.documentElement.lang = state.locale === "en-US" ? "en" : "pt-BR";
-  localStorage.setItem(LOCALE_KEY, state.locale);
+  if (!applyBundle(update.bundle, "event")) {
+    return;
+  }
 
   if (update.events && update.events.length > 0) {
     state.events = [...state.events, ...update.events].slice(-EVENT_LIMIT);
@@ -164,21 +186,35 @@ async function submitForm(form: HTMLFormElement): Promise<void> {
 
   const payload = formPayload(form);
   const formId = form.dataset.formId || action;
+  const expectation = mutationExpectation(action);
   state.busyForm = formId;
+  state.pendingAction = action;
+  state.lastSubmittedAction = action;
+  state.lastExpectedModes = expectation.modes;
+  state.lastRenderError = "";
+  state.lastRefreshState = "idle";
+  state.lastRefreshError = "";
+  state.error = "";
   render();
 
   try {
     persistInputs(payload);
-    const result = await invoke(action, payload);
+    const result = await withTimeout(
+      invoke(action, payload),
+      ACTION_TIMEOUT_MS,
+      t("status_action_timeout", expectation.timeoutLabel),
+    );
     if (result?.message) {
-      await refreshSnapshot();
+      await reconcileSnapshot(action, expectation, true);
       throw new Error(result.message);
     }
+    await reconcileSnapshot(action, expectation, false);
     state.error = "";
   } catch (error) {
     state.error = errorMessage(error);
   } finally {
     state.busyForm = "";
+    state.pendingAction = "";
     render();
   }
 }
@@ -207,14 +243,7 @@ async function runClientAction(action: ClientAction | undefined): Promise<void> 
 }
 
 function currentView(): ViewName {
-  const mode = state.bundle?.mode || "idle";
-  if (mode.includes("lobby")) {
-    return "lobby";
-  }
-  if (mode.includes("match")) {
-    return "game";
-  }
-  return "setup";
+  return viewForMode(state.bundle?.mode || "idle");
 }
 
 function isOnlineMode(): boolean {
@@ -228,10 +257,6 @@ function render(): void {
 }
 
 function renderApp(): string {
-  const banner = activeError()
-    ? `<section class="runtime-banner" data-pretext-block="lock-height">${escapeHtml(activeError() || "")}</section>`
-    : "";
-
   return `
     <div class="page-shell">
       <div class="page-aura page-aura-left"></div>
@@ -261,17 +286,72 @@ function renderApp(): string {
             </div>
           </div>
         </header>
-        ${banner}
-        ${renderView()}
+        ${renderRuntimeBanner()}
+        ${renderSafeView()}
         ${renderDiagnostics()}
       </main>
     </div>
   `;
 }
 
+function renderRuntimeBanner(): string {
+  const classes = ["runtime-banner"];
+  let message = "";
+
+  if (state.pendingAction) {
+    classes.push("runtime-banner-info");
+    message = t("status_action_pending", describeAction(state.pendingAction));
+  } else if (state.lastRenderError) {
+    classes.push("runtime-banner-warning");
+    message = `${t("status_render_recovery")} ${state.lastRenderError}`;
+  } else if (activeError()) {
+    classes.push("runtime-banner-danger");
+    message = activeError() || "";
+  } else if (state.lastRefreshState === "stale") {
+    classes.push("runtime-banner-warning");
+    message = t("status_refresh_stale", formatExpectedModes(state.lastExpectedModes));
+  } else if (state.lastRefreshState === "error" && state.lastRefreshError) {
+    classes.push("runtime-banner-warning");
+    message = state.lastRefreshError;
+  }
+
+  if (!message) {
+    return "";
+  }
+
+  return `
+    <section class="${classes.join(" ")}" data-pretext-block="lock-height">
+      <div class="runtime-banner-copy">${escapeHtml(message)}</div>
+      <div class="runtime-banner-actions">
+        <button class="ghost-button strong" type="button" data-client-action="refresh">${escapeHtml(t("header_resync"))}</button>
+        <button class="ghost-button" type="button" data-client-action="toggle-diagnostics">
+          ${escapeHtml(state.diagnosticsOpen ? t("header_hide_diagnostics") : t("header_diagnostics"))}
+        </button>
+      </div>
+    </section>
+  `;
+}
+
+function renderSafeView(): string {
+  try {
+    return renderView();
+  } catch (error) {
+    state.lastRenderError = errorMessage(error);
+    return renderRenderRecoveryCard();
+  }
+}
+
 function renderView(): string {
   if (!state.initialized && !state.bundle && !activeError()) {
     return `<section class="surface-card loading-card"><div class="loading-pip"></div><strong>${escapeHtml(t("button_busy"))}</strong></section>`;
+  }
+
+  const recoveryState = recoveryStateForBundle(state.bundle);
+  if (recoveryState === "waiting_lobby") {
+    return renderStateRecoveryCard(t("lobby_title"), t("status_waiting_lobby"));
+  }
+  if (recoveryState === "waiting_match") {
+    return renderStateRecoveryCard(t("game_title_offline"), t("status_waiting_match"));
   }
 
   switch (currentView()) {
@@ -412,6 +492,9 @@ function renderLobby(): string {
   const slots = bundle.ui.lobby_slots || [];
   const invite = lobby?.invite_key || "";
   const isHost = bundle.connection.is_host;
+  if (!lobby) {
+    return renderStateRecoveryCard(t("lobby_title"), t("status_waiting_lobby"));
+  }
 
   return `
     <section class="lobby-layout">
@@ -509,8 +592,8 @@ function renderSeat(slot: LobbySlotState): string {
 function renderGame(): string {
   const bundle = requireBundle();
   const match = bundle.match;
-  if (!match) {
-    return renderSetup();
+  if (!match || !match.CurrentHand || !Array.isArray(match.Players) || match.Players.length === 0) {
+    return renderStateRecoveryCard(t("game_title_offline"), t("status_waiting_match"));
   }
 
   const localPlayerID = bundle.ui.actions.local_player_id >= 0 ? bundle.ui.actions.local_player_id : match.CurrentPlayerIdx;
@@ -527,7 +610,7 @@ function renderGame(): string {
       ? t("status_pending_you", raiseLabel(pendingTo))
       : pendingFor >= 0
         ? t("status_pending_other", playerName(match, match.TurnPlayer), raiseLabel(pendingTo))
-        : match.TurnPlayer === bundle.ui.actions.local_player_id
+        : match.TurnPlayer === localPlayerID
           ? t("status_your_turn")
           : t("status_wait_turn", playerName(match, match.TurnPlayer));
   const bottomScore = teamScore(match, 0);
@@ -625,7 +708,7 @@ function renderGame(): string {
             <span class="section-pill">${escapeHtml(t("game_last_trick"))}</span>
           </div>
           <div class="activity-summary" data-pretext-block="lock-height">${escapeHtml(lastTrickCopy(match))}</div>
-          <pre class="event-feed compact" data-pretext-block="lock-height" data-pretext-whitespace="pre-wrap">${escapeHtml(renderEventFeed(match.Logs.slice(-4)))}</pre>
+          <pre class="event-feed compact" data-pretext-block="lock-height" data-pretext-whitespace="pre-wrap">${escapeHtml(renderEventFeed((match.Logs || []).slice(-4)))}</pre>
         </article>
         <article class="surface-card table-note-card">
           <div class="card-head">
@@ -649,7 +732,7 @@ function renderPlayers(match: MatchSnapshot, bundle: SnapshotBundle): string {
   const localPlayerID = bundle.ui.actions.local_player_id >= 0 ? bundle.ui.actions.local_player_id : match.CurrentPlayerIdx;
   const positions = seatPositions(match, bundle);
   const localTeamId = localTeam(match, bundle);
-  return match.Players
+  return (match.Players || [])
     .filter((player) => player.ID !== localPlayerID)
     .map((player) => {
       const position = positions.get(player.ID) || "top";
@@ -663,7 +746,7 @@ function renderPlayers(match: MatchSnapshot, bundle: SnapshotBundle): string {
             <span>${escapeHtml(relation)}${player.CPU ? ` · ${escapeHtml(t("game_cpu"))}` : ""}</span>
           </div>
           <div class="player-cards">
-            ${player.Hand.map(() => `<span class="card-back tiny"></span>`).join("")}
+            ${(player.Hand || []).map(() => `<span class="card-back tiny"></span>`).join("")}
           </div>
         </div>
       `;
@@ -672,7 +755,7 @@ function renderPlayers(match: MatchSnapshot, bundle: SnapshotBundle): string {
 }
 
 function renderRoundCards(match: MatchSnapshot): string {
-  const roundCards = match.CurrentHand.RoundCards || [];
+  const roundCards = match.CurrentHand?.RoundCards || [];
   if (roundCards.length === 0) {
     return `<div class="round-card-placeholder">${escapeHtml(t("game_table_waiting"))}</div>`;
   }
@@ -687,8 +770,9 @@ function renderRoundCards(match: MatchSnapshot): string {
 }
 
 function renderTrickTrack(match: MatchSnapshot): string {
+  const trickResults = match.CurrentHand?.TrickResults || [];
   return Array.from({ length: 3 }, (_, index) => {
-    const result = match.CurrentHand.TrickResults[index];
+    const result = trickResults[index];
     let label = t("game_trick_pending");
     let className = "trick-pill";
     if (result === -1) {
@@ -700,6 +784,28 @@ function renderTrickTrack(match: MatchSnapshot): string {
     }
     return `<span class="${className}">${escapeHtml(t("game_trick_label", index + 1))} · ${escapeHtml(label)}</span>`;
   }).join("");
+}
+
+function renderStateRecoveryCard(title: string, copy: string): string {
+  return `
+    <section class="surface-card loading-card">
+      <div class="card-head">
+        <div>
+          <p class="eyebrow">${escapeHtml(t("game_runtime_stale_title"))}</p>
+          <h3>${escapeHtml(title)}</h3>
+        </div>
+      </div>
+      <p class="supporting-copy" data-pretext-block="lock-height">${escapeHtml(copy)}</p>
+      <div class="desktop-action-row">
+        <button class="ghost-button strong" type="button" data-client-action="refresh">${escapeHtml(t("header_resync"))}</button>
+        <button class="ghost-button" type="button" data-client-action="toggle-diagnostics">${escapeHtml(t("header_diagnostics"))}</button>
+      </div>
+    </section>
+  `;
+}
+
+function renderRenderRecoveryCard(): string {
+  return renderStateRecoveryCard(t("game_runtime_stale_title"), t("status_render_recovery_copy"));
 }
 
 function renderPlayableCard(card: Card, index: number, canPlay: boolean, canFaceDown: boolean): string {
@@ -810,7 +916,13 @@ function renderDiagnostics(): string {
         ${renderMetric(t("connection_backlog"), String(bundle.diagnostics.event_backlog || 0))}
         ${renderMetric(t("connection_status"), bundle.connection.status)}
         ${renderMetric(t("connection_transport"), bundle.connection.network?.transport || "-")}
+        ${renderMetric(t("diagnostics_mode"), state.lastMode || bundle.mode || "idle")}
+        ${renderMetric(t("diagnostics_sequence"), String(state.lastSeenSequence))}
+        ${renderMetric(t("diagnostics_last_action"), state.lastSubmittedAction ? describeAction(state.lastSubmittedAction) : "-")}
+        ${renderMetric(t("diagnostics_refresh"), state.lastRefreshState)}
         ${error ? renderMetric(t("event_error"), `${error.code}: ${error.message}`) : ""}
+        ${state.lastRefreshError ? renderMetric(t("diagnostics_refresh_error"), state.lastRefreshError) : ""}
+        ${state.lastRenderError ? renderMetric(t("diagnostics_render_error"), state.lastRenderError) : ""}
       </div>
       <div class="diagnostics-log-shell">
         <strong>${escapeHtml(t("diagnostics_event_log"))}</strong>
@@ -908,6 +1020,97 @@ function localizeRaiseText(raw: string): string {
       return t("raise_12");
     default:
       return raw;
+  }
+}
+
+function applyBundle(bundle: SnapshotBundle, source: "snapshot" | "event"): boolean {
+  const sequence = bundle.connection?.last_event_sequence || 0;
+  if (!shouldApplyIncomingSequence(state.lastSeenSequence, sequence, source)) {
+    return false;
+  }
+
+  state.bundle = bundle;
+  state.locale = bundle.locale || state.locale;
+  state.lastSeenSequence = Math.max(state.lastSeenSequence, sequence);
+  state.lastMode = bundle.mode || "idle";
+  document.documentElement.lang = state.locale === "en-US" ? "en" : "pt-BR";
+  localStorage.setItem(LOCALE_KEY, state.locale);
+
+  if (state.lastMode === "idle") {
+    state.pendingAction = "";
+  }
+
+  return true;
+}
+
+async function reconcileSnapshot(
+  action: string,
+  expectation: MutationExpectation,
+  isErrorRecovery: boolean,
+): Promise<void> {
+  try {
+    await withTimeout(refreshSnapshot(), SNAPSHOT_TIMEOUT_MS, t("status_snapshot_timeout"));
+    state.lastRefreshState = "ok";
+    state.lastRefreshError = "";
+  } catch (error) {
+    state.lastRefreshState = "error";
+    state.lastRefreshError = t("status_refresh_failed", describeAction(action), errorMessage(error));
+    throw new Error(state.lastRefreshError);
+  }
+
+  if (isErrorRecovery) {
+    return;
+  }
+
+  const mode = state.bundle?.mode || "idle";
+  if (expectation.modes.length > 0 && !expectation.modes.includes(mode)) {
+    state.lastRefreshState = "stale";
+    throw new Error(t("status_transition_failed", describeAction(action), formatExpectedModes(expectation.modes), mode));
+  }
+}
+
+function mutationExpectation(action: string): MutationExpectation {
+  return { modes: expectedModesForAction(action), timeoutLabel: describeAction(action) };
+}
+
+function describeAction(action: string): string {
+  switch (action) {
+    case "startGame":
+      return t("setup_offline_title");
+    case "startOnlineHost":
+      return t("setup_host");
+    case "joinOnline":
+      return t("setup_join");
+    case "startOnlineMatch":
+      return t("lobby_start");
+    case "sendChat":
+      return t("lobby_chat");
+    case "closeSession":
+    case "reset":
+      return t("lobby_leave");
+    default:
+      return action;
+  }
+}
+
+function formatExpectedModes(modes: string[]): string {
+  if (modes.length === 0) {
+    return "-";
+  }
+  return modes.join(", ");
+}
+
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
+  let timer = 0;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_, reject) => {
+        timer = window.setTimeout(() => reject(new Error(message)), timeoutMs);
+      }),
+    ]);
+  } finally {
+    window.clearTimeout(timer);
   }
 }
 
