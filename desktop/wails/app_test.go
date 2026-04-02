@@ -5,6 +5,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -169,6 +170,164 @@ func TestJoinSessionTransitionsClientToLobby(t *testing.T) {
 	waitForMode(t, client, appcore.ModeClientLobby)
 }
 
+func TestStartHostedMatchTransitionsHostAndClientToMatch(t *testing.T) {
+	host := NewApp()
+	if err := host.CreateHostSession("Mesa", 2, "127.0.0.1:0", "", "tcp_tls"); err != nil {
+		t.Fatalf("CreateHostSession: %v", err)
+	}
+	defer func() { _ = host.CloseSession() }()
+	waitForMode(t, host, appcore.ModeHostLobby)
+
+	key := host.Snapshot().Lobby.InviteKey
+	client := NewApp()
+	defer func() { _ = client.CloseSession() }()
+	if err := client.JoinSession(key, "Visitante", "auto"); err != nil {
+		t.Fatalf("JoinSession: %v", err)
+	}
+	waitForMode(t, client, appcore.ModeClientLobby)
+
+	if err := host.StartHostedMatch(); err != nil {
+		t.Fatalf("StartHostedMatch: %v", err)
+	}
+
+	waitForMode(t, host, appcore.ModeHostMatch)
+	waitForMode(t, client, appcore.ModeClientMatch)
+
+	hostSnapshot := host.Snapshot()
+	clientSnapshot := client.Snapshot()
+	if hostSnapshot.Match == nil {
+		t.Fatal("expected host match snapshot after starting hosted match")
+	}
+	if clientSnapshot.Match == nil {
+		t.Fatal("expected client match snapshot after starting hosted match")
+	}
+	if !clientSnapshot.Connection.IsOnline {
+		t.Fatal("expected client connection to stay online during hosted match")
+	}
+}
+
+func TestHostedLobbyChatArrivesAsSystemEvent(t *testing.T) {
+	host := NewApp()
+	if err := host.CreateHostSession("Mesa", 2, "127.0.0.1:0", "", "tcp_tls"); err != nil {
+		t.Fatalf("CreateHostSession: %v", err)
+	}
+	defer func() { _ = host.CloseSession() }()
+	waitForMode(t, host, appcore.ModeHostLobby)
+
+	key := host.Snapshot().Lobby.InviteKey
+	client := NewApp()
+	defer func() { _ = client.CloseSession() }()
+	if err := client.JoinSession(key, "Visitante", "auto"); err != nil {
+		t.Fatalf("JoinSession: %v", err)
+	}
+	waitForMode(t, client, appcore.ModeClientLobby)
+
+	if err := client.SendChat("oi da mesa"); err != nil {
+		t.Fatalf("SendChat: %v", err)
+	}
+
+	waitForEventText(t, host, 3*time.Second, "[chat] Visitante: oi da mesa")
+	waitForEventText(t, client, 3*time.Second, "[chat] Visitante: oi da mesa")
+}
+
+func TestVoteHostUpdatesLobbyHostSeat(t *testing.T) {
+	host := NewApp()
+	if err := host.CreateHostSession("Mesa", 2, "127.0.0.1:0", "", "tcp_tls"); err != nil {
+		t.Fatalf("CreateHostSession: %v", err)
+	}
+	defer func() { _ = host.CloseSession() }()
+	waitForMode(t, host, appcore.ModeHostLobby)
+
+	key := host.Snapshot().Lobby.InviteKey
+	client := NewApp()
+	defer func() { _ = client.CloseSession() }()
+	if err := client.JoinSession(key, "Visitante", "auto"); err != nil {
+		t.Fatalf("JoinSession: %v", err)
+	}
+	waitForMode(t, client, appcore.ModeClientLobby)
+
+	if err := host.VoteHost(1); err != nil {
+		t.Fatalf("host VoteHost: %v", err)
+	}
+	if err := client.VoteHost(1); err != nil {
+		t.Fatalf("client VoteHost: %v", err)
+	}
+
+	waitForLobbyHostSeat(t, host, 1)
+	waitForLobbyHostSeat(t, client, 1)
+}
+
+func TestReplacementInviteFlowWorksAfterDisconnect(t *testing.T) {
+	host := NewApp()
+	if err := host.CreateHostSession("Mesa", 2, "127.0.0.1:0", "", "tcp_tls"); err != nil {
+		t.Fatalf("CreateHostSession: %v", err)
+	}
+	defer func() { _ = host.CloseSession() }()
+	waitForMode(t, host, appcore.ModeHostLobby)
+
+	key := host.Snapshot().Lobby.InviteKey
+	client := NewApp()
+	if err := client.JoinSession(key, "Visitante", "auto"); err != nil {
+		t.Fatalf("JoinSession: %v", err)
+	}
+	waitForMode(t, client, appcore.ModeClientLobby)
+
+	if err := host.StartHostedMatch(); err != nil {
+		t.Fatalf("StartHostedMatch: %v", err)
+	}
+	waitForMode(t, host, appcore.ModeHostMatch)
+	waitForMode(t, client, appcore.ModeClientMatch)
+
+	if err := client.CloseSession(); err != nil {
+		t.Fatalf("CloseSession client: %v", err)
+	}
+	waitForDisconnectedSeat(t, host, 1)
+
+	if err := host.RequestReplacementInvite(1); err != nil {
+		t.Fatalf("RequestReplacementInvite: %v", err)
+	}
+
+	inviteEvent := waitForEventKind(t, host, 3*time.Second, appcore.EventReplacementInvite)
+	inviteKey := payloadString(inviteEvent, "invite_key")
+	if inviteKey == "" {
+		t.Fatal("expected replacement invite key in event payload")
+	}
+
+	sub := NewApp()
+	defer func() { _ = sub.CloseSession() }()
+	if err := sub.JoinSession(inviteKey, "Sub", "auto"); err != nil {
+		t.Fatalf("JoinSession replacement: %v", err)
+	}
+	waitForModeOneOf(t, sub, appcore.ModeClientLobby, appcore.ModeClientMatch)
+	waitForAssignedSeat(t, sub, 1)
+}
+
+func TestCloseSessionReturnsIdleAfterOnlineLobby(t *testing.T) {
+	host := NewApp()
+	if err := host.CreateHostSession("Mesa", 2, "127.0.0.1:0", "", "tcp_tls"); err != nil {
+		t.Fatalf("CreateHostSession: %v", err)
+	}
+	waitForMode(t, host, appcore.ModeHostLobby)
+
+	if err := host.CloseSession(); err != nil {
+		t.Fatalf("CloseSession: %v", err)
+	}
+
+	snapshot := host.Snapshot()
+	if snapshot.Mode != appcore.ModeIdle {
+		t.Fatalf("mode = %q, want %q", snapshot.Mode, appcore.ModeIdle)
+	}
+	if snapshot.Lobby != nil {
+		t.Fatal("expected lobby snapshot cleared after online close")
+	}
+	if snapshot.Match != nil {
+		t.Fatal("expected match snapshot cleared after online close")
+	}
+	if snapshot.Connection.IsOnline {
+		t.Fatal("expected connection to be offline after online close")
+	}
+}
+
 func mustJSONPayload(t *testing.T, payload any) []byte {
 	t.Helper()
 	raw, err := json.Marshal(payload)
@@ -211,4 +370,127 @@ func waitForMode(t *testing.T, app *App, want string) {
 
 	snapshot := app.Snapshot()
 	t.Fatalf("timed out waiting for mode %q: got %q", want, snapshot.Mode)
+}
+
+func waitForModeOneOf(t *testing.T, app *App, wants ...string) {
+	t.Helper()
+
+	for range 120 {
+		snapshot := app.Snapshot()
+		for _, want := range wants {
+			if snapshot.Mode == want {
+				return
+			}
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+
+	snapshot := app.Snapshot()
+	t.Fatalf("timed out waiting for modes %v: got %q", wants, snapshot.Mode)
+}
+
+func waitForLobbyHostSeat(t *testing.T, app *App, want int) {
+	t.Helper()
+
+	for range 120 {
+		snapshot := app.Snapshot()
+		if snapshot.Lobby != nil && snapshot.Lobby.HostSeat == want {
+			return
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+
+	snapshot := app.Snapshot()
+	if snapshot.Lobby == nil {
+		t.Fatalf("timed out waiting for host seat %d: lobby snapshot missing", want)
+	}
+	t.Fatalf("timed out waiting for host seat %d: got %d", want, snapshot.Lobby.HostSeat)
+}
+
+func waitForDisconnectedSeat(t *testing.T, app *App, seat int) {
+	t.Helper()
+
+	for range 160 {
+		snapshot := app.Snapshot()
+		if snapshot.Lobby != nil && seat < len(snapshot.UI.LobbySlots) && !snapshot.UI.LobbySlots[seat].IsConnected {
+			return
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+
+	snapshot := app.Snapshot()
+	connected := true
+	if seat < len(snapshot.UI.LobbySlots) {
+		connected = snapshot.UI.LobbySlots[seat].IsConnected
+	}
+	t.Fatalf("timed out waiting for seat %d disconnect: connected=%v", seat, connected)
+}
+
+func waitForAssignedSeat(t *testing.T, app *App, want int) {
+	t.Helper()
+
+	for range 120 {
+		snapshot := app.Snapshot()
+		if snapshot.Lobby != nil && snapshot.Lobby.AssignedSeat == want {
+			return
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+
+	snapshot := app.Snapshot()
+	if snapshot.Lobby == nil {
+		t.Fatalf("timed out waiting for assigned seat %d: lobby snapshot missing", want)
+	}
+	t.Fatalf("timed out waiting for assigned seat %d: got %d", want, snapshot.Lobby.AssignedSeat)
+}
+
+func waitForEventKind(t *testing.T, app *App, timeout time.Duration, kind string) appcore.AppEvent {
+	t.Helper()
+
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		for _, event := range app.PollEvents() {
+			if event.Kind == kind {
+				return event
+			}
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+
+	t.Fatalf("timed out waiting for event %q", kind)
+	return appcore.AppEvent{}
+}
+
+func waitForEventText(t *testing.T, app *App, timeout time.Duration, want string) {
+	t.Helper()
+
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		for _, event := range app.PollEvents() {
+			if strings.Contains(payloadText(event), want) {
+				return
+			}
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+
+	t.Fatalf("timed out waiting for event text %q", want)
+}
+
+func payloadText(event appcore.AppEvent) string {
+	if payload, ok := event.Payload.(map[string]any); ok {
+		if text, ok := payload["text"].(string); ok {
+			return text
+		}
+	}
+	return fmt.Sprint(event.Payload)
+}
+
+func payloadString(event appcore.AppEvent, key string) string {
+	if payload, ok := event.Payload.(map[string]any); ok {
+		if value, ok := payload[key].(string); ok {
+			return value
+		}
+	}
+	return ""
 }

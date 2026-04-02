@@ -6,10 +6,10 @@ import { spawnSync } from "node:child_process";
 
 const workdir = process.cwd();
 const tempDir = mkdtempSync(path.join(tmpdir(), "truco-wails-frontend-test-"));
-const outfile = path.join(tempDir, "runtime-state.test.mjs");
+const outfile = path.join(tempDir, "frontend-tests.mjs");
 
 await build({
-  entryPoints: [path.join(workdir, "frontend/src/runtime-state.test.ts")],
+  entryPoints: [path.join(workdir, "frontend/src/test-entry.ts")],
   outfile,
   bundle: true,
   format: "esm",
