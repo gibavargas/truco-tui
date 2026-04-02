@@ -10,5 +10,5 @@
     "skipLibCheck": true
   },
   "include": ["frontend/src/**/*.ts"],
-  "exclude": ["frontend/src/**/*.test.ts"]
+  "exclude": ["frontend/src/**/*.test.ts", "frontend/src/test-entry.ts"]
 }

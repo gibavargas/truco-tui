@@ -39,13 +39,17 @@ Use this checklist before cutting a release or sharing build artifacts outside l
 
 - Offline 2-player match starts and reaches live gameplay
 - Offline 4-player match starts and reaches live gameplay
-- Host/join direct online session works
-- Relay-backed session creation and join work
-- Chat works in lobby or match
-- Host transfer vote works
-- Replacement invite flow enforces runtime preconditions
+- Offline matches can be finished and reset back to `idle` without stale busy state
+- Host/join direct online session works through lobby, match start, gameplay, and leave/reset
+- Relay-backed session creation and join work through lobby, match start, gameplay, and leave/reset
+- Chat works in lobby and match
+- Host transfer vote works and updates visible host ownership
+- Replacement invite flow works after a real disconnect and replacement join
+- Disconnect/reconnect or failover surfaces visible recovery messaging instead of a silent stall
 - Leaving or resetting a session returns to `idle`
 - Wails desktop window launches with the expected icon, title, and minimum size
+- Wails game layout is visually balanced at `1280px` width, a standard desktop window, and a larger monitor
+- Wails setup, lobby, and game screens keep network status accessible without diagnostics being mandatory
 
 ## Version Touchpoints
 

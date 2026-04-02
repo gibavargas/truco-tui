@@ -1,5 +1,8 @@
 import { layout, prepare } from "@chenglou/pretext";
 import { translate } from "./i18n";
+import { renderGameScreen } from "./ui/game-screen";
+import { renderLobbyScreen } from "./ui/lobby-screen";
+import { renderSetupScreen } from "./ui/setup-screen";
 import {
   expectedModesForAction,
   recoveryStateForBundle,
@@ -7,6 +10,8 @@ import {
   viewForMode,
 } from "./runtime-state";
 import type { ViewName } from "./runtime-state";
+import type { GamePanelTab } from "./ui/game-screen";
+import type { LobbyPanelTab } from "./ui/lobby-screen";
 import type {
   Card,
   LocaleCode,
@@ -33,6 +38,8 @@ interface AppState {
   busyForm: string;
   initialized: boolean;
   diagnosticsOpen: boolean;
+  lobbyPanelTab: LobbyPanelTab;
+  gamePanelTab: GamePanelTab;
   pendingAction: string;
   lastSubmittedAction: string;
   lastExpectedModes: string[];
@@ -71,6 +78,8 @@ const state: AppState = {
   busyForm: "",
   initialized: false,
   diagnosticsOpen: false,
+  lobbyPanelTab: "pulse",
+  gamePanelTab: "pulse",
   pendingAction: "",
   lastSubmittedAction: "",
   lastExpectedModes: [],
@@ -106,6 +115,13 @@ root.addEventListener("click", (event) => {
   if (clientAction) {
     event.preventDefault();
     void runClientAction(clientAction.dataset.clientAction as ClientAction | undefined);
+    return;
+  }
+
+  const panelTab = target.closest<HTMLElement>("[data-panel-tab]");
+  if (panelTab) {
+    event.preventDefault();
+    setPanelTab(panelTab.dataset.panelTab || "");
   }
 });
 
@@ -242,6 +258,19 @@ async function runClientAction(action: ClientAction | undefined): Promise<void> 
   }
 }
 
+function setPanelTab(raw: string): void {
+  const [surface, value] = raw.split(":");
+  if (surface === "lobby" && (value === "pulse" || value === "network" || value === "chat")) {
+    state.lobbyPanelTab = value;
+    render();
+    return;
+  }
+  if (surface === "game" && (value === "pulse" || value === "network" || value === "chat")) {
+    state.gamePanelTab = value;
+    render();
+  }
+}
+
 function currentView(): ViewName {
   return viewForMode(state.bundle?.mode || "idle");
 }
@@ -297,6 +326,7 @@ function renderApp(): string {
 function renderRuntimeBanner(): string {
   const classes = ["runtime-banner"];
   let message = "";
+  const eventSignal = recentEventSignal();
 
   if (state.pendingAction) {
     classes.push("runtime-banner-info");
@@ -313,6 +343,9 @@ function renderRuntimeBanner(): string {
   } else if (state.lastRefreshState === "error" && state.lastRefreshError) {
     classes.push("runtime-banner-warning");
     message = state.lastRefreshError;
+  } else if (eventSignal) {
+    classes.push("runtime-banner-info");
+    message = eventSignal;
   }
 
   if (!message) {
@@ -330,6 +363,27 @@ function renderRuntimeBanner(): string {
       </div>
     </section>
   `;
+}
+
+function recentEventSignal(): string {
+  const recent = [...state.events].reverse().find((event) =>
+    event.kind === "failover_promoted" ||
+    event.kind === "failover_rejoined" ||
+    event.kind === "replacement_invite",
+  );
+  if (!recent) {
+    return "";
+  }
+  switch (recent.kind) {
+    case "failover_promoted":
+      return t("signal_failover_promoted");
+    case "failover_rejoined":
+      return t("signal_failover_rejoined");
+    case "replacement_invite":
+      return t("signal_replacement_ready");
+    default:
+      return "";
+  }
 }
 
 function renderSafeView(): string {
@@ -365,367 +419,59 @@ function renderView(): string {
 }
 
 function renderSetup(): string {
-  return `
-    <section class="setup-shell">
-      <article class="surface-card intro-card">
-        <div class="card-head card-head-roomy">
-          <div>
-            <p class="eyebrow">${escapeHtml(t("setup_title"))}</p>
-            <h2>${escapeHtml(t("setup_title"))}</h2>
-          </div>
-          <span class="section-pill">${escapeHtml(t("app_stamp"))}</span>
-        </div>
-        <p class="lede" data-pretext-block="lock-height">${escapeHtml(t("setup_intro"))}</p>
-        <p class="supporting-copy">${escapeHtml(t("setup_help"))}</p>
-        <div class="intro-grid">
-          ${renderSetupNote(t("setup_signal_title"), t("setup_signal_body"))}
-          ${renderSetupNote(t("setup_runtime_title"), t("setup_runtime_body"))}
-        </div>
-      </article>
-      <div class="setup-stack">
-        <article class="surface-card form-card primary-form-card">
-          <div class="card-head card-head-roomy">
-            <div>
-              <span class="section-pill">${escapeHtml(t("setup_mode_offline"))}</span>
-              <h3>${escapeHtml(t("setup_offline_title"))}</h3>
-              <p>${escapeHtml(t("setup_offline_note"))}</p>
-            </div>
-            <strong class="form-emphasis">${escapeHtml(t("setup_offline_caption"))}</strong>
-          </div>
-          <form data-api-action="startGame" data-form-id="startGame">
-            <div class="field-grid">
-              <label>
-                <span>${escapeHtml(t("setup_name"))}</span>
-                <input name="name" type="text" value="${escapeHtml(state.playerName || t("name_placeholder"))}" autocomplete="off">
-              </label>
-              <label>
-                <span>${escapeHtml(t("setup_players"))}</span>
-                <select name="numPlayers">
-                  <option value="2">2</option>
-                  <option value="4">4</option>
-                </select>
-              </label>
-            </div>
-            <button class="primary-button" type="submit"${busyAttr("startGame")}>${buttonLabel("startGame", t("setup_start"))}</button>
-          </form>
-        </article>
-        <article class="surface-card form-card online-form-card">
-          <div class="card-head card-head-roomy">
-            <div>
-              <span class="section-pill section-pill-hot">${escapeHtml(t("setup_mode_online"))}</span>
-              <h3>${escapeHtml(t("setup_online_title"))}</h3>
-              <p>${escapeHtml(t("setup_online_note"))}</p>
-            </div>
-            <strong class="form-emphasis">${escapeHtml(t("setup_online_caption"))}</strong>
-          </div>
-          <div class="online-flow-grid">
-            <form class="mode-form" data-api-action="startOnlineHost" data-form-id="startOnlineHost">
-              <div class="mini-head">${escapeHtml(t("setup_host"))}</div>
-              <div class="field-grid">
-                <label>
-                  <span>${escapeHtml(t("setup_name"))}</span>
-                  <input name="name" type="text" value="${escapeHtml(state.playerName || t("name_placeholder"))}" autocomplete="off">
-                </label>
-                <label>
-                  <span>${escapeHtml(t("setup_players"))}</span>
-                  <select name="numPlayers">
-                    <option value="2">2</option>
-                    <option value="4">4</option>
-                  </select>
-                </label>
-              </div>
-              <label>
-                <span>${escapeHtml(t("setup_transport"))}</span>
-                <select name="transport_mode">
-                  ${transportOptions(state.transportMode)}
-                </select>
-              </label>
-              <label>
-                <span>${escapeHtml(t("setup_relay"))}</span>
-                <input name="relay_url" type="text" value="${escapeHtml(state.relayURL)}" placeholder="${escapeHtml(t("relay_placeholder"))}" autocomplete="off">
-              </label>
-              <button class="secondary-button" type="submit"${busyAttr("startOnlineHost")}>${buttonLabel("startOnlineHost", t("setup_host"))}</button>
-            </form>
-            <form class="mode-form" data-api-action="joinOnline" data-form-id="joinOnline">
-              <div class="mini-head">${escapeHtml(t("setup_join"))}</div>
-              <div class="field-grid">
-                <label>
-                  <span>${escapeHtml(t("setup_name"))}</span>
-                  <input name="name" type="text" value="${escapeHtml(state.playerName || t("name_placeholder"))}" autocomplete="off">
-                </label>
-                <label>
-                  <span>${escapeHtml(t("setup_invite"))}</span>
-                  <input name="key" type="text" autocomplete="off">
-                </label>
-              </div>
-              <label>
-                <span>${escapeHtml(t("setup_role"))}</span>
-                <select name="role">
-                  <option value="auto">${escapeHtml(t("role_auto"))}</option>
-                  <option value="partner">${escapeHtml(t("role_partner"))}</option>
-                  <option value="opponent">${escapeHtml(t("role_opponent"))}</option>
-                </select>
-              </label>
-              <button class="secondary-button strong" type="submit"${busyAttr("joinOnline")}>${buttonLabel("joinOnline", t("setup_join"))}</button>
-            </form>
-          </div>
-          <p class="supporting-copy inline-note">${escapeHtml(t("setup_online_support"))}</p>
-        </article>
-      </div>
-    </section>
-  `;
-}
-
-function renderSetupNote(title: string, copy: string): string {
-  return `
-    <div class="intro-note">
-      <strong>${escapeHtml(title)}</strong>
-      <p>${escapeHtml(copy)}</p>
-    </div>
-  `;
+  return renderSetupScreen({
+    locale: state.locale,
+    playerName: state.playerName,
+    relayURL: state.relayURL,
+    transportMode: state.transportMode,
+    t,
+    escapeHtml,
+    busyAttr,
+    buttonLabel,
+    transportOptions,
+  });
 }
 
 function renderLobby(): string {
   const bundle = requireBundle();
-  const lobby = bundle.lobby;
-  const network = bundle.connection.network;
-  const slots = bundle.ui.lobby_slots || [];
-  const invite = lobby?.invite_key || "";
-  const isHost = bundle.connection.is_host;
-  if (!lobby) {
-    return renderStateRecoveryCard(t("lobby_title"), t("status_waiting_lobby"));
-  }
-
-  return `
-    <section class="lobby-layout">
-      <article class="surface-card invite-card lobby-lead-card">
-        <div class="card-head card-head-roomy">
-          <div>
-            <p class="eyebrow">${escapeHtml(t("lobby_title"))}</p>
-            <h2>${escapeHtml(t("lobby_title"))}</h2>
-            <p class="supporting-copy">${escapeHtml(t("invite_hint"))}</p>
-          </div>
-          <span class="section-pill">${escapeHtml(isHost ? t("slot_host") : t("connection_online"))}</span>
-        </div>
-        <div class="invite-code-row invite-code-row-wide">
-          <code class="invite-code">${escapeHtml(invite || "----")}</code>
-          ${invite ? `<button type="button" class="ghost-button" data-copy-text="${escapeHtml(invite)}">${escapeHtml(t("invite_copy"))}</button>` : ""}
-          ${isHost ? `<form data-api-action="startOnlineMatch" data-form-id="startOnlineMatch"><button class="primary-button" type="submit"${busyAttr("startOnlineMatch")}>${buttonLabel("startOnlineMatch", t("lobby_start"))}</button></form>` : ""}
-        </div>
-        <div class="telemetry-strip">
-          ${renderMetric(t("connection_status"), bundle.connection.status)}
-          ${renderMetric(t("connection_transport"), network?.transport || "-")}
-          ${renderMetric(t("connection_protocol"), protocolLabel(network))}
-        </div>
-      </article>
-
-      <article class="surface-card seat-card">
-        <div class="card-head">
-          <h3>${escapeHtml(t("lobby_slots"))}</h3>
-          <span class="section-pill">${escapeHtml(String(lobby?.num_players || slots.length))}</span>
-        </div>
-        <div class="seat-list">
-          ${slots.map((slot) => renderSeat(slot)).join("")}
-        </div>
-      </article>
-
-      <article class="surface-card telemetry-card">
-        <div class="telemetry-grid">
-          ${renderMetric(t("connection_status"), bundle.connection.status)}
-          ${renderMetric(t("connection_mode"), bundle.connection.is_online ? t("connection_online") : t("connection_offline"))}
-          ${renderMetric(t("connection_transport"), network?.transport || "-")}
-          ${renderMetric(t("connection_protocol"), protocolLabel(network))}
-          ${renderMetric(t("connection_backlog"), String(bundle.diagnostics.event_backlog || 0))}
-          ${bundle.lobby?.role ? renderMetric(t("connection_role"), bundle.lobby.role) : ""}
-        </div>
-      </article>
-
-      <article class="surface-card event-card">
-        <div class="card-head">
-          <h3>${escapeHtml(t("lobby_events"))}</h3>
-          <button class="ghost-button" type="button" data-client-action="refresh">${escapeHtml(t("header_resync"))}</button>
-        </div>
-        <pre class="event-feed" data-pretext-block="lock-height" data-pretext-whitespace="pre-wrap">${escapeHtml(renderEventFeed())}</pre>
-      </article>
-
-      <div class="lobby-side-stack">
-        <article class="surface-card chat-card">
-          <div class="card-head">
-            <h3>${escapeHtml(t("lobby_chat"))}</h3>
-          </div>
-          <form class="chat-form" data-api-action="sendChat" data-form-id="sendChat">
-            <input name="message" type="text" autocomplete="off" placeholder="${escapeHtml(t("chat_placeholder"))}">
-            <button class="secondary-button" type="submit"${busyAttr("sendChat")}>${buttonLabel("sendChat", t("lobby_chat"))}</button>
-          </form>
-          <form data-api-action="closeSession" data-form-id="closeSession">
-            <button class="ghost-button danger" type="submit"${busyAttr("closeSession")}>${buttonLabel("closeSession", t("lobby_leave"))}</button>
-          </form>
-        </article>
-      </div>
-    </section>
-  `;
-}
-
-function renderSeat(slot: LobbySlotState): string {
-  const tags = [
-    slot.is_local ? t("slot_you") : "",
-    slot.is_host ? t("slot_host") : "",
-    slot.is_provisional_cpu ? t("slot_cpu") : "",
-    slot.is_connected ? t("slot_online") : t("slot_offline"),
-  ].filter(Boolean);
-
-  return `
-    <div class="seat-tile${slot.is_local ? " seat-tile-local" : ""}">
-      <div class="seat-heading">
-        <strong>${escapeHtml(slot.name || t("slot_empty"))}</strong>
-        <span>#${slot.seat + 1}</span>
-      </div>
-      <div class="tag-row">${tags.map((tag) => `<span>${escapeHtml(tag)}</span>`).join("")}</div>
-      <div class="seat-actions">
-        ${slot.can_vote_host ? `<form data-api-action="sendHostVote" data-form-id="sendHostVote-${slot.seat}"><input type="hidden" name="slot" value="${slot.seat}"><button class="ghost-button" type="submit"${busyAttr(`sendHostVote-${slot.seat}`)}>${buttonLabel(`sendHostVote-${slot.seat}`, t("action_vote_host"))}</button></form>` : ""}
-        ${slot.can_request_replacement ? `<form data-api-action="requestReplacementInvite" data-form-id="replacement-${slot.seat}"><input type="hidden" name="slot" value="${slot.seat}"><button class="ghost-button strong" type="submit"${busyAttr(`replacement-${slot.seat}`)}>${buttonLabel(`replacement-${slot.seat}`, t("action_replacement_invite"))}</button></form>` : ""}
-      </div>
-    </div>
-  `;
+  return renderLobbyScreen({
+    bundle,
+    panelTab: state.lobbyPanelTab,
+    events: state.events,
+    t,
+    escapeHtml,
+    busyAttr,
+    buttonLabel,
+    renderMetric,
+    renderEventFeed,
+    protocolLabel,
+  });
 }
 
 function renderGame(): string {
   const bundle = requireBundle();
-  const match = bundle.match;
-  if (!match || !match.CurrentHand || !Array.isArray(match.Players) || match.Players.length === 0) {
-    return renderStateRecoveryCard(t("game_title_offline"), t("status_waiting_match"));
-  }
-
-  const localPlayerID = bundle.ui.actions.local_player_id >= 0 ? bundle.ui.actions.local_player_id : match.CurrentPlayerIdx;
-  const localPlayer = match.Players.find((player) => player.ID === localPlayerID) || match.Players[0];
-  const localTeamId = localTeam(match, bundle);
-  const pendingFor = match.PendingRaiseFor;
-  const pendingTo = match.PendingRaiseTo || nextStake(match.CurrentHand.Stake);
-  const canRespond = bundle.ui.actions.must_respond;
-  const canRaise = bundle.ui.actions.can_ask_or_raise;
-  const canPlay = bundle.ui.actions.can_play_card;
-  const topLine = match.MatchFinished
-    ? t("status_match_end")
-    : pendingFor === localTeamId
-      ? t("status_pending_you", raiseLabel(pendingTo))
-      : pendingFor >= 0
-        ? t("status_pending_other", playerName(match, match.TurnPlayer), raiseLabel(pendingTo))
-        : match.TurnPlayer === localPlayerID
-          ? t("status_your_turn")
-          : t("status_wait_turn", playerName(match, match.TurnPlayer));
-  const bottomScore = teamScore(match, 0);
-  const topScore = teamScore(match, 1);
-  const tableTitle = isOnlineMode() ? t("game_title_online") : t("game_title_offline");
-
-  return `
-    <section class="game-layout">
-      <article class="surface-card score-card">
-        <div class="score-block${localTeamId === 0 ? " score-block-friendly" : ""}">
-          <span>${escapeHtml(t("team_one"))}</span>
-          <strong>${bottomScore}</strong>
-        </div>
-        <div class="score-center">
-          <span>${escapeHtml(t("game_round"))} ${match.CurrentHand.Round}/3</span>
-          <strong>${escapeHtml(t("game_stake"))} ${match.CurrentHand.Stake}</strong>
-        </div>
-        <div class="score-block${localTeamId === 1 ? " score-block-friendly" : ""}">
-          <span>${escapeHtml(t("team_two"))}</span>
-          <strong>${topScore}</strong>
-        </div>
-      </article>
-
-      <div class="game-main-column">
-        <article class="surface-card board-card">
-          <div class="card-head board-head">
-            <div>
-              <p class="eyebrow">${escapeHtml(tableTitle)}</p>
-              <h2>${escapeHtml(tableTitle)}</h2>
-            </div>
-            <div class="board-head-actions">
-              <button class="ghost-button" type="button" data-client-action="refresh">${escapeHtml(t("header_resync"))}</button>
-              ${isOnlineMode() ? `<form data-api-action="closeSession" data-form-id="closeSession"><button class="ghost-button danger" type="submit"${busyAttr("closeSession")}>${buttonLabel("closeSession", t("lobby_leave"))}</button></form>` : ""}
-            </div>
-          </div>
-          <div class="status-band" data-pretext-block="lock-height">
-            <span>${escapeHtml(t("game_status"))}</span>
-            <strong>${escapeHtml(topLine)}</strong>
-          </div>
-          <div class="board-stage board-stage-${match.NumPlayers}">
-            ${renderPlayers(match, bundle)}
-            <div class="center-table">
-              <div class="table-shell">
-                <div class="table-chip">
-                  <span>${escapeHtml(t("game_vira"))}</span>
-                  ${renderCard(match.CurrentHand.Vira, "small")}
-                </div>
-                <div class="table-core">
-                  <div class="table-rail">
-                    <span>${escapeHtml(t("game_trick_track"))}</span>
-                    <div class="trick-track">${renderTrickTrack(match)}</div>
-                  </div>
-                  <div class="round-pile">${renderRoundCards(match)}</div>
-                </div>
-                <div class="table-chip">
-                  <span>${escapeHtml(t("game_manilha"))}</span>
-                  <strong>${escapeHtml(match.CurrentHand.Manilha || "-")}</strong>
-                </div>
-              </div>
-            </div>
-          </div>
-        </article>
-
-        <article class="surface-card action-dock">
-          <div class="card-head">
-            <div>
-              <p class="eyebrow">${escapeHtml(t("game_hand"))}</p>
-              <h3>${escapeHtml(localPlayer?.Name || t("game_you"))}</h3>
-            </div>
-            <span class="section-pill">${localPlayer?.Hand.length || 0}</span>
-          </div>
-          <div class="action-dock-grid">
-            <div class="hand-tray">
-              <div class="hand-row">
-                ${(localPlayer?.Hand || []).map((card, index) => renderPlayableCard(card, index, canPlay, match.CurrentHand.Round >= 2)).join("")}
-              </div>
-            </div>
-            <div class="dock-controls">
-              <div class="card-head compact-head">
-                <h3>${escapeHtml(t("game_controls"))}</h3>
-                <span class="section-pill">${escapeHtml(match.MatchFinished ? t("game_wait") : t("game_turn"))}</span>
-              </div>
-              <div class="control-stack">
-                ${canRespond ? renderRespondControls(canRaise, bundle.ui.actions.can_accept, bundle.ui.actions.can_refuse, pendingTo) : renderTurnControls(canRaise, match.MatchFinished)}
-              </div>
-            </div>
-          </div>
-        </article>
-      </div>
-
-      <div class="game-side-column">
-        <article class="surface-card activity-card">
-          <div class="card-head">
-            <h3>${escapeHtml(t("game_activity"))}</h3>
-            <span class="section-pill">${escapeHtml(t("game_last_trick"))}</span>
-          </div>
-          <div class="activity-summary" data-pretext-block="lock-height">${escapeHtml(lastTrickCopy(match))}</div>
-          <pre class="event-feed compact" data-pretext-block="lock-height" data-pretext-whitespace="pre-wrap">${escapeHtml(renderEventFeed((match.Logs || []).slice(-4)))}</pre>
-        </article>
-        <article class="surface-card table-note-card">
-          <div class="card-head">
-            <h3>${escapeHtml(t("game_table_notes"))}</h3>
-            <span class="section-pill">${escapeHtml(t("game_round"))} ${match.CurrentHand.Round}/3</span>
-          </div>
-          <div class="telemetry-grid table-note-grid">
-            ${renderMetric(t("game_vira"), cardLabel(match.CurrentHand.Vira))}
-            ${renderMetric(t("game_manilha"), match.CurrentHand.Manilha || "-")}
-            ${renderMetric(t("game_player_to_move"), playerName(match, match.TurnPlayer))}
-          </div>
-        </article>
-        ${isOnlineMode() ? renderNetworkPanel(bundle) : ""}
-      </div>
-      ${match.MatchFinished ? renderOverlay(match, localTeamId) : ""}
-    </section>
-  `;
+  return renderGameScreen({
+    bundle,
+    panelTab: state.gamePanelTab,
+    events: state.events,
+    isOnlineMode: isOnlineMode(),
+    t,
+    escapeHtml,
+    busyAttr,
+    buttonLabel,
+    renderMetric,
+    renderEventFeed,
+    renderCard,
+    protocolLabel,
+    cardLabel,
+    playerName,
+    teamScore,
+    localTeam,
+    nextStake,
+    raiseLabel,
+    lastTrickCopy,
+    seatPositions,
+  });
 }
 
 function renderPlayers(match: MatchSnapshot, bundle: SnapshotBundle): string {
@@ -1029,12 +775,22 @@ function applyBundle(bundle: SnapshotBundle, source: "snapshot" | "event"): bool
     return false;
   }
 
+  const previousMode = state.lastMode;
   state.bundle = bundle;
   state.locale = bundle.locale || state.locale;
   state.lastSeenSequence = Math.max(state.lastSeenSequence, sequence);
   state.lastMode = bundle.mode || "idle";
   document.documentElement.lang = state.locale === "en-US" ? "en" : "pt-BR";
   localStorage.setItem(LOCALE_KEY, state.locale);
+
+  if (state.lastMode !== previousMode) {
+    if (state.lastMode === "idle" || state.lastMode === "host_lobby" || state.lastMode === "client_lobby") {
+      state.lobbyPanelTab = "pulse";
+    }
+    if (state.lastMode === "idle" || state.lastMode === "offline_match" || state.lastMode === "host_match" || state.lastMode === "client_match") {
+      state.gamePanelTab = "pulse";
+    }
+  }
 
   if (state.lastMode === "idle") {
     state.pendingAction = "";

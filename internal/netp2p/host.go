@@ -881,6 +881,7 @@ func (h *HostSession) transferTableHostLocked(newSeat int, reason string) {
 	if reason != "" {
 		text = text + " " + reason
 	}
+	h.broadcastLobbyLocked()
 	h.broadcastLocked(Message{Type: "system", Text: text})
 	h.sendEventLocked(text)
 	if old != newSeat {

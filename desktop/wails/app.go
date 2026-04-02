@@ -235,14 +235,15 @@ func (a *App) emitRuntimeUpdate(force bool) bool {
 	a.updateMu.Lock()
 	defer a.updateMu.Unlock()
 
+	if a.emit == nil {
+		return false
+	}
+
 	update := RuntimeUpdate{
 		Bundle: a.runtime.SnapshotBundle(),
 		Events: a.drainEvents(),
 	}
 	if !force && len(update.Events) == 0 {
-		return false
-	}
-	if a.emit == nil {
 		return false
 	}
 	a.emit(runtimeUpdateEvent, update)
