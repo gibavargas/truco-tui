@@ -36,7 +36,7 @@
                     <div>
                         <label for="player-name"><?= tr('setup_name') ?></label>
                         <input id="player-name" name="name" class="field" type="text"
-                            value="<?= htmlspecialchars($_SESSION['player_name'] ?? $defaultPlayerName) ?>" autocomplete="off">
+                            value="<?= htmlspecialchars($_SESSION['player_name'] ?? $defaultPlayerName) ?>" autocomplete="off" required>
                     </div>
                     <div>
                         <label for="num-players"><?= tr('setup_players') ?></label>
@@ -47,7 +47,7 @@
                     </div>
                 </div>
                 <div class="setup-actions">
-                    <button type="submit" class="btn btn-primary">▶ <?= tr('setup_start') ?></button>
+                    <button type="submit" class="btn btn-primary"><span aria-hidden="true">▶</span> <?= tr('setup_start') ?></button>
                 </div>
             </form>
         </article>
@@ -98,7 +98,7 @@
                         <div class="setup-grid">
                             <div>
                                 <label for="invite-key"><?= tr('setup_online_key') ?></label>
-                                <input id="invite-key" name="key" class="field" type="text" autocomplete="off">
+                                <input id="invite-key" name="key" class="field" type="text" autocomplete="off" required>
                             </div>
                             <div>
                                 <label for="join-role"><?= tr('setup_online_role') ?></label>
