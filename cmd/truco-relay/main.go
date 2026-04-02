@@ -126,7 +126,7 @@ type signedJoinTicket struct {
 func newRelayServer(quicAddr string) *relayServer {
 	secret := make([]byte, 32)
 	if _, err := rand.Read(secret); err != nil {
-		secret = []byte("relay-v2-fallback-secret")
+		panic("failed to generate ticket secret: " + err.Error())
 	}
 	return &relayServer{
 		sessions:       map[string]*relaySession{},
