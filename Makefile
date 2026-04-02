@@ -22,7 +22,7 @@ HOST_WAILS_APP := $(GUI_DIR)/wails/$(HOST_WAILS_NAME).app
 LINUX_WAILS_BIN := $(GUI_DIR)/wails/$(LINUX_WAILS_NAME)
 WINDOWS_WAILS_BIN := $(GUI_DIR)/wails/$(WINDOWS_WAILS_NAME)
 
-.PHONY: build build-relay run relay test windows browser clean browser-clean ffi ffi-macos ffi-linux ffi-windows linux-gtk flatpak-linux verify-artifacts verify-browser-dist wails-frontend wails-typecheck wails-test wails-dev wails-build wails-build-linux wails-build-windows verify-wails
+.PHONY: build build-relay run relay test windows browser clean browser-clean ffi ffi-macos ffi-linux ffi-windows linux-gtk flatpak-linux verify-artifacts verify-browser-dist wails-frontend wails-typecheck wails-frontend-test wails-test wails-dev wails-build wails-build-linux wails-build-windows verify-wails
 
 # Naming rule: `truco-<type>-<client>-<platform>-<arch>[-<variant>]` with TUI binaries under `bin/tui`
 # and any GUI bundles under `bin/gui`. This keeps CLI/GUI outputs distinct.
@@ -80,6 +80,10 @@ wails-typecheck:
 	npm install --prefix $(WAILS_DIR)
 	npm run typecheck --prefix $(WAILS_DIR)
 
+wails-frontend-test:
+	npm install --prefix $(WAILS_DIR)
+	npm run test:frontend --prefix $(WAILS_DIR)
+
 wails-test:
 	cd $(WAILS_DIR) && go test -tags=wails .
 
@@ -105,7 +109,7 @@ wails-build-windows: wails-frontend
 verify-browser-dist:
 	bash scripts/validate-browser-dist.sh
 
-verify-wails: wails-typecheck wails-frontend wails-test
+verify-wails: wails-typecheck wails-frontend wails-frontend-test wails-test
 	@mkdir -p $(GUI_DIR)/wails
 	cd $(WAILS_DIR) && wails build -dryrun -platform linux/amd64 -o ../../$(LINUX_WAILS_BIN)
 	cd $(WAILS_DIR) && wails build -dryrun -platform windows/amd64 -o ../../$(WINDOWS_WAILS_BIN)

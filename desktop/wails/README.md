@@ -23,6 +23,7 @@ Typecheck and build the desktop frontend:
 
 ```bash
 npm run typecheck --prefix desktop/wails
+npm run test:frontend --prefix desktop/wails
 npm run build --prefix desktop/wails
 ```
 
@@ -38,11 +39,13 @@ make wails-dev
 - Linux amd64 desktop build: `make wails-build-linux`
 - Windows amd64 desktop build: `make wails-build-windows`
 - Frontend verification + Wails dry-run release checks: `make verify-wails`
+- Frontend regression suite only: `make wails-frontend-test`
 
 Artifacts are expected under `bin/gui/wails` and follow `docs/BINARY_NAMING.md`.
 
 ## Notes
 
 - `internal/appcore` remains the only runtime contract owner. The Wails layer renders `SnapshotBundle`, dispatches intents, and emits runtime updates to the desktop UI.
+- Production readiness for the desktop client means no silent stalls: every mutating action must resolve into a visible error, a reconciled snapshot, or a timeout-driven recovery path.
 - The Go entrypoints are build-tagged so the main module continues to build and test without Wails unless `-tags=wails` is requested.
 - The Wails CLI is not vendored in this repository. The current repo expects a local `wails` installation when running desktop-specific build targets.

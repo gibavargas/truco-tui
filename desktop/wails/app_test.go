@@ -126,6 +126,49 @@ func TestResetAliasesCloseSession(t *testing.T) {
 	}
 }
 
+func TestCreateHostSessionTransitionsToLobby(t *testing.T) {
+	app := NewApp()
+	if err := app.CreateHostSession("Mesa", 2, "127.0.0.1:0", "", "tcp_tls"); err != nil {
+		t.Fatalf("CreateHostSession: %v", err)
+	}
+	defer func() { _ = app.CloseSession() }()
+
+	waitForMode(t, app, appcore.ModeHostLobby)
+
+	snapshot := app.Snapshot()
+	if snapshot.Lobby == nil {
+		t.Fatal("expected lobby snapshot after host creation")
+	}
+	if snapshot.Lobby.InviteKey == "" {
+		t.Fatal("expected invite key after host creation")
+	}
+	if snapshot.Connection.LastEventSeq == 0 {
+		t.Fatal("expected event sequence to advance after host creation")
+	}
+}
+
+func TestJoinSessionTransitionsClientToLobby(t *testing.T) {
+	host := NewApp()
+	if err := host.CreateHostSession("Mesa", 2, "127.0.0.1:0", "", "tcp_tls"); err != nil {
+		t.Fatalf("CreateHostSession: %v", err)
+	}
+	defer func() { _ = host.CloseSession() }()
+	waitForMode(t, host, appcore.ModeHostLobby)
+
+	key := host.Snapshot().Lobby.InviteKey
+	if key == "" {
+		t.Fatal("expected invite key for join test")
+	}
+
+	client := NewApp()
+	defer func() { _ = client.CloseSession() }()
+	if err := client.JoinSession(key, "Visitante", "auto"); err != nil {
+		t.Fatalf("JoinSession: %v", err)
+	}
+
+	waitForMode(t, client, appcore.ModeClientLobby)
+}
+
 func mustJSONPayload(t *testing.T, payload any) []byte {
 	t.Helper()
 	raw, err := json.Marshal(payload)
@@ -153,4 +196,19 @@ func waitForPlayableFirstTrick(t *testing.T, app *App) {
 		t.Fatal("match snapshot unavailable while waiting for playable first trick")
 	}
 	t.Fatalf("timed out waiting for playable first trick: round=%d canPlay=%v", snapshot.Match.CurrentHand.Round, snapshot.UI.Actions.CanPlayCard)
+}
+
+func waitForMode(t *testing.T, app *App, want string) {
+	t.Helper()
+
+	for range 40 {
+		snapshot := app.Snapshot()
+		if snapshot.Mode == want {
+			return
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+
+	snapshot := app.Snapshot()
+	t.Fatalf("timed out waiting for mode %q: got %q", want, snapshot.Mode)
 }
