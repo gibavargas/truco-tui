@@ -26,6 +26,13 @@ go.work
 
 # Browser edition build output
 browser-edition/dist/
+browser-edition/node_modules/
+
+# Wails generated output
+desktop/wails/node_modules/
+desktop/wails/frontend/dist/
+desktop/wails/build/*
+!desktop/wails/build/appicon.png
 
 # OS
 .DS_Store

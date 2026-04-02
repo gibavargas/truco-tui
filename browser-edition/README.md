@@ -1,38 +1,45 @@
 # Browser Edition
 
-The browser client is a PHP frontend backed by a local Go HTTP API. The API delegates game and online session behavior to `internal/appcore`, so browser behavior stays aligned with the TUI and native clients.
+The browser client is now a TypeScript single-page app backed by the local Go HTTP API. The API delegates game and online session behavior to `internal/appcore`, so browser behavior stays aligned with the TUI and native clients while the packaged build runs without PHP.
 
 ## Structure
 
 - `cmd/httpapi`: local API server used by the browser frontend
-- `php/`: editable development frontend
+- `web/`: editable TypeScript and CSS frontend source
+- `public/`: static icons copied into the packaged app
 - `dist/`: packaged output produced by the browser build script
 - `scripts/build-web.sh`: packaging script
 
 ## Requirements
 
 - Go 1.24+
-- PHP 8.1+
+- Node.js 20+
 - A modern browser
 
 ## Local Development
 
-Start the API:
+Install browser dependencies once:
+
+```bash
+npm install --prefix browser-edition
+```
+
+Build the browser app:
+
+```bash
+npm run build --prefix browser-edition
+```
+
+Then start the Go server:
 
 ```bash
 go run ./browser-edition/cmd/httpapi
 ```
 
-In another terminal, serve the PHP frontend:
-
-```bash
-php -S 127.0.0.1:9080 -t browser-edition/php
-```
-
 Open:
 
 ```text
-http://127.0.0.1:9080/index.php
+http://127.0.0.1:9090/
 ```
 
 ## Packaged Build
@@ -46,19 +53,20 @@ make browser
 This script:
 
 - compiles the Go API into `browser-edition/dist/truco-api`
-- copies the PHP frontend into `browser-edition/dist/`
-- validates that `dist/` contains only the copied PHP tree plus the compiled API binary
+- bundles the TypeScript frontend into `browser-edition/dist/`
+- copies static icons into `browser-edition/dist/`
+- validates the expected static layout plus the compiled API binary
 
-Serve the packaged output with:
+Run the packaged output with:
 
 ```bash
-php -S 127.0.0.1:8080 -t browser-edition/dist
+browser-edition/dist/truco-api
 ```
 
 Then open:
 
 ```text
-http://127.0.0.1:8080/index.php
+http://127.0.0.1:9090/
 ```
 
 ## API Behavior
@@ -82,6 +90,6 @@ Notable actions include:
 
 ## Notes
 
-- `dist/` is generated output and can be rebuilt at any time from `php/` and `cmd/httpapi`.
+- `dist/` is generated output and can be rebuilt at any time from `web/`, `public/`, and `cmd/httpapi`.
 - `make verify-browser-dist` validates the generated `dist/` tree without rebuilding it.
 - Browser parity expectations are defined in `docs/PARITY.md`.
