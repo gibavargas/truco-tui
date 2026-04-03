@@ -1,0 +1,22 @@
+[Fri Apr  3 04:34:55 2026] PHP 8.3.6 Development Server (http://localhost:8080) started
+[Fri Apr  3 04:35:31 2026] [::1]:60092 Accepted
+[Fri Apr  3 04:35:31 2026] [::1]:60092 [200]: GET /index.php
+[Fri Apr  3 04:35:31 2026] [::1]:60092 Closing
+[Fri Apr  3 04:35:32 2026] [::1]:60100 Accepted
+[Fri Apr  3 04:35:32 2026] [::1]:60100 [200]: GET /style.css
+[Fri Apr  3 04:35:32 2026] [::1]:60100 Closing
+[Fri Apr  3 04:35:32 2026] [::1]:60116 Accepted
+[Fri Apr  3 04:35:32 2026] [::1]:60116 [200]: GET /ajax.js
+[Fri Apr  3 04:35:32 2026] [::1]:60116 Closing
+[Fri Apr  3 04:36:35 2026] [::1]:40502 Accepted
+[Fri Apr  3 04:36:35 2026] [::1]:40502 [200]: GET /index.php
+[Fri Apr  3 04:36:35 2026] [::1]:40502 Closing
+[Fri Apr  3 04:36:35 2026] [::1]:40518 Accepted
+[Fri Apr  3 04:36:35 2026] [::1]:40518 [200]: GET /style.css
+[Fri Apr  3 04:36:35 2026] [::1]:40518 Closing
+[Fri Apr  3 04:36:35 2026] [::1]:40530 Accepted
+[Fri Apr  3 04:36:35 2026] [::1]:40530 [200]: GET /ajax.js
+[Fri Apr  3 04:36:35 2026] [::1]:40530 Closing
+[Fri Apr  3 04:36:37 2026] [::1]:40532 Accepted
+[Fri Apr  3 04:36:37 2026] [::1]:40532 [200]: POST /index.php?ajax=1
+[Fri Apr  3 04:36:37 2026] [::1]:40532 Closing
