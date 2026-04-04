@@ -454,7 +454,7 @@ func boolVal(body map[string]interface{}, key string, fallback bool) bool {
 func randomKey() string {
 	var b [6]byte
 	if _, err := rand.Read(b[:]); err != nil {
-		return strconv.FormatInt(time.Now().UnixNano(), 16)
+		panic("CRITICAL SECURITY FAILURE: RNG entropy source depleted")
 	}
 	return strings.ToUpper(hex.EncodeToString(b[:]))
 }
