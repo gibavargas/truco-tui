@@ -1,0 +1,3 @@
+## 2024-05-24 - Decorative Unicode Characters in PHP Views
+**Learning:** The browser edition frequently relies on decorative Unicode characters (e.g., ▶, 💬, ↻, ⎋) directly inserted into native HTML `<button>` and `<a>` elements for visual iconography. Screen readers will read these characters aloud (e.g., "Black right-pointing triangle"), creating a confusing auditory experience for users relying on assistive technology.
+**Action:** Always wrap decorative Unicode characters in `<span aria-hidden="true">` when adding them to interactive elements like buttons or links in the PHP views, to ensure they remain strictly visual.
