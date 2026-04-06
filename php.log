@@ -1,0 +1,46 @@
+[Mon Apr  6 05:04:26 2026] PHP 8.3.6 Development Server (http://localhost:8080) started
+[Mon Apr  6 05:05:03 2026] [::1]:40388 Accepted
+[Mon Apr  6 05:05:03 2026] [::1]:40388 [200]: GET /index.php
+[Mon Apr  6 05:05:03 2026] [::1]:40388 Closing
+[Mon Apr  6 05:05:03 2026] [::1]:40394 Accepted
+[Mon Apr  6 05:05:03 2026] [::1]:40394 [200]: GET /style.css
+[Mon Apr  6 05:05:03 2026] [::1]:40394 Closing
+[Mon Apr  6 05:05:03 2026] [::1]:40406 Accepted
+[Mon Apr  6 05:05:03 2026] [::1]:40406 [200]: GET /ajax.js
+[Mon Apr  6 05:05:03 2026] [::1]:40406 Closing
+[Mon Apr  6 05:05:57 2026] [::1]:44182 Accepted
+[Mon Apr  6 05:05:57 2026] [::1]:44182 [200]: GET /index.php
+[Mon Apr  6 05:05:57 2026] [::1]:44182 Closing
+[Mon Apr  6 05:05:57 2026] [::1]:44198 Accepted
+[Mon Apr  6 05:05:57 2026] [::1]:44198 [200]: GET /style.css
+[Mon Apr  6 05:05:57 2026] [::1]:44198 Closing
+[Mon Apr  6 05:05:57 2026] [::1]:44200 Accepted
+[Mon Apr  6 05:05:57 2026] [::1]:44200 [200]: GET /ajax.js
+[Mon Apr  6 05:05:57 2026] [::1]:44200 Closing
+[Mon Apr  6 05:06:19 2026] [::1]:52038 Accepted
+[Mon Apr  6 05:06:19 2026] [::1]:52038 [200]: GET /index.php
+[Mon Apr  6 05:06:19 2026] [::1]:52038 Closing
+[Mon Apr  6 05:06:19 2026] [::1]:52046 Accepted
+[Mon Apr  6 05:06:19 2026] [::1]:52046 [200]: GET /style.css
+[Mon Apr  6 05:06:19 2026] [::1]:52046 Closing
+[Mon Apr  6 05:06:19 2026] [::1]:52058 Accepted
+[Mon Apr  6 05:06:19 2026] [::1]:52058 [200]: GET /ajax.js
+[Mon Apr  6 05:06:19 2026] [::1]:52058 Closing
+[Mon Apr  6 05:07:47 2026] [::1]:40190 Accepted
+[Mon Apr  6 05:07:47 2026] [::1]:40190 [200]: GET /index.php
+[Mon Apr  6 05:07:47 2026] [::1]:40190 Closing
+[Mon Apr  6 05:07:47 2026] [::1]:40196 Accepted
+[Mon Apr  6 05:07:47 2026] [::1]:40196 [200]: GET /style.css
+[Mon Apr  6 05:07:47 2026] [::1]:40196 Closing
+[Mon Apr  6 05:07:47 2026] [::1]:40206 Accepted
+[Mon Apr  6 05:07:47 2026] [::1]:40206 [200]: GET /ajax.js
+[Mon Apr  6 05:07:47 2026] [::1]:40206 Closing
+[Mon Apr  6 05:07:49 2026] [::1]:40216 Accepted
+[Mon Apr  6 05:07:49 2026] [::1]:40216 [200]: POST /index.php?ajax=1
+[Mon Apr  6 05:07:49 2026] [::1]:40216 Closing
+[Mon Apr  6 05:07:50 2026] [::1]:40228 Accepted
+[Mon Apr  6 05:07:50 2026] [::1]:40228 [200]: POST /index.php?ajax=1
+[Mon Apr  6 05:07:50 2026] [::1]:40228 Closing
+[Mon Apr  6 05:07:51 2026] [::1]:40238 Accepted
+[Mon Apr  6 05:07:51 2026] [::1]:40238 [200]: POST /index.php?ajax=1
+[Mon Apr  6 05:07:51 2026] [::1]:40238 Closing
