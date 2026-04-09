@@ -5,6 +5,9 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -193,6 +196,49 @@ func TestStartGameReturnsBundleSnapshotAndContractVersions(t *testing.T) {
 	snap := parseSnapshot(t, res)
 	if int(snap["NumPlayers"].(float64)) != 2 {
 		t.Fatalf("NumPlayers = %v, want 2", snap["NumPlayers"])
+	}
+}
+
+func TestStartGameNormalizesEmptyMatchSlicesForBrowser(t *testing.T) {
+	srv := newAPIServer()
+	sid := createSession(t, srv)
+
+	res := postAction(t, srv, "startGame", sid, map[string]interface{}{
+		"numPlayers": 2,
+		"name":       "Tester",
+	})
+	if !res["ok"].(bool) {
+		t.Fatalf("startGame failed: %v", res["error"])
+	}
+
+	bundle := parseBundle(t, res)
+	match, ok := bundle["match"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected bundle.match, got %T", bundle["match"])
+	}
+	hand, ok := match["CurrentHand"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected match.CurrentHand, got %T", match["CurrentHand"])
+	}
+	if roundCards, ok := hand["RoundCards"].([]interface{}); !ok || len(roundCards) != 0 {
+		t.Fatalf("RoundCards = %v, want empty array", hand["RoundCards"])
+	}
+	if trickResults, ok := hand["TrickResults"].([]interface{}); !ok || len(trickResults) != 0 {
+		t.Fatalf("TrickResults = %v, want empty array", hand["TrickResults"])
+	}
+	if logs, ok := match["Logs"].([]interface{}); !ok {
+		t.Fatalf("Logs = %v, want array", match["Logs"])
+	} else if len(logs) == 0 {
+		t.Fatalf("Logs should contain at least the initial match events")
+	}
+
+	snap := parseSnapshot(t, res)
+	snapHand := snap["CurrentHand"].(map[string]interface{})
+	if roundCards, ok := snapHand["RoundCards"].([]interface{}); !ok || len(roundCards) != 0 {
+		t.Fatalf("snapshot RoundCards = %v, want empty array", snapHand["RoundCards"])
+	}
+	if trickResults, ok := snapHand["TrickResults"].([]interface{}); !ok || len(trickResults) != 0 {
+		t.Fatalf("snapshot TrickResults = %v, want empty array", snapHand["TrickResults"])
 	}
 }
 
@@ -473,5 +519,69 @@ func TestOnlyPostAllowed(t *testing.T) {
 	}
 	if res["error_code"] != "method_not_allowed" {
 		t.Fatalf("error_code = %v, want method_not_allowed", res["error_code"])
+	}
+}
+
+func TestResolveStaticRootUsesEnvOverride(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "index.html"), []byte("<!doctype html>"), 0o644); err != nil {
+		t.Fatalf("write index: %v", err)
+	}
+
+	t.Setenv("TRUCO_WEB_ROOT", dir)
+	if got := resolveStaticRoot(); got != dir {
+		t.Fatalf("resolveStaticRoot() = %q, want %q", got, dir)
+	}
+}
+
+func TestStaticHandlerServesIndexAndAssets(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "index.html"), []byte("<!doctype html><title>browser</title>"), 0o644); err != nil {
+		t.Fatalf("write index: %v", err)
+	}
+	if err := os.Mkdir(filepath.Join(dir, "assets"), 0o755); err != nil {
+		t.Fatalf("mkdir assets: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "assets", "app.js"), []byte("console.log('ok')"), 0o644); err != nil {
+		t.Fatalf("write asset: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "favicon.ico"), []byte("ico"), 0o644); err != nil {
+		t.Fatalf("write favicon: %v", err)
+	}
+
+	handler := newStaticHandler(dir)
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET / = %d, want 200", w.Code)
+	}
+	if !strings.Contains(w.Body.String(), "<title>browser</title>") {
+		t.Fatalf("GET / returned unexpected body: %s", w.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/assets/app.js", nil)
+	w = httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET /assets/app.js = %d, want 200", w.Code)
+	}
+
+	req = httptest.NewRequest(http.MethodHead, "/favicon.ico", nil)
+	w = httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("HEAD /favicon.ico = %d, want 200", w.Code)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/round/truco", nil)
+	w = httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET /round/truco = %d, want 200", w.Code)
+	}
+	if !strings.Contains(w.Body.String(), "<title>browser</title>") {
+		t.Fatalf("client route fallback returned unexpected body: %s", w.Body.String())
 	}
 }

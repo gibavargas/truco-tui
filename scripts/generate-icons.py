@@ -206,13 +206,13 @@ def write_svg(path: Path) -> None:
 def main() -> None:
     svg_targets = [
         ROOT / "native/linux-gtk/dev.truco.Native.svg",
-        ROOT / "browser-edition/php/favicon.svg",
+        ROOT / "browser-edition/public/favicon.svg",
         ROOT / "browser-edition/dist/favicon.svg",
     ]
     for target in svg_targets:
         write_svg(target)
 
-    for base in [ROOT / "browser-edition/php", ROOT / "browser-edition/dist"]:
+    for base in [ROOT / "browser-edition/public", ROOT / "browser-edition/dist"]:
         write_png(base / "apple-touch-icon.png", 180)
         render_icon(512).save(base / "favicon.png")
         write_ico(base / "favicon.ico")
