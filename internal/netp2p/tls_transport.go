@@ -157,6 +157,7 @@ func dialSessionConn(inv InviteKey, timeout time.Duration) (net.Conn, error) {
 	return conn, err
 }
 
+//lint:ignore U1000 Keep for future use
 func dialSessionConnWithRelay(inv InviteKey, timeout time.Duration, playerName, desiredRole, playerSession string) (net.Conn, error) {
 	conn, _, err := dialSessionConnWithRelayState(inv, timeout, playerName, desiredRole, playerSession, nil)
 	return conn, err
