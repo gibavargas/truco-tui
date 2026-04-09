@@ -29,7 +29,7 @@ The shared runtime in `internal/appcore` owns game rules, online session orchest
 ## Requirements
 
 - Go 1.24+
-- PHP 8.1+ for the browser edition frontend
+- Node.js 20+ for the browser edition build
 - Platform-specific toolchains only when building native clients
 
 ## Main Commands
@@ -69,6 +69,14 @@ Package the browser edition:
 ```bash
 make browser
 ```
+
+Run the packaged browser edition:
+
+```bash
+browser-edition/dist/truco-api
+```
+
+Then open `http://127.0.0.1:9090/`.
 
 Validate generated artifacts and browser packaging:
 

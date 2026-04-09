@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -282,14 +283,15 @@ func dispatchIntent(rt *appcore.Runtime, kind string, payload interface{}) error
 
 func runtimeResult(rt *appcore.Runtime, includeEvents bool) map[string]interface{} {
 	bundle := rt.SnapshotBundle()
+	normalizedBundle := normalizeBundleJSON(bundle)
 	out := map[string]interface{}{
 		"ok":      true,
-		"bundle":  bundle,
+		"bundle":  normalizedBundle,
 		"mode":    bundle.Mode,
 		"session": sessionFromBundle(bundle),
 	}
-	if bundle.Match != nil {
-		out["snapshot"] = mustJSON(bundle.Match)
+	if matchSnapshot, ok := normalizedBundle["match"]; ok && matchSnapshot != nil {
+		out["snapshot"] = mustJSON(matchSnapshot)
 	}
 	if includeEvents {
 		out["events"] = drainEvents(rt)
@@ -368,6 +370,7 @@ func sanitizeNumPlayers(v int) int {
 
 func runtimeErrResult(rt *appcore.Runtime, fallbackCode string, err error) map[string]interface{} {
 	bundle := rt.SnapshotBundle()
+	normalizedBundle := normalizeBundleJSON(bundle)
 	code := fallbackCode
 	message := err.Error()
 	if bundle.Connection.LastError != nil {
@@ -379,7 +382,7 @@ func runtimeErrResult(rt *appcore.Runtime, fallbackCode string, err error) map[s
 		}
 	}
 	out := errResult(code, message)
-	out["bundle"] = bundle
+	out["bundle"] = normalizedBundle
 	out["mode"] = bundle.Mode
 	out["session"] = sessionFromBundle(bundle)
 	return out
@@ -399,6 +402,56 @@ func mustJSON(v interface{}) string {
 		return "{}"
 	}
 	return string(b)
+}
+
+func normalizeBundleJSON(bundle appcore.SnapshotBundle) map[string]interface{} {
+	out := mustJSONObject(bundle)
+	ensureArrayPath(out, "ui", "lobby_slots")
+	ensureArrayPath(out, "diagnostics", "event_log")
+	if _, ok := out["lobby"]; ok {
+		ensureArrayPath(out, "lobby", "slots")
+	}
+	if _, ok := out["match"]; ok {
+		ensureArrayPath(out, "match", "Players")
+		ensureArrayPath(out, "match", "LastTrickCards")
+		ensureArrayPath(out, "match", "TrickPiles")
+		ensureArrayPath(out, "match", "Logs")
+		ensureArrayPath(out, "match", "CurrentHand", "RoundCards")
+		ensureArrayPath(out, "match", "CurrentHand", "TrickResults")
+	}
+	return out
+}
+
+func mustJSONObject(v interface{}) map[string]interface{} {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return map[string]interface{}{}
+	}
+	var out map[string]interface{}
+	if err := json.Unmarshal(b, &out); err != nil {
+		return map[string]interface{}{}
+	}
+	return out
+}
+
+func ensureArrayPath(root map[string]interface{}, path ...string) {
+	if len(path) == 0 {
+		return
+	}
+	current := root
+	for i, key := range path {
+		if i == len(path)-1 {
+			if raw, ok := current[key]; !ok || raw == nil {
+				current[key] = []interface{}{}
+			}
+			return
+		}
+		next, ok := current[key].(map[string]interface{})
+		if !ok {
+			return
+		}
+		current = next
+	}
 }
 
 func writeJSON(w http.ResponseWriter, status int, v interface{}) {
@@ -470,12 +523,17 @@ func main() {
 	}
 
 	srv := newAPIServer()
+	staticRoot := resolveStaticRoot()
 
 	mux := http.NewServeMux()
 	mux.Handle("/api/", srv)
+	mux.Handle("/", newStaticHandler(staticRoot))
 
 	addr := net.JoinHostPort(host, port)
 	log.Printf("Truco HTTP API listening on %s", addr)
+	if staticRoot != "" {
+		log.Printf("Serving browser assets from %s", staticRoot)
+	}
 	httpSrv := &http.Server{
 		Addr:              addr,
 		Handler:           mux,
@@ -487,4 +545,68 @@ func main() {
 	if err := httpSrv.ListenAndServe(); err != nil {
 		log.Fatalf("server error: %v", err)
 	}
+}
+
+func resolveStaticRoot() string {
+	if envRoot := strings.TrimSpace(os.Getenv("TRUCO_WEB_ROOT")); envRoot != "" {
+		if info, err := os.Stat(envRoot); err == nil && info.IsDir() {
+			return envRoot
+		}
+	}
+
+	exePath, err := os.Executable()
+	if err == nil {
+		exeDir := filepath.Dir(exePath)
+		if hasIndexHTML(exeDir) {
+			return exeDir
+		}
+	}
+
+	for _, candidate := range []string{
+		filepath.Join("browser-edition", "dist"),
+		"dist",
+	} {
+		if hasIndexHTML(candidate) {
+			return candidate
+		}
+	}
+
+	return ""
+}
+
+func hasIndexHTML(root string) bool {
+	info, err := os.Stat(filepath.Join(root, "index.html"))
+	return err == nil && !info.IsDir()
+}
+
+func newStaticHandler(root string) http.Handler {
+	if root == "" {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			http.NotFound(w, r)
+		})
+	}
+
+	fileServer := http.FileServer(http.Dir(root))
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if strings.HasPrefix(r.URL.Path, "/api/") {
+			http.NotFound(w, r)
+			return
+		}
+		if r.URL.Path == "/" {
+			http.ServeFile(w, r, filepath.Join(root, "index.html"))
+			return
+		}
+
+		assetPath := filepath.Join(root, filepath.FromSlash(strings.TrimPrefix(filepath.Clean(r.URL.Path), "/")))
+		if info, err := os.Stat(assetPath); err == nil && !info.IsDir() {
+			fileServer.ServeHTTP(w, r)
+			return
+		}
+
+		http.ServeFile(w, r, filepath.Join(root, "index.html"))
+	})
 }

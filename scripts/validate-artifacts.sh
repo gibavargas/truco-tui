@@ -24,7 +24,7 @@ fi
 
 if [[ -d "$ROOT_DIR/bin/gui" ]]; then
   while IFS= read -r path; do
-    check_path_regex "$path" '^truco-gui-[a-z0-9]+-[a-z0-9]+-[a-z0-9]+(-portable)?(\.exe)?$' "GUI"
+    check_path_regex "$path" '^truco-gui-[a-z0-9]+-[a-z0-9]+-[a-z0-9]+(-portable)?(\.exe|\.app)?$' "GUI"
   done < <(find "$ROOT_DIR/bin/gui" -mindepth 2 -maxdepth 2 \( -type f -o -type d \) | sort)
 fi
 

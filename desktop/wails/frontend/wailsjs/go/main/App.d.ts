@@ -16,6 +16,8 @@ export function NewHand():Promise<appcore.AppError>;
 
 export function PlayCard(arg1:number):Promise<appcore.AppError>;
 
+export function PlayFaceDownCard(arg1:number):Promise<appcore.AppError>;
+
 export function PollEvents():Promise<Array<appcore.AppEvent>>;
 
 export function RefuseTruco():Promise<appcore.AppError>;
@@ -25,6 +27,8 @@ export function RequestReplacementInvite(arg1:number):Promise<appcore.AppError>;
 export function RequestTruco():Promise<appcore.AppError>;
 
 export function Reset():Promise<appcore.AppError>;
+
+export function RuntimeUpdateEventName():Promise<string>;
 
 export function SendChat(arg1:string):Promise<appcore.AppError>;
 

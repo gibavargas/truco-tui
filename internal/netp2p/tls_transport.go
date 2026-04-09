@@ -157,11 +157,6 @@ func dialSessionConn(inv InviteKey, timeout time.Duration) (net.Conn, error) {
 	return conn, err
 }
 
-func dialSessionConnWithRelay(inv InviteKey, timeout time.Duration, playerName, desiredRole, playerSession string) (net.Conn, error) {
-	conn, _, err := dialSessionConnWithRelayState(inv, timeout, playerName, desiredRole, playerSession, nil)
-	return conn, err
-}
-
 func dialSessionConnWithRelayState(inv InviteKey, timeout time.Duration, playerName, desiredRole, playerSession string, cachedRelayState *RelayReconnectState) (net.Conn, *RelayReconnectState, error) {
 	transport := strings.TrimSpace(inv.Transport)
 	if transport == "" {
