@@ -73,3 +73,13 @@ This file tracks the latest documentation-aligned project status captured in the
 - Planned validation loop: local Go API + PHP frontend + Playwright screenshot/state checks after the UI changes land.
 - Completed a real browser validation pass with Playwright against the local PHP frontend after the redesign and after a spacing fix on the top seat/callout area.
 - Latest desktop capture confirms the polished layout and the wireframe toggle both render without console errors.
+
+## 2026-03-29 TypeScript Browser Polish Pass
+
+- Added a browser-side normalization layer so nullable API fields no longer crash the first offline match render; the client now treats list-like runtime fields as safe empty arrays before rendering.
+- Hardened the Go browser API JSON response so key list fields such as `RoundCards`, `TrickResults`, `TrickPiles`, `Logs`, and `lobby_slots` serialize as arrays in the browser bundle/snapshot output.
+- Rebuilt the setup flow around a cleaner native-mac-inspired hierarchy: a lead explainer card, a focused offline card, and a denser but readable online card with separate host/join sections.
+- Reworked the game view into a clearer table-first layout with a central felt board, trick rhythm pills, a dedicated action dock, and a right-side notes/activity rail.
+- Completed the remaining gameplay localization gaps for English, including turn-up/manilha labels, trick rhythm labels, table notes, and raise labels.
+- Added a real browser-dist smoke check that starts the built Go server locally and verifies `/`, `/favicon.ico`, `/assets/app.css`, and `/assets/app.js`.
+- Validation completed with `tsc`, `go test ./browser-edition/cmd/httpapi`, `make browser`, and Playwright screenshots for desktop, mobile, 1024-wide setup, 768x1024 match, and English in-match rendering.
