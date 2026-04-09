@@ -47,7 +47,7 @@
                     </div>
                 </div>
                 <div class="setup-actions">
-                    <button type="submit" class="btn btn-primary">▶ <?= tr('setup_start') ?></button>
+                    <button type="submit" class="btn btn-primary"><span aria-hidden="true">▶</span> <?= tr('setup_start') ?></button>
                 </div>
             </form>
         </article>
