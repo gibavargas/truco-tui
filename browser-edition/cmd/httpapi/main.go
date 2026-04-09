@@ -454,7 +454,7 @@ func boolVal(body map[string]interface{}, key string, fallback bool) bool {
 func randomKey() string {
 	var b [6]byte
 	if _, err := rand.Read(b[:]); err != nil {
-		return strconv.FormatInt(time.Now().UnixNano(), 16)
+		panic("crypto/rand failed")
 	}
 	return strings.ToUpper(hex.EncodeToString(b[:]))
 }

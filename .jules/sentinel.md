@@ -1,0 +1,4 @@
+## 2024-06-25 - [CRITICAL] Fix insecure random number generation fallback
+**Vulnerability:** Weak random number generation due to predictable fallbacks when `crypto/rand.Read` failed. Several spots had fallback logic that used predictable values like timestamps or hardcoded strings (`"rnd-fallback"`, `"relay-v2-fallback-secret"`).
+**Learning:** In Go, when generating cryptographic secrets or random numbers via `crypto/rand`, the application must never fall back to predictable weak seeds or hardcoded values. An entropy failure implies the machine cannot guarantee security and must therefore fail closed.
+**Prevention:** Always use `panic()` or return a hard error when `crypto/rand.Read` fails. Never use a fallback mechanism for cryptographic randomness that relies on predictable values like timestamps or hardcoded strings.
