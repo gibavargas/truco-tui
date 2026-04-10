@@ -27,6 +27,9 @@ jobs:
       - name: Verify go.sum Integrity
         run: go mod verify
 
+      - name: Install Test Dependencies
+        run: sudo apt-get update && sudo apt-get install -y libxrandr-dev libxcursor-dev libxinerama-dev libxi-dev libgl1-mesa-dev xorg-dev
+
       - name: Vet
         run: go vet ./...
 
