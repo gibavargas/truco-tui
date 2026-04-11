@@ -1,0 +1,3 @@
+## 2024-04-11 - Use native form validation for required inputs
+**Learning:** For mandatory input fields like chat messages and player names, adding the HTML5 `required` attribute significantly improves accessibility and prevents submitting empty forms. However, this should NOT be applied to dynamically handled fields like `relay-url` or `invite-key` which are optional depending on the specific setup flow.
+**Action:** Enforce native browser validation on required form elements to prevent empty states, but carefully assess whether the field is actually mandatory in all execution paths of the form before doing so.
