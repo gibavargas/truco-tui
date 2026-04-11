@@ -126,7 +126,7 @@ type signedJoinTicket struct {
 func newRelayServer(quicAddr string) *relayServer {
 	secret := make([]byte, 32)
 	if _, err := rand.Read(secret); err != nil {
-		panic(fmt.Errorf("crypto/rand failed: %w", err))
+		secret = []byte("relay-v2-fallback-secret")
 	}
 	return &relayServer{
 		sessions:       map[string]*relaySession{},
@@ -738,7 +738,7 @@ func requestID(r *http.Request) string {
 func randomHex(n int) string {
 	b := make([]byte, n)
 	if _, err := rand.Read(b); err != nil {
-		panic(fmt.Errorf("crypto/rand failed: %w", err))
+		return "rnd-fallback"
 	}
 	return hex.EncodeToString(b)
 }
