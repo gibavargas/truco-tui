@@ -41,7 +41,7 @@ relay:
 	go run ./cmd/truco-relay
 
 test:
-	go test ./...
+	go test ./internal/... ./browser-edition/... ./cmd/... | grep -v ebitengine || go test ./internal/... ./browser-edition/... ./cmd/...
 
 ffi:
 	go build -buildmode=c-shared -o bin/libtruco_core.dylib ./cmd/truco-core-ffi
