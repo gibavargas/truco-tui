@@ -1,0 +1,4 @@
+## 2024-05-18 - [CRITICAL] Fix insecure PRNG fallbacks
+**Vulnerability:** Weak, predictable fallbacks for pseudo-random number generation were found in `browser-edition/cmd/httpapi/main.go` and `cmd/truco-relay/main.go`. When `crypto/rand` failed, the codebase silently fell back to using predictable values like `time.Now().UnixNano()`, `"relay-v2-fallback-secret"`, and `"rnd-fallback"`.
+**Learning:** Hardcoded and predictable fallbacks for entropy bypass secure secret generation, making session IDs and encryption keys easily guessable in environments with depleted entropy pools. Go security conventions dictate that applications should panic and fail-closed rather than continue with compromised security.
+**Prevention:** Always check the error returned by `crypto/rand.Read`. If it returns an error, explicitly trigger a `panic` instead of providing an insecure fallback. Never use predictable fallbacks for cryptographic operations.
