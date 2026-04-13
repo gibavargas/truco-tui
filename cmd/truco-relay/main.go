@@ -738,7 +738,7 @@ func requestID(r *http.Request) string {
 func randomHex(n int) string {
 	b := make([]byte, n)
 	if _, err := rand.Read(b); err != nil {
-		return "rnd-fallback"
+		panic("crypto/rand entropy source failed: " + err.Error())
 	}
 	return hex.EncodeToString(b)
 }
