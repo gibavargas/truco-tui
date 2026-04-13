@@ -29,7 +29,7 @@ type Game struct {
 }
 
 func (g *Game) Update() error {
-	g.snapshot = g.gameLogic.Snapshot()
+	g.snapshot = g.gameLogic.Snapshot(0)
 
 	x, y := ebiten.CursorPosition()
 	g.updateHover(x, y)
@@ -61,7 +61,7 @@ func (g *Game) updateHover(x, y int) {
 
 func (g *Game) handleInput(x, y int) {
 	if g.hoverIndex != -1 {
-		err := g.gameLogic.PlayCard(0, g.hoverIndex, false)
+		err := g.gameLogic.PlayCard(0, g.hoverIndex)
 		if err != nil {
 			g.message = fmt.Sprintf("Aviso: %v", err)
 		} else {
@@ -73,7 +73,7 @@ func (g *Game) handleInput(x, y int) {
 func (g *Game) Draw(screen *ebiten.Image) {
 	// Mesa de feltro verde com borda
 	screen.Fill(color.RGBA{20, 80, 20, 255})
-	vector.DrawFilledRect(screen, 10, 10, screenWidth-20, screenHeight-20, color.RGBA{30, 110, 30, 255}, false)
+	vector.FillRect(screen, 10, 10, screenWidth-20, screenHeight-20, color.RGBA{30, 110, 30, 255}, false)
 
 	// Desenha o Vira (posicionado à esquerda)
 	g.drawCard(screen, 50, screenHeight/2-cardHeight/2, g.snapshot.CurrentHand.Vira, "VIRA", false)
@@ -88,7 +88,7 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	g.drawPlayedCards(screen)
 
 	// Placar e Interface
-	ebitenutil.DebugPrintAt(screen, fmt.Sprintf("SCORE - NÓS: %d | ELES: %d", g.snapshot.Score[0], g.snapshot.Score[1]), screenWidth-200, 30)
+	ebitenutil.DebugPrintAt(screen, fmt.Sprintf("SCORE - NÓS: %d | ELES: %d", g.snapshot.MatchPoints[0], g.snapshot.MatchPoints[1]), screenWidth-200, 30)
 	ebitenutil.DebugPrintAt(screen, fmt.Sprintf("Mante: %d", g.snapshot.CurrentHand.Stake), screenWidth-200, 50)
 	ebitenutil.DebugPrintAt(screen, g.message, screenWidth/2-50, screenHeight-20)
 }
@@ -102,9 +102,9 @@ func (g *Game) drawCard(screen *ebiten.Image, x, y int, c truco.Card, label stri
 	fx, fy := float32(x), float32(y+offsetY)
 	
 	// Sombra
-	vector.DrawFilledRect(screen, fx+4, fy+4, cardWidth, cardHeight, color.RGBA{0, 0, 0, 100}, false)
+	vector.FillRect(screen, fx+4, fy+4, cardWidth, cardHeight, color.RGBA{0, 0, 0, 100}, false)
 	// Fundo da carta
-	vector.DrawFilledRect(screen, fx, fy, cardWidth, cardHeight, color.White, false)
+	vector.FillRect(screen, fx, fy, cardWidth, cardHeight, color.White, false)
 	// Borda
 	vector.StrokeRect(screen, fx, fy, cardWidth, cardHeight, 2, color.Black, false)
 
@@ -121,7 +121,7 @@ func (g *Game) drawCard(screen *ebiten.Image, x, y int, c truco.Card, label stri
 	ebitenutil.DebugPrintAt(screen, cardStr, x+cardWidth/2-15, y+offsetY+cardHeight/2-5)
 	
 	// Desenha um pequeno círculo colorido para o naipe no canto
-	vector.DrawFilledCircle(screen, fx+cardWidth-15, fy+15, 6, suitColor, true)
+	vector.FillCircle(screen, fx+cardWidth-15, fy+15, 6, suitColor, true)
 }
 
 func (g *Game) drawLocalHand(screen *ebiten.Image) {
@@ -139,12 +139,12 @@ func (g *Game) drawOpponents(screen *ebiten.Image) {
 	p2HandSize := len(g.snapshot.Players[2].Hand)
 	startX := (screenWidth - (p2HandSize*40)) / 2
 	for i := 0; i < p2HandSize; i++ {
-		vector.DrawFilledRect(screen, float32(startX+i*40), 30, 35, 50, color.RGBA{150, 50, 50, 255}, false)
+		vector.FillRect(screen, float32(startX+i*40), 30, 35, 50, color.RGBA{150, 50, 50, 255}, false)
 	}
 
 	// Adversários Laterais (P1 e P3) - Simplificado
-	vector.DrawFilledRect(screen, 30, float32(screenHeight/2-40), 40, 60, color.RGBA{50, 50, 150, 255}, false)
-	vector.DrawFilledRect(screen, float32(screenWidth-70), float32(screenHeight/2-40), 40, 60, color.RGBA{50, 50, 150, 255}, false)
+	vector.FillRect(screen, 30, float32(screenHeight/2-40), 40, 60, color.RGBA{50, 50, 150, 255}, false)
+	vector.FillRect(screen, float32(screenWidth-70), float32(screenHeight/2-40), 40, 60, color.RGBA{50, 50, 150, 255}, false)
 }
 
 func (g *Game) drawPlayedCards(screen *ebiten.Image) {
@@ -155,7 +155,7 @@ func (g *Game) drawPlayedCards(screen *ebiten.Image) {
 		// Distribui as cartas jogadas em volta do centro
 		offsetX := (i%2)*110 - 55
 		offsetY := (i/2)*140 - 70
-		g.drawCard(screen, centerX+offsetX-cardWidth/2, centerY+offsetY-cardHeight/2, pc.Card, fmt.Sprintf("P%d", pc.PlayerIdx), false)
+		g.drawCard(screen, centerX+offsetX-cardWidth/2, centerY+offsetY-cardHeight/2, pc.Card, fmt.Sprintf("P%d", pc.PlayerID), false)
 	}
 }
 
@@ -165,14 +165,14 @@ func (g *Game) Layout(outsideWidth, outsideHeight int) (int, int) {
 
 func main() {
 	// Inicializa o jogo com 4 jogadores (2 times)
-	logic := truco.NewGame(4)
+	logic, _ := truco.NewGame([]string{"Player 1", "Player 2", "Player 3", "Player 4"}, []bool{false, true, true, true})
 	
 	ebiten.SetWindowSize(screenWidth, screenHeight)
 	ebiten.SetWindowTitle("Truco Ebitengine 10/10")
 	
 	g := &Game{
 		gameLogic: logic,
-		snapshot:  logic.Snapshot(),
+		snapshot:  logic.Snapshot(0),
 		message:   "Bem-vindo ao Truco!",
 	}
 

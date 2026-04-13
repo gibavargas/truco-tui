@@ -21,6 +21,11 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxrandr-dev libxcursor-dev libxinerama-dev libxi-dev libgl1-mesa-dev xorg-dev
+
       - name: Download Modules
         run: go mod download
 
@@ -67,6 +72,8 @@ jobs:
       - name: Install GTK dependencies
         run: |
           sudo apt-get update
+          sudo apt-get install -y libxrandr-dev libxcursor-dev libxinerama-dev libxi-dev libgl1-mesa-dev xorg-dev
+          sudo apt-get install -y libxrandr-dev libxcursor-dev libxinerama-dev libxi-dev libgl1-mesa-dev xorg-dev
           sudo apt-get install -y libgtk-4-dev libadwaita-1-dev
 
       - name: Build Linux core
