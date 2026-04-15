@@ -1,0 +1,4 @@
+## 2024-05-17 - [Predictable Cryptographic Secrets on Entropy Failure]
+**Vulnerability:** Found a pattern in `cmd/truco-relay/main.go` and `browser-edition/cmd/httpapi/main.go` where cryptographic secrets (session IDs, secret keys, tokens) were generated using predictable fallbacks (hardcoded strings like "relay-v2-fallback-secret" and "rnd-fallback", or timestamps `time.Now().UnixNano()`) when `crypto/rand.Read` failed.
+**Learning:** Codebase contained a recurring pattern of catching entropy failures but handling them insecurely by falling back to non-random, predictable values rather than failing outright. This compromises the unpredictability of session IDs, API tokens, and relay secrets if the system's CSPRNG fails.
+**Prevention:** Always fail-closed (e.g., using `panic()` or propagating an error) when generating cryptographic secrets. Never fall back to predictable or hardcoded values.
