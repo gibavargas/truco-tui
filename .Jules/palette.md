@@ -1,0 +1,3 @@
+## 2024-03-24 - Accessible Playing Cards
+**Learning:** Decorative Unicode characters and layout spans used to form a visual playing card cause screen readers to announce confusing or redundant characters.
+**Action:** Always apply `role="img"` and a descriptive `aria-label` to the main component container, and set `aria-hidden="true"` on all child elements to prevent screen readers from reading the individual characters out loud.
