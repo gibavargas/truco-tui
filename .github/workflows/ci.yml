@@ -28,7 +28,9 @@ jobs:
         run: go mod verify
 
       - name: Vet
-        run: go vet ./...
+        run: |
+          sudo apt-get update && sudo apt-get install -y libxrandr-dev libxcursor-dev libxinerama-dev libxi-dev libgl1-mesa-dev xorg-dev
+          go vet ./...
 
       - name: Test
         run: go test ./...
