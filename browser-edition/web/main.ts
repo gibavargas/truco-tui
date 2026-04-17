@@ -1120,10 +1120,10 @@ function renderOverlay(match: MatchSnapshot, localTeamId: number): string {
 function renderCard(card: Card, size: "tiny" | "small" | "regular" = "regular"): string {
   const red = card.Suit === "Copas" || card.Suit === "Ouros";
   return `
-    <span class="card-face card-face-${size}${red ? " card-face-red" : ""}">
-      <span class="card-corner">${escapeHtml(card.Rank)}${escapeHtml(suitSymbol(card.Suit))}</span>
-      <span class="card-center">${escapeHtml(suitSymbol(card.Suit))}</span>
-      <span class="card-corner card-corner-bottom">${escapeHtml(card.Rank)}${escapeHtml(suitSymbol(card.Suit))}</span>
+    <span class="card-face card-face-${size}${red ? " card-face-red" : ""}" role="img" aria-label="${escapeHtml(cardLabel(card))}">
+      <span class="card-corner" aria-hidden="true">${escapeHtml(card.Rank)}${escapeHtml(suitSymbol(card.Suit))}</span>
+      <span class="card-center" aria-hidden="true">${escapeHtml(suitSymbol(card.Suit))}</span>
+      <span class="card-corner card-corner-bottom" aria-hidden="true">${escapeHtml(card.Rank)}${escapeHtml(suitSymbol(card.Suit))}</span>
     </span>
   `;
 }
