@@ -1039,7 +1039,7 @@ function renderTrickTrack(match: MatchSnapshot): string {
 
 function renderPlayableCard(card: Card, index: number, canPlay: boolean, canFaceDown: boolean): string {
   if (!canPlay) {
-    return `<div class="play-card lock-card">${renderCard(card)}<span class="card-caption">${escapeHtml(cardLabel(card))}</span></div>`;
+    return `<div class="play-card lock-card">${renderCard(card)}<span class="card-caption" aria-hidden="true">${escapeHtml(cardLabel(card))}</span></div>`;
   }
 
   return `
@@ -1049,7 +1049,7 @@ function renderPlayableCard(card: Card, index: number, canPlay: boolean, canFace
         <button class="card-button" type="submit"${busyAttr(`play-${index}`)}>${renderCard(card)}</button>
       </form>
       <div class="play-card-actions">
-        <span class="card-caption">${escapeHtml(cardLabel(card))}</span>
+        <span class="card-caption" aria-hidden="true">${escapeHtml(cardLabel(card))}</span>
         ${canFaceDown ? `<form data-api-action="play" data-form-id="play-down-${index}"><input type="hidden" name="cardIndex" value="${index}"><input type="hidden" name="faceDown" value="true"><button class="ghost-button" type="submit"${busyAttr(`play-down-${index}`)}>${buttonLabel(`play-down-${index}`, t("game_face_down"))}</button></form>` : ""}
       </div>
     </div>
@@ -1120,10 +1120,10 @@ function renderOverlay(match: MatchSnapshot, localTeamId: number): string {
 function renderCard(card: Card, size: "tiny" | "small" | "regular" = "regular"): string {
   const red = card.Suit === "Copas" || card.Suit === "Ouros";
   return `
-    <span class="card-face card-face-${size}${red ? " card-face-red" : ""}">
-      <span class="card-corner">${escapeHtml(card.Rank)}${escapeHtml(suitSymbol(card.Suit))}</span>
-      <span class="card-center">${escapeHtml(suitSymbol(card.Suit))}</span>
-      <span class="card-corner card-corner-bottom">${escapeHtml(card.Rank)}${escapeHtml(suitSymbol(card.Suit))}</span>
+    <span class="card-face card-face-${size}${red ? " card-face-red" : ""}" role="img" aria-label="${escapeHtml(cardLabel(card))}">
+      <span class="card-corner" aria-hidden="true">${escapeHtml(card.Rank)}${escapeHtml(suitSymbol(card.Suit))}</span>
+      <span class="card-center" aria-hidden="true">${escapeHtml(suitSymbol(card.Suit))}</span>
+      <span class="card-corner card-corner-bottom" aria-hidden="true">${escapeHtml(card.Rank)}${escapeHtml(suitSymbol(card.Suit))}</span>
     </span>
   `;
 }
