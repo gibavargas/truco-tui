@@ -1,0 +1,4 @@
+## 2024-05-18 - Fix insecure entropy fallbacks
+**Vulnerability:** The relay server (`cmd/truco-relay/main.go`) and local HTTP API (`browser-edition/cmd/httpapi/main.go`) fell back to hardcoded secrets (`"relay-v2-fallback-secret"`, `"rnd-fallback"`) or predictable timestamps (`time.Now().UnixNano()`) when `crypto/rand.Read` failed.
+**Learning:** This is a CRITICAL vulnerability pattern specific to this codebase that silently downgrades security and makes session tokens, API keys, and server secrets completely predictable if the system entropy pool is exhausted or broken. In Go, the application must panic and fail-closed if the entropy source fails.
+**Prevention:** Always use `panic(err)` when `crypto/rand.Read` fails to generate cryptographic secrets instead of falling back to predictable values or hardcoded secrets.

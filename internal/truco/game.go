@@ -201,7 +201,7 @@ func NewGameFromSnapshot(s Snapshot) (*Game, error) {
 func newSecureRNG() (*randv2.Rand, error) {
 	var seed [16]byte
 	if _, err := cryptorand.Read(seed[:]); err != nil {
-		return nil, err
+		panic(err)
 	}
 	lo := binary.LittleEndian.Uint64(seed[:8])
 	hi := binary.LittleEndian.Uint64(seed[8:])
