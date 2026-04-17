@@ -73,7 +73,7 @@ func (g *Game) handleInput(x, y int) {
 func (g *Game) Draw(screen *ebiten.Image) {
 	// Mesa de feltro verde com borda
 	screen.Fill(color.RGBA{20, 80, 20, 255})
-	vector.DrawFilledRect(screen, 10, 10, screenWidth-20, screenHeight-20, color.RGBA{30, 110, 30, 255}, false)
+	vector.FillRect(screen, 10, 10, screenWidth-20, screenHeight-20, color.RGBA{30, 110, 30, 255}, false)
 
 	// Desenha o Vira (posicionado à esquerda)
 	g.drawCard(screen, 50, screenHeight/2-cardHeight/2, g.snapshot.CurrentHand.Vira, "VIRA", false)
@@ -102,9 +102,9 @@ func (g *Game) drawCard(screen *ebiten.Image, x, y int, c truco.Card, label stri
 	fx, fy := float32(x), float32(y+offsetY)
 	
 	// Sombra
-	vector.DrawFilledRect(screen, fx+4, fy+4, cardWidth, cardHeight, color.RGBA{0, 0, 0, 100}, false)
+	vector.FillRect(screen, fx+4, fy+4, cardWidth, cardHeight, color.RGBA{0, 0, 0, 100}, false)
 	// Fundo da carta
-	vector.DrawFilledRect(screen, fx, fy, cardWidth, cardHeight, color.White, false)
+	vector.FillRect(screen, fx, fy, cardWidth, cardHeight, color.White, false)
 	// Borda
 	vector.StrokeRect(screen, fx, fy, cardWidth, cardHeight, 2, color.Black, false)
 
@@ -121,7 +121,7 @@ func (g *Game) drawCard(screen *ebiten.Image, x, y int, c truco.Card, label stri
 	ebitenutil.DebugPrintAt(screen, cardStr, x+cardWidth/2-15, y+offsetY+cardHeight/2-5)
 	
 	// Desenha um pequeno círculo colorido para o naipe no canto
-	vector.DrawFilledCircle(screen, fx+cardWidth-15, fy+15, 6, suitColor, true)
+	vector.FillCircle(screen, fx+cardWidth-15, fy+15, 6, suitColor, true)
 }
 
 func (g *Game) drawLocalHand(screen *ebiten.Image) {
@@ -139,12 +139,12 @@ func (g *Game) drawOpponents(screen *ebiten.Image) {
 	p2HandSize := len(g.snapshot.Players[2].Hand)
 	startX := (screenWidth - (p2HandSize*40)) / 2
 	for i := 0; i < p2HandSize; i++ {
-		vector.DrawFilledRect(screen, float32(startX+i*40), 30, 35, 50, color.RGBA{150, 50, 50, 255}, false)
+		vector.FillRect(screen, float32(startX+i*40), 30, 35, 50, color.RGBA{150, 50, 50, 255}, false)
 	}
 
 	// Adversários Laterais (P1 e P3) - Simplificado
-	vector.DrawFilledRect(screen, 30, float32(screenHeight/2-40), 40, 60, color.RGBA{50, 50, 150, 255}, false)
-	vector.DrawFilledRect(screen, float32(screenWidth-70), float32(screenHeight/2-40), 40, 60, color.RGBA{50, 50, 150, 255}, false)
+	vector.FillRect(screen, 30, float32(screenHeight/2-40), 40, 60, color.RGBA{50, 50, 150, 255}, false)
+	vector.FillRect(screen, float32(screenWidth-70), float32(screenHeight/2-40), 40, 60, color.RGBA{50, 50, 150, 255}, false)
 }
 
 func (g *Game) drawPlayedCards(screen *ebiten.Image) {
