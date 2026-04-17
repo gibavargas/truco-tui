@@ -29,7 +29,7 @@ type Game struct {
 }
 
 func (g *Game) Update() error {
-	g.snapshot = g.gameLogic.Snapshot()
+	g.snapshot = g.gameLogic.Snapshot(0)
 
 	x, y := ebiten.CursorPosition()
 	g.updateHover(x, y)
@@ -61,7 +61,7 @@ func (g *Game) updateHover(x, y int) {
 
 func (g *Game) handleInput(x, y int) {
 	if g.hoverIndex != -1 {
-		err := g.gameLogic.PlayCard(0, g.hoverIndex, false)
+		err := g.gameLogic.PlayCard(0, g.hoverIndex)
 		if err != nil {
 			g.message = fmt.Sprintf("Aviso: %v", err)
 		} else {
@@ -88,7 +88,7 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	g.drawPlayedCards(screen)
 
 	// Placar e Interface
-	ebitenutil.DebugPrintAt(screen, fmt.Sprintf("SCORE - NÓS: %d | ELES: %d", g.snapshot.Score[0], g.snapshot.Score[1]), screenWidth-200, 30)
+	ebitenutil.DebugPrintAt(screen, fmt.Sprintf("SCORE - NÓS: %d | ELES: %d", g.snapshot.MatchPoints[0], g.snapshot.MatchPoints[1]), screenWidth-200, 30)
 	ebitenutil.DebugPrintAt(screen, fmt.Sprintf("Mante: %d", g.snapshot.CurrentHand.Stake), screenWidth-200, 50)
 	ebitenutil.DebugPrintAt(screen, g.message, screenWidth/2-50, screenHeight-20)
 }
@@ -155,7 +155,7 @@ func (g *Game) drawPlayedCards(screen *ebiten.Image) {
 		// Distribui as cartas jogadas em volta do centro
 		offsetX := (i%2)*110 - 55
 		offsetY := (i/2)*140 - 70
-		g.drawCard(screen, centerX+offsetX-cardWidth/2, centerY+offsetY-cardHeight/2, pc.Card, fmt.Sprintf("P%d", pc.PlayerIdx), false)
+		g.drawCard(screen, centerX+offsetX-cardWidth/2, centerY+offsetY-cardHeight/2, pc.Card, fmt.Sprintf("P%d", pc.PlayerID), false)
 	}
 }
 
@@ -165,14 +165,16 @@ func (g *Game) Layout(outsideWidth, outsideHeight int) (int, int) {
 
 func main() {
 	// Inicializa o jogo com 4 jogadores (2 times)
-	logic := truco.NewGame(4)
+	playerNames := []string{"Nós (Local)", "Eles 1 (Bot)", "Nós 2 (Bot)", "Eles 2 (Bot)"}
+	cpuFlags := []bool{false, true, true, true}
+	logic, _ := truco.NewGame(playerNames, cpuFlags)
 	
 	ebiten.SetWindowSize(screenWidth, screenHeight)
 	ebiten.SetWindowTitle("Truco Ebitengine 10/10")
 	
 	g := &Game{
 		gameLogic: logic,
-		snapshot:  logic.Snapshot(),
+		snapshot:  logic.Snapshot(0),
 		message:   "Bem-vindo ao Truco!",
 	}
 
