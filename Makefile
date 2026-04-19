@@ -85,7 +85,7 @@ wails-frontend-test:
 	npm run test:frontend --prefix $(WAILS_DIR)
 
 wails-test:
-	cd $(WAILS_DIR) && go test -tags=wails .
+	cd $(WAILS_DIR) && go test -tags=wails ./
 
 wails-dev:
 	cd $(WAILS_DIR) && wails dev
