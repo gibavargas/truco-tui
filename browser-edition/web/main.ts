@@ -976,9 +976,9 @@ function renderGame(): string {
             ${renderPlayers(match)}
             <div class="center-table">
               <div class="table-shell">
-                <div class="table-chip">
+                <div class="table-chip table-chip-vira">
                   <span>${escapeHtml(t("game_vira"))}</span>
-                  ${renderCard(match.CurrentHand.Vira, "small")}
+                  ${renderCard(match.CurrentHand.Vira, "regular")}
                 </div>
                 <div class="table-core">
                   <div class="table-rail">
@@ -987,7 +987,7 @@ function renderGame(): string {
                   </div>
                   <div class="round-pile">${renderRoundCards(match)}</div>
                 </div>
-                <div class="table-chip">
+                <div class="table-chip table-chip-manilha">
                   <span>${escapeHtml(t("game_manilha"))}</span>
                   <strong>${escapeHtml(match.CurrentHand.Manilha || "-")}</strong>
                 </div>

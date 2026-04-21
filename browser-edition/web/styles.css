@@ -688,6 +688,14 @@ input {
   background: rgba(12, 25, 22, 0.52);
 }
 
+.table-chip-vira .card-face {
+  width: clamp(3.2rem, 5vw, 4.2rem);
+}
+
+.table-chip-manilha strong {
+  font-size: 1.6rem;
+}
+
 .table-chip span {
   text-transform: uppercase;
   letter-spacing: 0.16em;
@@ -1261,6 +1269,14 @@ input {
 
   .table-chip strong {
     font-size: 0.9rem;
+  }
+
+  .table-chip-vira .card-face {
+    width: clamp(2.8rem, 9vw, 3.4rem);
+  }
+
+  .table-chip-manilha strong {
+    font-size: 1.1rem;
   }
 
   .table-core {
