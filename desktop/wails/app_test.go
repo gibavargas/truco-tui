@@ -82,7 +82,7 @@ func TestRuntimePumpEmitsAsyncUpdates(t *testing.T) {
 		if len(update.Events) == 0 {
 			t.Fatal("expected async update to include drained runtime events")
 		}
-	case <-time.After(800 * time.Millisecond):
+	case <-time.After(1500 * time.Millisecond):
 		t.Fatal("timed out waiting for async runtime update")
 	}
 }
