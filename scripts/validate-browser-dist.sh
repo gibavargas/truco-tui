@@ -33,7 +33,7 @@ cat <<'EOF' | sort >"$tmp_expected"
 ./favicon.svg
 ./index.html
 EOF
-(cd "$DIST_DIR" && find . -type f ! -name 'truco-api' ! -name 'truco-api.exe' | sort) >"$tmp_actual"
+(cd "$DIST_DIR" && find . -type f ! -name 'truco-api' ! -name 'truco-api.exe' | sed -E 's/app\.[a-z0-9]+\.js/app.js/' | sed -E 's/app\.[a-z0-9]+\.css/app.css/' | sort) >"$tmp_actual"
 
 if ! diff -u "$tmp_expected" "$tmp_actual"; then
   echo "browser dist contents do not match the static browser client layout" >&2
