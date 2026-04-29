@@ -48,3 +48,4 @@ scripts/__pycache__/
 # Xcode user-specific state
 **/xcuserdata/
 *.xcuserstate
+node_modules/

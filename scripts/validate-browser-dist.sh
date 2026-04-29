@@ -26,14 +26,12 @@ trap 'rm -f "$tmp_expected" "$tmp_actual"' EXIT
 
 cat <<'EOF' | sort >"$tmp_expected"
 ./apple-touch-icon.png
-./assets/app.css
-./assets/app.js
 ./favicon.ico
 ./favicon.png
 ./favicon.svg
 ./index.html
 EOF
-(cd "$DIST_DIR" && find . -type f ! -name 'truco-api' ! -name 'truco-api.exe' | sort) >"$tmp_actual"
+(cd "$DIST_DIR" && find . -type f ! -name 'truco-api' ! -name 'truco-api.exe' ! -path './assets/app.*.js' ! -path './assets/app.*.css' | sort) >"$tmp_actual"
 
 if ! diff -u "$tmp_expected" "$tmp_actual"; then
   echo "browser dist contents do not match the static browser client layout" >&2
