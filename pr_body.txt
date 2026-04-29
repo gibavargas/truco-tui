@@ -1,4 +1,0 @@
-💡 **What:** Added the HTML5 `required` attribute to static form inputs (player names and chat messages) across the lobby and setup views.
-🎯 **Why:** Prevents users from submitting empty chat messages or clearing their names into an invalid state, providing instant, native browser feedback without custom JavaScript validation logic. Dynamic configuration fields (relay-url, invite-key) were intentionally excluded to preserve conditional setup flows.
-📸 **Before/After:** Before, empty name submissions would bypass the UI and potentially trigger backend errors or create unnamed players. Now, the browser natively blocks submission and displays a "Please fill out this field" tooltip.
-♿ **Accessibility:** Leverages the browser's built-in accessibility features for invalid form fields, automatically announcing the required state and error messages to screen readers without custom ARIA workarounds.
