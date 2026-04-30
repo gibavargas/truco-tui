@@ -33,7 +33,7 @@ cat <<'EOF' | sort >"$tmp_expected"
 ./favicon.svg
 ./index.html
 EOF
-(cd "$DIST_DIR" && find . -type f ! -name 'truco-api' ! -name 'truco-api.exe' | sort) >"$tmp_actual"
+(cd "$DIST_DIR" && find . -type f ! -name 'truco-api' ! -name 'truco-api.exe' | sed -E "s/app\.[a-f0-9]+\.(css|js)/app.\1/" | sort) >"$tmp_actual"
 
 if ! diff -u "$tmp_expected" "$tmp_actual"; then
   echo "browser dist contents do not match the static browser client layout" >&2
@@ -80,8 +80,8 @@ if command -v curl >/dev/null 2>&1 && [[ -x "$api_bin" ]]; then
 
   curl -fsS "http://127.0.0.1:${port}/" >/dev/null
   curl -fsS "http://127.0.0.1:${port}/favicon.ico" >/dev/null
-  curl -fsS "http://127.0.0.1:${port}/assets/app.css" >/dev/null
-  curl -fsS "http://127.0.0.1:${port}/assets/app.js" >/dev/null
+  css_file=$(ls "$DIST_DIR/assets" | grep "\.css$"); curl -fsS "http://127.0.0.1:${port}/assets/${css_file}" >/dev/null
+  js_file=$(ls "$DIST_DIR/assets" | grep "\.js$"); curl -fsS "http://127.0.0.1:${port}/assets/${js_file}" >/dev/null
 
   cleanup
   trap 'rm -f "$tmp_expected" "$tmp_actual"' EXIT
