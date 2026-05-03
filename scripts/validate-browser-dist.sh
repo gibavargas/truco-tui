@@ -24,21 +24,34 @@ tmp_expected="$(mktemp)"
 tmp_actual="$(mktemp)"
 trap 'rm -f "$tmp_expected" "$tmp_actual"' EXIT
 
-cat <<'EOF' | sort >"$tmp_expected"
-./apple-touch-icon.png
-./assets/app.css
-./assets/app.js
-./favicon.ico
-./favicon.png
-./favicon.svg
-./index.html
-EOF
+
 (cd "$DIST_DIR" && find . -type f ! -name 'truco-api' ! -name 'truco-api.exe' | sort) >"$tmp_actual"
 
-if ! diff -u "$tmp_expected" "$tmp_actual"; then
-  echo "browser dist contents do not match the static browser client layout" >&2
+required_files=(
+  "./apple-touch-icon.png"
+  "./favicon.ico"
+  "./favicon.png"
+  "./favicon.svg"
+  "./index.html"
+)
+
+for req in "${required_files[@]}"; do
+  if ! grep -Fxq "$req" "$tmp_actual"; then
+    echo "browser dist missing required file: $req" >&2
+    exit 1
+  fi
+done
+
+if ! grep -qE '\./assets/app\.[a-z0-9]+\.js' "$tmp_actual"; then
+  echo "browser dist missing hashed app.js in assets/" >&2
   exit 1
 fi
+
+if ! grep -qE '\./assets/app\.[a-z0-9]+\.css' "$tmp_actual"; then
+  echo "browser dist missing hashed app.css in assets/" >&2
+  exit 1
+fi
+
 
 api_bin="$DIST_DIR/truco-api"
 if [[ ! -x "$api_bin" && -x "$DIST_DIR/truco-api.exe" ]]; then
@@ -80,8 +93,11 @@ if command -v curl >/dev/null 2>&1 && [[ -x "$api_bin" ]]; then
 
   curl -fsS "http://127.0.0.1:${port}/" >/dev/null
   curl -fsS "http://127.0.0.1:${port}/favicon.ico" >/dev/null
-  curl -fsS "http://127.0.0.1:${port}/assets/app.css" >/dev/null
-  curl -fsS "http://127.0.0.1:${port}/assets/app.js" >/dev/null
+    js_file=$(cd "$DIST_DIR" && find assets -name "app.*.js" -printf "%f\n" | head -n 1)
+  css_file=$(cd "$DIST_DIR" && find assets -name "app.*.css" -printf "%f\n" | head -n 1)
+
+  curl -fsS "http://127.0.0.1:${port}/assets/$css_file" >/dev/null
+  curl -fsS "http://127.0.0.1:${port}/assets/$js_file" >/dev/null
 
   cleanup
   trap 'rm -f "$tmp_expected" "$tmp_actual"' EXIT
