@@ -89,7 +89,13 @@ func TestRuntimePumpEmitsAsyncUpdates(t *testing.T) {
 
 func TestPlayFaceDownCardUsesFaceDownPath(t *testing.T) {
 	app := NewApp()
-	if err := app.StartOfflineGame("Mesa", 2); err != nil {
+	// Dispatch manually to use a fixed seed where it is local player's turn to play first
+	if err := app.dispatch(appcore.IntentNewOfflineGame, appcore.NewOfflineGamePayload{
+		PlayerNames: []string{"Mesa", "CPU-2"},
+		CPUFlags:    []bool{false, true},
+		SeedLo:      42,
+		SeedHi:      42,
+	}); err != nil {
 		t.Fatalf("StartOfflineGame: %v", err)
 	}
 	waitForPlayableFirstTrick(t, app)
@@ -340,7 +346,8 @@ func mustJSONPayload(t *testing.T, payload any) []byte {
 func waitForPlayableFirstTrick(t *testing.T, app *App) {
 	t.Helper()
 
-	for range 8 {
+	for range 100 {
+		time.Sleep(5 * time.Millisecond)
 		snapshot := app.Snapshot()
 		if snapshot.Match != nil && snapshot.Match.CurrentHand.Round == 1 && snapshot.UI.Actions.CanPlayCard {
 			return
