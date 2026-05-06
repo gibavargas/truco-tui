@@ -144,6 +144,8 @@ async function submitForm(form: HTMLFormElement): Promise<void> {
     return;
   }
 
+  const viewBeforeSubmit = currentView();
+  let viewChanged = false;
   const payload = formPayload(form);
   const formId = form.dataset.formId || action;
   state.busyForm = formId;
@@ -168,12 +170,16 @@ async function submitForm(form: HTMLFormElement): Promise<void> {
       await syncAfterAction(action);
     }
 
+    viewChanged = currentView() !== viewBeforeSubmit;
     state.error = "";
   } catch (error) {
     state.error = errorMessage(error);
   } finally {
     state.busyForm = "";
     render();
+    if (viewChanged) {
+      window.scrollTo({ top: 0, left: 0 });
+    }
   }
 }
 
@@ -582,15 +588,11 @@ function render(): void {
 function renderApp(): string {
   const locale = state.locale;
   const busy = state.busyForm !== "";
+  const view = currentView();
   const banner = state.error
     ? `<section class="runtime-banner" data-pretext-block="lock-height">${escapeHtml(state.error)}</section>`
     : "";
-
-  return `
-    <div class="page-shell">
-      <div class="page-aura page-aura-left"></div>
-      <div class="page-aura page-aura-right"></div>
-      <main class="app-shell">
+  const chrome = view === "game" ? "" : `
         <header class="hero-card">
           <div class="hero-copy">
             <p class="eyebrow">${escapeHtml(t("app_kicker"))}</p>
@@ -606,7 +608,14 @@ function renderApp(): string {
               ${localeOptions(locale)}
             </select>
           </form>
-        </header>
+        </header>`;
+
+  return `
+    <div class="page-shell page-shell-${view}">
+      <div class="page-aura page-aura-left"></div>
+      <div class="page-aura page-aura-right"></div>
+      <main class="app-shell app-shell-${view}">
+        ${chrome}
         ${banner}
         ${renderView()}
       </main>
@@ -870,24 +879,28 @@ function renderGame(): string {
         : match.TurnPlayer === match.CurrentPlayerIdx
           ? t("status_your_turn")
           : t("status_wait_turn", playerName(match, match.TurnPlayer));
-  const bottomScore = teamScore(match, 0);
-  const topScore = teamScore(match, 1);
+  const opponentTeamId = localTeamId === 0 ? 1 : 0;
+  const usScore = teamScore(match, localTeamId);
+  const themScore = teamScore(match, opponentTeamId);
+  const stakeLabel = pendingFor >= 0
+    ? `${t("game_pending_raise")} ${raiseLabel(pendingTo)}`
+    : `${t("game_stake")} ${match.CurrentHand.Stake}`;
   const tableTitle = isOnlineMode() ? t("game_title_online") : t("game_title_offline");
 
   return `
     <section class="game-layout">
       <article class="surface-card score-card">
-        <div class="score-block${localTeamId === 0 ? " score-block-friendly" : ""}">
-          <span>${escapeHtml(t("team_one"))}</span>
-          <strong>${bottomScore}</strong>
+        <div class="score-block score-block-friendly">
+          <span>${escapeHtml(t("team_us"))}</span>
+          <strong>${usScore}</strong>
         </div>
         <div class="score-center">
           <span>${escapeHtml(t("game_round"))} ${match.CurrentHand.Round}/3</span>
-          <strong>${escapeHtml(t("game_stake"))} ${match.CurrentHand.Stake}</strong>
+          <strong>${escapeHtml(stakeLabel)}</strong>
         </div>
-        <div class="score-block${localTeamId === 1 ? " score-block-friendly" : ""}">
-          <span>${escapeHtml(t("team_two"))}</span>
-          <strong>${topScore}</strong>
+        <div class="score-block">
+          <span>${escapeHtml(t("team_them"))}</span>
+          <strong>${themScore}</strong>
         </div>
       </article>
 
@@ -949,7 +962,6 @@ function renderGame(): string {
               </div>
               <div class="control-stack">
                 ${canRespond ? renderRespondControls(canRaise, bundle.ui.actions.can_accept, bundle.ui.actions.can_refuse, pendingTo) : renderTurnControls(canRaise, match.MatchFinished)}
-                ${!match.MatchFinished ? `<form data-api-action="pollEvents" data-form-id="pollEvents"><button class="ghost-button" type="submit"${busyAttr("pollEvents")}>${buttonLabel("pollEvents", t("lobby_refresh"))}</button></form>` : ""}
               </div>
             </div>
           </div>
