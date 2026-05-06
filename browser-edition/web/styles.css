@@ -15,11 +15,14 @@
   --table-soft: #32735a;
   --danger: #e1705d;
   --success: #4e9276;
-  --radius-xl: 34px;
-  --radius-lg: 24px;
-  --radius-md: 18px;
-  --radius-sm: 12px;
-  --shadow: 0 28px 80px rgba(0, 0, 0, 0.34);
+  --ink: #080d0f;
+  --felt-grain: rgba(255, 244, 209, 0.035);
+  --radius-xl: 24px;
+  --radius-lg: 18px;
+  --radius-md: 14px;
+  --radius-sm: 10px;
+  --shadow: 0 22px 58px rgba(0, 0, 0, 0.36);
+  --shadow-tight: 0 12px 28px rgba(0, 0, 0, 0.26);
   --serif: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Palatino, serif;
   --sans: "Avenir Next", "Segoe UI", sans-serif;
   --mono: "SFMono-Regular", "Menlo", monospace;
@@ -39,9 +42,15 @@ body {
   font-family: var(--sans);
   color: var(--text);
   background:
-    radial-gradient(circle at top left, rgba(214, 178, 99, 0.16), transparent 34%),
-    radial-gradient(circle at right 18%, rgba(44, 114, 96, 0.22), transparent 30%),
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.026) 0 1px, transparent 1px 64px),
+    repeating-linear-gradient(0deg, rgba(255, 244, 209, 0.018) 0 1px, transparent 1px 42px),
+    linear-gradient(155deg, rgba(51, 116, 89, 0.18) 0%, transparent 38%),
     linear-gradient(180deg, #101619 0%, #0a1012 100%);
+}
+
+::selection {
+  background: rgba(214, 178, 99, 0.34);
+  color: var(--text);
 }
 
 button,
@@ -92,14 +101,7 @@ select:focus-visible {
 }
 
 .page-aura {
-  position: fixed;
-  inset: auto;
-  width: 42rem;
-  height: 42rem;
-  border-radius: 999px;
-  filter: blur(80px);
-  pointer-events: none;
-  opacity: 0.28;
+  display: none;
 }
 
 .page-aura-left {
@@ -137,7 +139,10 @@ select:focus-visible {
   gap: 1.2rem;
   align-items: end;
   padding: 1.5rem;
-  border-radius: calc(var(--radius-xl) + 4px);
+  border-radius: var(--radius-xl);
+  background:
+    linear-gradient(135deg, rgba(245, 216, 144, 0.08), transparent 35%),
+    linear-gradient(180deg, rgba(18, 28, 32, 0.94), rgba(14, 22, 25, 0.86));
 }
 
 .hero-copy h1,
@@ -253,6 +258,19 @@ input {
   border-radius: var(--radius-sm);
   padding: 0.9rem 1rem;
   background: rgba(6, 12, 14, 0.45);
+  transition: border-color 160ms ease, background 160ms ease, box-shadow 160ms ease;
+}
+
+select:hover,
+input:hover {
+  border-color: rgba(214, 178, 99, 0.34);
+  background: rgba(6, 12, 14, 0.56);
+}
+
+select:focus,
+input:focus {
+  border-color: rgba(245, 216, 144, 0.64);
+  box-shadow: 0 0 0 4px rgba(214, 178, 99, 0.08);
 }
 
 .runtime-banner {
@@ -291,14 +309,26 @@ input {
   border-radius: var(--radius-xl);
   padding: 1.25rem;
   overflow: hidden;
+  transition: border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
 }
 
 .surface-card::before {
   content: "";
   position: absolute;
   inset: 0;
-  background: linear-gradient(140deg, rgba(255, 255, 255, 0.03), transparent 42%);
+  background:
+    linear-gradient(140deg, rgba(255, 255, 255, 0.035), transparent 42%),
+    repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.018) 0 1px, transparent 1px 18px);
   pointer-events: none;
+}
+
+.surface-card > * {
+  position: relative;
+}
+
+.surface-card:hover {
+  border-color: rgba(214, 178, 99, 0.24);
+  box-shadow: 0 26px 70px rgba(0, 0, 0, 0.38);
 }
 
 .score-card,
@@ -423,6 +453,8 @@ input {
   padding: 0 1.2rem;
   font-weight: 700;
   letter-spacing: 0.02em;
+  box-shadow: var(--shadow-tight);
+  transition: transform 160ms ease, filter 160ms ease, border-color 160ms ease, background 160ms ease;
 }
 
 .primary-button {
@@ -443,11 +475,27 @@ input {
 .ghost-button {
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid var(--line);
+  box-shadow: none;
 }
 
 .ghost-button.danger {
   border-color: rgba(225, 112, 93, 0.3);
   color: #ffd1c7;
+}
+
+.primary-button:hover,
+.secondary-button:hover,
+.ghost-button:hover,
+.card-button:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.08);
+}
+
+.primary-button:active,
+.secondary-button:active,
+.ghost-button:active,
+.card-button:active {
+  transform: translateY(0);
 }
 
 .loading-card {
@@ -512,10 +560,12 @@ input {
 
 .seat-tile {
   padding: 1rem;
+  transition: border-color 160ms ease, background 160ms ease;
 }
 
 .seat-tile-local {
   border-color: rgba(214, 178, 99, 0.34);
+  background: linear-gradient(135deg, rgba(214, 178, 99, 0.1), rgba(8, 14, 18, 0.48));
 }
 
 .seat-heading,
@@ -596,6 +646,7 @@ input {
   padding: 1rem;
   background: rgba(8, 14, 18, 0.46);
   text-align: center;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
 .score-block strong,
@@ -654,6 +705,17 @@ input {
     radial-gradient(circle at top, rgba(86, 149, 126, 0.22), transparent 38%),
     linear-gradient(180deg, var(--table) 0%, #15372e 100%);
   overflow: hidden;
+  box-shadow: inset 0 0 0 12px rgba(44, 26, 15, 0.34), inset 0 0 42px rgba(0, 0, 0, 0.34);
+}
+
+.board-stage::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    repeating-linear-gradient(45deg, var(--felt-grain) 0 1px, transparent 1px 14px),
+    repeating-linear-gradient(-45deg, rgba(0, 0, 0, 0.035) 0 1px, transparent 1px 18px);
+  pointer-events: none;
 }
 
 .board-stage::after {
@@ -670,6 +732,7 @@ input {
   inset: 50% auto auto 50%;
   transform: translate(-50%, -50%);
   width: min(48rem, calc(100% - 5rem));
+  z-index: 1;
 }
 
 .table-shell {
@@ -798,6 +861,8 @@ input {
   width: clamp(12rem, 18vw, 16rem);
   padding: 0.9rem;
   background: rgba(8, 14, 18, 0.44);
+  z-index: 1;
+  box-shadow: var(--shadow-tight);
 }
 
 .seat-top {
@@ -842,7 +907,17 @@ input {
   color: #222;
   border: 1px solid rgba(45, 33, 20, 0.14);
   box-shadow: 0 12px 28px rgba(0, 0, 0, 0.18);
-  transition: transform 180ms ease, box-shadow 180ms ease;
+  isolation: isolate;
+  transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
+}
+
+.card-face::before {
+  content: "";
+  position: absolute;
+  inset: 0.42rem;
+  border-radius: inherit;
+  border: 1px solid rgba(45, 33, 20, 0.08);
+  pointer-events: none;
 }
 
 .card-face-small,
@@ -858,6 +933,7 @@ input {
 
 .card-back {
   background:
+    repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.08) 0 1px, transparent 1px 8px),
     linear-gradient(135deg, rgba(255, 255, 255, 0.18), transparent 40%),
     linear-gradient(180deg, #244b5a 0%, #12303c 100%);
   border-color: rgba(255, 255, 255, 0.14);
@@ -938,8 +1014,9 @@ input {
   transform: translateY(-0.45rem);
 }
 
-.play-card-playable .card-button:hover .card-face {
-  box-shadow: 0 18px 28px rgba(0, 0, 0, 0.3);
+.play-card .card-button:hover .card-face {
+  box-shadow: 0 18px 34px rgba(0, 0, 0, 0.3);
+  border-color: rgba(214, 178, 99, 0.36);
 }
 
 .lock-card {
@@ -1340,5 +1417,681 @@ input {
 
   .play-card-playable .card-button:hover {
     transform: rotate(calc((var(--card-index) - ((var(--card-total) - 1) / 2)) * 6deg)) translateY(-0.45rem);
+  }
+}
+
+/* Swift-inspired live table surface */
+.page-shell-game {
+  height: 100vh;
+  overflow: hidden;
+  background:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.05), transparent 9%, rgba(0, 0, 0, 0.28) 9.5%, transparent 10%),
+    repeating-linear-gradient(90deg, #604025 0 12.5%, #4c2d18 12.5% 25%);
+}
+
+.app-shell-game {
+  width: 100%;
+  min-height: 100vh;
+  padding: 0;
+}
+
+.app-shell-game .runtime-banner {
+  position: fixed;
+  top: 1rem;
+  left: 50%;
+  z-index: 60;
+  width: min(40rem, calc(100% - 2rem));
+  transform: translateX(-50%);
+}
+
+.app-shell-game .game-layout {
+  position: relative;
+  display: block;
+  min-height: 100vh;
+  margin: 0;
+  overflow: hidden;
+}
+
+.app-shell-game .game-layout::before {
+  content: "";
+  position: absolute;
+  inset: 2rem;
+  border-radius: 999px;
+  background:
+    radial-gradient(circle at center, rgba(46, 138, 72, 0.9), rgba(12, 68, 32, 0.96) 58%, rgba(6, 40, 20, 0.98)),
+    linear-gradient(180deg, #1f7a3d, #0d3b1e);
+  box-shadow:
+    inset 0 0 0 2px rgba(255, 255, 255, 0.12),
+    inset 0 0 0 22px rgba(0, 0, 0, 0.28),
+    inset 0 0 56px rgba(0, 0, 0, 0.52),
+    0 32px 70px rgba(0, 0, 0, 0.58);
+  pointer-events: none;
+}
+
+.app-shell-game .score-card {
+  position: absolute;
+  top: 2.6rem;
+  left: 50%;
+  z-index: 40;
+  display: grid;
+  width: min(44rem, calc(100% - 6rem));
+  grid-template-columns: 5.1rem minmax(6.5rem, 7.2rem) 5.1rem;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0;
+  transform: translateX(-50%);
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+.app-shell-game .score-card::before,
+.app-shell-game .board-card::before,
+.app-shell-game .action-dock::before,
+.app-shell-game .activity-card::before,
+.app-shell-game .table-note-card::before,
+.app-shell-game .telemetry-card::before {
+  display: none;
+}
+
+.app-shell-game .score-block,
+.app-shell-game .score-center {
+  display: grid;
+  place-items: center;
+  width: 5.1rem;
+  height: 5.1rem;
+  padding: 0.55rem;
+  border-radius: 1rem;
+  background: linear-gradient(135deg, rgba(0, 0, 0, 0.6), rgba(0, 0, 0, 0.34));
+  border-color: rgba(255, 255, 255, 0.14);
+  box-shadow: 0 14px 24px rgba(0, 0, 0, 0.24);
+}
+
+.app-shell-game .score-center {
+  width: 7.2rem;
+  border-color: rgba(245, 216, 144, 0.6);
+  background: linear-gradient(135deg, rgba(245, 216, 144, 0.2), rgba(0, 0, 0, 0.48));
+}
+
+.app-shell-game .score-block span,
+.app-shell-game .score-center span {
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.app-shell-game .score-block strong,
+.app-shell-game .score-center strong {
+  margin: 0;
+  color: var(--text);
+  font-size: 2rem;
+  line-height: 1;
+}
+
+.app-shell-game .score-center strong {
+  color: var(--accent-strong);
+  font-size: 1.42rem;
+}
+
+.app-shell-game .game-main-column,
+.app-shell-game .game-side-column {
+  position: static;
+  display: block;
+}
+
+.app-shell-game .board-card {
+  position: absolute;
+  inset: 1.35rem;
+  z-index: 5;
+  padding: 0;
+  overflow: visible;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+.app-shell-game .board-head {
+  position: absolute;
+  top: 5.1rem;
+  left: 2rem;
+  z-index: 35;
+  margin: 0;
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.app-shell-game .board-head h2 {
+  display: none;
+}
+
+.app-shell-game .board-head .eyebrow {
+  margin: 0;
+  padding: 0.48rem 0.8rem;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.34);
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.app-shell-game .board-stage {
+  position: absolute;
+  inset: 5.8rem 1.2rem 8.3rem;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  box-shadow: none;
+  overflow: visible;
+}
+
+.app-shell-game .board-stage::before {
+  border-radius: inherit;
+  opacity: 0.55;
+}
+
+.app-shell-game .board-stage::after {
+  inset: 1.2rem;
+  border-color: rgba(255, 255, 255, 0.14);
+}
+
+.app-shell-game .status-band {
+  position: absolute;
+  left: 50%;
+  bottom: 18.25rem;
+  z-index: 34;
+  width: min(34rem, calc(100% - 4rem));
+  margin: 0;
+  padding: 0.7rem 1rem;
+  transform: translateX(-50%);
+  border-color: rgba(245, 216, 144, 0.38);
+  background: rgba(0, 0, 0, 0.56);
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.28);
+  text-align: center;
+}
+
+.app-shell-game .status-band span {
+  margin-bottom: 0.16rem;
+  color: var(--accent-strong);
+}
+
+.app-shell-game .status-band strong {
+  font-size: 0.98rem;
+}
+
+.app-shell-game .player-seat {
+  display: flex;
+  width: auto;
+  min-width: 0;
+  align-items: center;
+  gap: 0.85rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.app-shell-game .seat-top {
+  top: 1rem;
+}
+
+.app-shell-game .seat-left {
+  left: 3rem;
+}
+
+.app-shell-game .seat-right {
+  right: 3rem;
+}
+
+.app-shell-game .player-head {
+  display: grid;
+  gap: 0.26rem;
+  justify-items: center;
+  padding: 0.48rem 0.9rem;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.52);
+}
+
+.app-shell-game .player-head strong {
+  max-width: 10rem;
+  color: var(--text);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.app-shell-game .player-head span {
+  color: var(--accent-strong);
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.app-shell-game .player-cards {
+  order: -1;
+  margin: 0;
+  gap: 0;
+  flex-wrap: nowrap;
+}
+
+.app-shell-game .player-cards .card-back {
+  margin-right: -1.25rem;
+}
+
+.app-shell-game .center-table {
+  top: 49%;
+  width: min(48rem, calc(100% - 18rem));
+}
+
+.app-shell-game .table-shell {
+  grid-template-columns: auto 14rem auto;
+  justify-content: center;
+  gap: clamp(1.5rem, 4vw, 4rem);
+}
+
+.app-shell-game .table-chip {
+  min-width: 5.8rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.app-shell-game .table-chip span,
+.app-shell-game .table-rail span {
+  color: rgba(255, 255, 255, 0.62);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+}
+
+.app-shell-game .table-chip strong {
+  display: grid;
+  width: 5.4rem;
+  height: 7.75rem;
+  place-items: center;
+  border: 2px solid rgba(245, 216, 144, 0.74);
+  border-radius: 0.8rem;
+  background: rgba(245, 216, 144, 0.16);
+  color: var(--accent-strong);
+  font-size: 2.35rem;
+  box-shadow: 0 0 14px rgba(245, 216, 144, 0.18);
+}
+
+.app-shell-game .table-core {
+  display: grid;
+  width: 15.8rem;
+  height: 15.8rem;
+  place-items: center;
+  padding: 0.85rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.045);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+.app-shell-game .table-rail {
+  align-self: start;
+  width: 100%;
+}
+
+.app-shell-game .trick-track {
+  display: flex;
+  justify-content: center;
+  gap: 0.36rem;
+}
+
+.app-shell-game .trick-pill {
+  min-height: 1.95rem;
+  min-width: 4.4rem;
+  padding: 0.4rem 0.5rem;
+  white-space: nowrap;
+  font-size: 0.58rem;
+  letter-spacing: 0.08em;
+}
+
+.app-shell-game .round-pile {
+  min-height: 5.6rem;
+  align-items: center;
+  transform: translateY(-0.25rem);
+}
+
+.app-shell-game .round-card-placeholder {
+  min-height: 4rem;
+  padding: 0.2rem;
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.app-shell-game .played-card {
+  transform: rotate(-5deg);
+}
+
+.app-shell-game .played-card:nth-child(even) {
+  transform: rotate(8deg) translateY(-0.4rem);
+}
+
+.app-shell-game .played-card span:first-child {
+  transform: translateY(-0.25rem);
+  padding: 0.22rem 0.52rem;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.7);
+  color: var(--text);
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.app-shell-game .game-side-column {
+  position: absolute;
+  top: 8.1rem;
+  right: 2rem;
+  z-index: 32;
+  width: min(18rem, 28vw);
+}
+
+.app-shell-game .activity-card,
+.app-shell-game .table-note-card,
+.app-shell-game .telemetry-card {
+  padding: 0.85rem;
+  border-color: rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.34);
+  box-shadow: none;
+}
+
+.app-shell-game .activity-card .card-head,
+.app-shell-game .table-note-card,
+.app-shell-game .telemetry-card {
+  display: none;
+}
+
+.app-shell-game .activity-summary {
+  display: none;
+}
+
+.app-shell-game .event-feed {
+  min-height: 0;
+  max-height: 8.8rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 0.74rem;
+  line-height: 1.45;
+}
+
+.app-shell-game .action-dock {
+  position: absolute;
+  left: 50%;
+  bottom: 1.65rem;
+  z-index: 38;
+  width: min(48rem, calc(100% - 4rem));
+  padding: 0;
+  transform: translateX(-50%);
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+.app-shell-game .action-dock > .card-head,
+.app-shell-game .dock-controls .card-head {
+  display: none;
+}
+
+.app-shell-game .action-dock-grid {
+  display: flex;
+  flex-direction: column-reverse;
+  align-items: center;
+  gap: 1rem;
+}
+
+.app-shell-game .hand-tray,
+.app-shell-game .dock-controls {
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.app-shell-game .hand-row {
+  justify-content: center;
+  gap: 1rem;
+}
+
+.app-shell-game .control-stack,
+.app-shell-game .control-group {
+  display: flex;
+  justify-content: center;
+  gap: 0.85rem;
+}
+
+.app-shell-game .primary-button,
+.app-shell-game .secondary-button,
+.app-shell-game .ghost-button {
+  min-height: 2.65rem;
+  padding-inline: 1.15rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.app-shell-game .play-card {
+  gap: 0.45rem;
+}
+
+.app-shell-game .card-caption {
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 0.76rem;
+}
+
+.app-shell-game .card-face {
+  width: 5.4rem;
+  border-radius: 0.78rem;
+  background: linear-gradient(135deg, #fffdf2 0%, #eee0bd 100%);
+  border-color: rgba(194, 148, 82, 0.42);
+}
+
+.app-shell-game .card-back {
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.08), transparent 35%),
+    linear-gradient(135deg, #173e50 0%, #0e2734 100%);
+  border-color: rgba(219, 178, 96, 0.42);
+}
+
+.app-shell-game .card-back::after {
+  content: "TRUCO";
+  position: absolute;
+  inset: 50% auto auto 50%;
+  transform: translate(-50%, -50%);
+  color: rgba(219, 178, 96, 0.34);
+  font-size: 0.56rem;
+  font-weight: 900;
+  letter-spacing: 0.18em;
+}
+
+.app-shell-game .card-face-small,
+.app-shell-game .card-back.small {
+  width: 4.4rem;
+}
+
+.app-shell-game .card-face-tiny,
+.app-shell-game .card-back.tiny {
+  width: 3rem;
+}
+
+.app-shell-game .card-center {
+  font-size: 2.55rem;
+}
+
+.app-shell-game .card-corner {
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+@media (max-width: 980px) {
+  .page-shell-game {
+    height: auto;
+    min-height: 100vh;
+    overflow: auto;
+  }
+
+  .app-shell-game .game-layout {
+    min-height: 100svh;
+  }
+
+  .app-shell-game .game-side-column {
+    display: none;
+  }
+
+  .app-shell-game .center-table {
+    width: min(42rem, calc(100% - 3rem));
+  }
+
+  .app-shell-game .table-shell {
+    gap: 1rem;
+    grid-template-columns: auto minmax(10rem, 13rem) auto;
+  }
+}
+
+@media (max-width: 760px) {
+  .app-shell-game {
+    width: 100%;
+  }
+
+  .app-shell-game .game-layout::before {
+    inset: 0.65rem;
+    border-radius: 3rem;
+  }
+
+  .app-shell-game .score-card {
+    top: 0.75rem;
+    width: calc(100% - 1.5rem);
+    grid-template-columns: 4.4rem minmax(5.8rem, 6.4rem) 4.4rem;
+    gap: 0.5rem;
+  }
+
+  .app-shell-game .score-block,
+  .app-shell-game .score-center {
+    width: 4.4rem;
+    height: 4.4rem;
+    border-radius: 0.85rem;
+  }
+
+  .app-shell-game .score-center {
+    width: 6.4rem;
+  }
+
+  .app-shell-game .score-block strong {
+    font-size: 1.62rem;
+  }
+
+  .app-shell-game .score-center strong {
+    font-size: 1.1rem;
+  }
+
+  .app-shell-game .board-card {
+    inset: 0.55rem;
+  }
+
+  .app-shell-game .board-head {
+    display: none;
+  }
+
+  .app-shell-game .board-stage {
+    inset: 5.5rem 0.55rem 9.7rem;
+    border-radius: 2.5rem;
+  }
+
+  .app-shell-game .status-band {
+    bottom: 13.4rem;
+    width: calc(100% - 2rem);
+  }
+
+  .app-shell-game .player-seat {
+    transform: none;
+  }
+
+  .app-shell-game .seat-top {
+    top: 0.6rem;
+    left: 50%;
+    transform: translateX(-50%);
+  }
+
+  .app-shell-game .seat-left {
+    left: 0.75rem;
+    top: 6.2rem;
+  }
+
+  .app-shell-game .seat-right {
+    right: 0.75rem;
+    top: 6.2rem;
+  }
+
+  .app-shell-game .player-head {
+    padding-inline: 0.7rem;
+  }
+
+  .app-shell-game .center-table {
+    top: 51%;
+    width: calc(100% - 1rem);
+  }
+
+  .app-shell-game .table-shell {
+    grid-template-columns: 1fr;
+    gap: 0.55rem;
+  }
+
+  .app-shell-game .table-chip {
+    display: none;
+  }
+
+  .app-shell-game .table-core {
+    width: min(17rem, calc(100vw - 2rem));
+    height: min(17rem, calc(100vw - 2rem));
+  }
+
+  .app-shell-game .trick-track {
+    width: min(100%, 13rem);
+    margin: 0 auto;
+    gap: 0.28rem;
+  }
+
+  .app-shell-game .trick-pill {
+    min-width: 3.85rem;
+    max-width: 3.85rem;
+    padding-inline: 0.32rem;
+    font-size: 0.5rem;
+    line-height: 1.16;
+    white-space: normal;
+    overflow: hidden;
+    letter-spacing: 0.04em;
+  }
+
+  .app-shell-game .action-dock {
+    bottom: 0.75rem;
+    width: calc(100% - 1rem);
+  }
+
+  .app-shell-game .action-dock-grid {
+    gap: 0.65rem;
+  }
+
+  .app-shell-game .hand-row {
+    justify-content: flex-start;
+    gap: 0.72rem;
+    overflow-x: auto;
+    padding: 0 0.25rem 0.35rem;
+  }
+
+  .app-shell-game .control-stack,
+  .app-shell-game .control-group {
+    flex-wrap: wrap;
+    gap: 0.55rem;
+  }
+
+  .app-shell-game .card-face {
+    width: 4.6rem;
+  }
+
+  .app-shell-game .card-face-small,
+  .app-shell-game .card-back.small {
+    width: 3.7rem;
   }
 }
