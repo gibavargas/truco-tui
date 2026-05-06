@@ -342,6 +342,10 @@ func verifySPKIPin(pin string) func(cs tls.ConnectionState) error {
 			return errors.New("relay certificate missing")
 		}
 		leaf := cs.PeerCertificates[0]
+		now := time.Now()
+		if now.Before(leaf.NotBefore) || now.After(leaf.NotAfter) {
+			return errors.New("relay certificate expired or not yet valid")
+		}
 		sum := sha256.Sum256(leaf.RawSubjectPublicKeyInfo)
 		gotHex := hex.EncodeToString(sum[:])
 		gotB64 := base64.StdEncoding.EncodeToString(sum[:])
