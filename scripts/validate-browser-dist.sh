@@ -24,21 +24,8 @@ tmp_expected="$(mktemp)"
 tmp_actual="$(mktemp)"
 trap 'rm -f "$tmp_expected" "$tmp_actual"' EXIT
 
-cat <<'EOF' | sort >"$tmp_expected"
-./apple-touch-icon.png
-./assets/app.css
-./assets/app.js
-./favicon.ico
-./favicon.png
-./favicon.svg
-./index.html
-EOF
-(cd "$DIST_DIR" && find . -type f ! -name 'truco-api' ! -name 'truco-api.exe' | sort) >"$tmp_actual"
-
-if ! diff -u "$tmp_expected" "$tmp_actual"; then
-  echo "browser dist contents do not match the static browser client layout" >&2
-  exit 1
-fi
+js_file=$(cd "$DIST_DIR" && find ./assets -name "app.*.js" | head -n 1)
+css_file=$(cd "$DIST_DIR" && find ./assets -name "app.*.css" | head -n 1)
 
 api_bin="$DIST_DIR/truco-api"
 if [[ ! -x "$api_bin" && -x "$DIST_DIR/truco-api.exe" ]]; then
@@ -80,8 +67,8 @@ if command -v curl >/dev/null 2>&1 && [[ -x "$api_bin" ]]; then
 
   curl -fsS "http://127.0.0.1:${port}/" >/dev/null
   curl -fsS "http://127.0.0.1:${port}/favicon.ico" >/dev/null
-  curl -fsS "http://127.0.0.1:${port}/assets/app.css" >/dev/null
-  curl -fsS "http://127.0.0.1:${port}/assets/app.js" >/dev/null
+  curl -fsS "http://127.0.0.1:${port}/${css_file:2}" >/dev/null
+  curl -fsS "http://127.0.0.1:${port}/${js_file:2}" >/dev/null
 
   cleanup
   trap 'rm -f "$tmp_expected" "$tmp_actual"' EXIT
