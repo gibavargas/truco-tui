@@ -20,25 +20,19 @@ if find "$DIST_DIR" -type f | grep -E '/[^/]* 2(\.[^/]+)?$' >/dev/null 2>&1; the
   exit 1
 fi
 
-tmp_expected="$(mktemp)"
 tmp_actual="$(mktemp)"
-trap 'rm -f "$tmp_expected" "$tmp_actual"' EXIT
+trap 'rm -f "$tmp_actual"' EXIT
 
-cat <<'EOF' | sort >"$tmp_expected"
-./apple-touch-icon.png
-./assets/app.css
-./assets/app.js
-./favicon.ico
-./favicon.png
-./favicon.svg
-./index.html
-EOF
 (cd "$DIST_DIR" && find . -type f ! -name 'truco-api' ! -name 'truco-api.exe' | sort) >"$tmp_actual"
 
-if ! diff -u "$tmp_expected" "$tmp_actual"; then
-  echo "browser dist contents do not match the static browser client layout" >&2
-  exit 1
-fi
+# Check required files using regex since app.js and app.css have dynamic hashes
+if ! grep -qE '\./apple-touch-icon\.png$' "$tmp_actual"; then echo "missing apple-touch-icon.png"; exit 1; fi
+if ! grep -qE '\./assets/app\.[a-f0-9]+\.css$' "$tmp_actual"; then echo "missing hashed app.css"; exit 1; fi
+if ! grep -qE '\./assets/app\.[a-f0-9]+\.js$' "$tmp_actual"; then echo "missing hashed app.js"; exit 1; fi
+if ! grep -qE '\./favicon\.ico$' "$tmp_actual"; then echo "missing favicon.ico"; exit 1; fi
+if ! grep -qE '\./favicon\.png$' "$tmp_actual"; then echo "missing favicon.png"; exit 1; fi
+if ! grep -qE '\./favicon\.svg$' "$tmp_actual"; then echo "missing favicon.svg"; exit 1; fi
+if ! grep -qE '\./index\.html$' "$tmp_actual"; then echo "missing index.html"; exit 1; fi
 
 api_bin="$DIST_DIR/truco-api"
 if [[ ! -x "$api_bin" && -x "$DIST_DIR/truco-api.exe" ]]; then
@@ -80,9 +74,13 @@ if command -v curl >/dev/null 2>&1 && [[ -x "$api_bin" ]]; then
 
   curl -fsS "http://127.0.0.1:${port}/" >/dev/null
   curl -fsS "http://127.0.0.1:${port}/favicon.ico" >/dev/null
-  curl -fsS "http://127.0.0.1:${port}/assets/app.css" >/dev/null
-  curl -fsS "http://127.0.0.1:${port}/assets/app.js" >/dev/null
+
+  # Fetch actual hashed filenames for testing the server
+  css_file=$(cd "$DIST_DIR" && find ./assets -name "app.*.css")
+  js_file=$(cd "$DIST_DIR" && find ./assets -name "app.*.js")
+  curl -fsS "http://127.0.0.1:${port}/${css_file#./}" >/dev/null
+  curl -fsS "http://127.0.0.1:${port}/${js_file#./}" >/dev/null
 
   cleanup
-  trap 'rm -f "$tmp_expected" "$tmp_actual"' EXIT
+  trap 'rm -f "$tmp_actual"' EXIT
 fi
