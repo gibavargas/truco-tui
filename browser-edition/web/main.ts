@@ -6,6 +6,7 @@ import type {
   LocaleCode,
   LobbySlotState,
   MatchSnapshot,
+  PlayedCard,
   RuntimeEvent,
   SnapshotBundle,
 } from "./types";
@@ -22,6 +23,19 @@ interface AppState {
   error: string;
   busyForm: string;
   initialized: boolean;
+  uiFx: UIFxState;
+}
+
+interface UIFxState {
+  dealtCardKeys: Set<string>;
+  playedCardKeys: Set<string>;
+  flippedCardKeys: Set<string>;
+  shakeUntil: number;
+  pulseUntil: number;
+  confettiUntil: number;
+  confettiStrength: number;
+  trucoCall: { text: string; until: number } | null;
+  lastRaiseSignal: string;
 }
 
 const SESSION_KEY = "truco-browser-session-id";
@@ -47,11 +61,23 @@ const state: AppState = {
   error: "",
   busyForm: "",
   initialized: false,
+  uiFx: {
+    dealtCardKeys: new Set<string>(),
+    playedCardKeys: new Set<string>(),
+    flippedCardKeys: new Set<string>(),
+    shakeUntil: 0,
+    pulseUntil: 0,
+    confettiUntil: 0,
+    confettiStrength: 1,
+    trucoCall: null,
+    lastRaiseSignal: "",
+  },
 };
 
 const preparedCache = new Map<string, ReturnType<typeof prepare>>();
 let refreshTimer = 0;
 let resizeTimer = 0;
+let fxTimer = 0;
 
 root.addEventListener("submit", (event) => {
   const form = (event.target as HTMLElement | null)?.closest<HTMLFormElement>("form[data-api-action]");
@@ -539,6 +565,8 @@ function boolValue(source: unknown, key: string, fallback: boolean): boolean {
 }
 
 function updateStateFromResult(result: ApiResult, options?: { replaceEvents?: boolean }): void {
+  const previousMatch = state.bundle?.match;
+
   if (result.bundle) {
     state.bundle = result.bundle;
     state.locale = result.bundle.locale || state.locale;
@@ -555,12 +583,42 @@ function updateStateFromResult(result: ApiResult, options?: { replaceEvents?: bo
   if (result.error) {
     state.error = result.error;
   }
+
+  updateVisualFx(previousMatch, state.bundle?.match, result.events || []);
 }
 
 function clearSession(): void {
   state.sessionId = "";
   sessionStorage.removeItem(SESSION_KEY);
   state.bundle = null;
+}
+
+function clearTransientFx(): void {
+  state.uiFx.dealtCardKeys.clear();
+  state.uiFx.playedCardKeys.clear();
+  state.uiFx.flippedCardKeys.clear();
+}
+
+function scheduleFxRefresh(): void {
+  window.clearTimeout(fxTimer);
+  const now = Date.now();
+  if (state.uiFx.confettiUntil <= now) {
+    state.uiFx.confettiStrength = 1;
+  }
+  if (state.uiFx.trucoCall && state.uiFx.trucoCall.until <= now) {
+    state.uiFx.trucoCall = null;
+  }
+  const deadlines = [
+    state.uiFx.shakeUntil,
+    state.uiFx.pulseUntil,
+    state.uiFx.confettiUntil,
+    state.uiFx.trucoCall?.until || 0,
+  ].filter((time) => time > now);
+  if (deadlines.length === 0) {
+    return;
+  }
+  const nextExpiry = Math.min(...deadlines);
+  fxTimer = window.setTimeout(() => render(), Math.max(16, nextExpiry - now + 24));
 }
 
 function currentView(): ViewName {
@@ -583,12 +641,21 @@ function render(): void {
   root.innerHTML = renderApp();
   syncRefreshLoop();
   syncMeasuredBlocks();
+  scheduleFxRefresh();
+  clearTransientFx();
 }
 
 function renderApp(): string {
   const locale = state.locale;
   const busy = state.busyForm !== "";
   const view = currentView();
+  const now = Date.now();
+  const shellClasses = [
+    "page-shell",
+    `page-shell-${view}`,
+    now < state.uiFx.shakeUntil ? "fx-shake" : "",
+    now < state.uiFx.pulseUntil ? "fx-pulse" : "",
+  ].filter(Boolean).join(" ");
   const banner = state.error
     ? `<section class="runtime-banner" data-pretext-block="lock-height">${escapeHtml(state.error)}</section>`
     : "";
@@ -611,7 +678,7 @@ function renderApp(): string {
         </header>`;
 
   return `
-    <div class="page-shell page-shell-${view}">
+    <div class="${shellClasses}">
       <div class="page-aura page-aura-left"></div>
       <div class="page-aura page-aura-right"></div>
       <main class="app-shell app-shell-${view}">
@@ -619,6 +686,7 @@ function renderApp(): string {
         ${banner}
         ${renderView()}
       </main>
+      ${renderFxLayers()}
     </div>
   `;
 }
@@ -921,9 +989,9 @@ function renderGame(): string {
             ${renderPlayers(match)}
             <div class="center-table">
               <div class="table-shell">
-                <div class="table-chip">
+                <div class="table-chip table-chip-vira">
                   <span>${escapeHtml(t("game_vira"))}</span>
-                  ${renderCard(match.CurrentHand.Vira, "small")}
+                  ${renderCard(match.CurrentHand.Vira, "regular")}
                 </div>
                 <div class="table-core">
                   <div class="table-rail">
@@ -932,7 +1000,7 @@ function renderGame(): string {
                   </div>
                   <div class="round-pile">${renderRoundCards(match)}</div>
                 </div>
-                <div class="table-chip">
+                <div class="table-chip table-chip-manilha">
                   <span>${escapeHtml(t("game_manilha"))}</span>
                   <strong>${escapeHtml(match.CurrentHand.Manilha || "-")}</strong>
                 </div>
@@ -952,7 +1020,7 @@ function renderGame(): string {
           <div class="action-dock-grid">
             <div class="hand-tray">
               <div class="hand-row">
-                ${(localPlayer?.Hand || []).map((card, index) => renderPlayableCard(card, index, canPlay, match.CurrentHand.Round >= 2)).join("")}
+                ${(localPlayer?.Hand || []).map((card, index, hand) => renderPlayableCard(card, index, hand.length, canPlay, match.CurrentHand.Round >= 2)).join("")}
               </div>
             </div>
             <div class="dock-controls">
@@ -1025,12 +1093,24 @@ function renderRoundCards(match: MatchSnapshot): string {
   if (roundCards.length === 0) {
     return `<div class="round-card-placeholder">${escapeHtml(t("game_table_waiting"))}</div>`;
   }
-  return roundCards.map((played) => `
-      <div class="played-card">
+  return roundCards.map((played, index) => {
+    const key = roundCardKey(match.CurrentHand.Round, played, index);
+    const classes = [
+      "played-card",
+      state.uiFx.playedCardKeys.has(key) ? "played-card-enter" : "",
+    ].filter(Boolean).join(" ");
+    const faceDownClasses = [
+      "card-back",
+      "small",
+      state.uiFx.flippedCardKeys.has(key) ? "card-back-flip-in" : "",
+    ].filter(Boolean).join(" ");
+    return `
+      <div class="${classes}">
         <span>${escapeHtml(playerName(match, played.PlayerID))}</span>
-        ${played.FaceDown ? `<span class="card-back small"></span>` : renderCard(played.Card, "small")}
+        ${played.FaceDown ? `<span class="${faceDownClasses}"></span>` : renderCard(played.Card, "small")}
       </div>
-    `).join("");
+    `;
+  }).join("");
 }
 
 function renderTrickTrack(match: MatchSnapshot): string {
@@ -1049,19 +1129,27 @@ function renderTrickTrack(match: MatchSnapshot): string {
   }).join("");
 }
 
-function renderPlayableCard(card: Card, index: number, canPlay: boolean, canFaceDown: boolean): string {
+function renderPlayableCard(card: Card, index: number, total: number, canPlay: boolean, canFaceDown: boolean): string {
+  const key = handCardKey(card, index);
+  const classes = [
+    "play-card",
+    canPlay ? "play-card-playable" : "",
+    state.uiFx.dealtCardKeys.has(key) ? "deal-in" : "",
+  ].filter(Boolean).join(" ");
+  const style = `style="--card-index:${index}; --card-total:${total};"`;
+
   if (!canPlay) {
-    return `<div class="play-card lock-card">${renderCard(card)}<span class="card-caption">${escapeHtml(cardLabel(card))}</span></div>`;
+    return `<div class="${classes} lock-card" ${style}>${renderCard(card)}<span class="card-caption" aria-hidden="true">${escapeHtml(cardLabel(card))}</span></div>`;
   }
 
   return `
-    <div class="play-card">
+    <div class="${classes}" ${style}>
       <form data-api-action="play" data-form-id="play-${index}">
         <input type="hidden" name="cardIndex" value="${index}">
         <button class="card-button" type="submit"${busyAttr(`play-${index}`)}>${renderCard(card)}</button>
       </form>
       <div class="play-card-actions">
-        <span class="card-caption">${escapeHtml(cardLabel(card))}</span>
+        <span class="card-caption" aria-hidden="true">${escapeHtml(cardLabel(card))}</span>
         ${canFaceDown ? `<form data-api-action="play" data-form-id="play-down-${index}"><input type="hidden" name="cardIndex" value="${index}"><input type="hidden" name="faceDown" value="true"><button class="ghost-button" type="submit"${busyAttr(`play-down-${index}`)}>${buttonLabel(`play-down-${index}`, t("game_face_down"))}</button></form>` : ""}
       </div>
     </div>
@@ -1129,13 +1217,35 @@ function renderOverlay(match: MatchSnapshot, localTeamId: number): string {
   `;
 }
 
+function renderFxLayers(): string {
+  const now = Date.now();
+  const layers: string[] = [];
+
+  if (state.uiFx.trucoCall && state.uiFx.trucoCall.until > now) {
+    layers.push(`
+      <div class="truco-flash-overlay" aria-live="polite" aria-atomic="true">
+        <div class="truco-flash-text">${escapeHtml(state.uiFx.trucoCall.text)}</div>
+      </div>
+    `);
+  }
+
+  if (state.uiFx.confettiUntil > now) {
+    const pieces = Array.from({ length: state.uiFx.confettiStrength > 1 ? 52 : 30 }, (_, index) => `
+      <span class="confetti-piece" style="--piece:${index}; --hue:${(index * 37) % 360}; --drift:${index % 2 === 0 ? 1 : -1};"></span>
+    `).join("");
+    layers.push(`<div class="confetti-layer" aria-hidden="true">${pieces}</div>`);
+  }
+
+  return layers.join("");
+}
+
 function renderCard(card: Card, size: "tiny" | "small" | "regular" = "regular"): string {
   const red = card.Suit === "Copas" || card.Suit === "Ouros";
   return `
-    <span class="card-face card-face-${size}${red ? " card-face-red" : ""}">
-      <span class="card-corner">${escapeHtml(card.Rank)}${escapeHtml(suitSymbol(card.Suit))}</span>
-      <span class="card-center">${escapeHtml(suitSymbol(card.Suit))}</span>
-      <span class="card-corner card-corner-bottom">${escapeHtml(card.Rank)}${escapeHtml(suitSymbol(card.Suit))}</span>
+    <span class="card-face card-face-${size}${red ? " card-face-red" : ""}" role="img" aria-label="${escapeHtml(cardLabel(card))}">
+      <span class="card-corner" aria-hidden="true">${escapeHtml(card.Rank)}${escapeHtml(suitSymbol(card.Suit))}</span>
+      <span class="card-center" aria-hidden="true">${escapeHtml(suitSymbol(card.Suit))}</span>
+      <span class="card-corner card-corner-bottom" aria-hidden="true">${escapeHtml(card.Rank)}${escapeHtml(suitSymbol(card.Suit))}</span>
     </span>
   `;
 }
@@ -1266,6 +1376,113 @@ function syncMeasuredBlocks(): void {
   }
 }
 
+function updateVisualFx(
+  previousMatch: MatchSnapshot | undefined,
+  nextMatch: MatchSnapshot | undefined,
+  newEvents: RuntimeEvent[],
+): void {
+  if (newEvents.length > 0) {
+    triggerPulse(280);
+    if (newEvents.some((event) => isIntenseEvent(event))) {
+      triggerShake(420);
+      triggerPulse(520);
+    }
+  }
+
+  if (!nextMatch) {
+    return;
+  }
+
+  const previousHand = playerHand(previousMatch, previousMatch?.CurrentPlayerIdx ?? -1);
+  const nextHand = playerHand(nextMatch, nextMatch.CurrentPlayerIdx);
+  const previousHandKeys = new Set(previousHand.map((card, index) => handCardKey(card, index)));
+  const nextHandKeys = nextHand.map((card, index) => handCardKey(card, index));
+  const dealtKeys = nextHandKeys.filter((key) => !previousHandKeys.has(key));
+  if (dealtKeys.length > 0) {
+    state.uiFx.dealtCardKeys = new Set(dealtKeys);
+  }
+
+  const previousRound = previousMatch?.CurrentHand.RoundCards || [];
+  const nextRound = nextMatch.CurrentHand.RoundCards || [];
+  const previousRoundKeys = new Set(
+    previousRound.map((played, index) => roundCardKey(previousMatch?.CurrentHand.Round || 0, played, index)),
+  );
+  const playedKeys: string[] = [];
+  const flippedKeys: string[] = [];
+  nextRound.forEach((played, index) => {
+    const key = roundCardKey(nextMatch.CurrentHand.Round, played, index);
+    if (!previousRoundKeys.has(key)) {
+      playedKeys.push(key);
+      if (played.FaceDown) {
+        flippedKeys.push(key);
+      }
+    }
+  });
+  if (playedKeys.length > 0) {
+    state.uiFx.playedCardKeys = new Set(playedKeys);
+    triggerPulse(380);
+  }
+  if (flippedKeys.length > 0) {
+    state.uiFx.flippedCardKeys = new Set(flippedKeys);
+  }
+
+  if (nextMatch.PendingRaiseFor >= 0) {
+    const pendingTo = nextMatch.PendingRaiseTo || nextStake(nextMatch.CurrentHand.Stake);
+    const signal = `${nextMatch.PendingRaiseFor}:${pendingTo}:${nextMatch.CurrentHand.Round}:${nextMatch.CurrentHand.Turn}`;
+    const pendingChanged = previousMatch?.PendingRaiseFor !== nextMatch.PendingRaiseFor
+      || previousMatch?.PendingRaiseTo !== nextMatch.PendingRaiseTo;
+    if (pendingChanged && signal !== state.uiFx.lastRaiseSignal) {
+      showTrucoCallFlash(raiseLabel(pendingTo));
+      state.uiFx.lastRaiseSignal = signal;
+    }
+  }
+
+  if (previousMatch && previousMatch.CurrentHand.WinnerTeam < 0 && nextMatch.CurrentHand.WinnerTeam >= 0) {
+    triggerConfetti(1800, 1);
+  }
+  if (previousMatch && !previousMatch.MatchFinished && nextMatch.MatchFinished) {
+    triggerConfetti(3000, 2);
+    triggerShake(580);
+    triggerPulse(900);
+  }
+}
+
+function isIntenseEvent(event: RuntimeEvent): boolean {
+  const payload = event.payload || {};
+  const author = typeof payload.author === "string" ? payload.author : "";
+  const message = typeof payload.message === "string" ? payload.message : "";
+  const text = typeof payload.text === "string" ? payload.text : "";
+  const content = `${event.kind} ${author} ${message} ${text}`.toLowerCase();
+  return content.includes("truco")
+    || content.includes("seis")
+    || content.includes("doze")
+    || content.includes("raise")
+    || content.includes("refuse")
+    || content.includes("accept");
+}
+
+function triggerShake(durationMs: number): void {
+  state.uiFx.shakeUntil = Math.max(state.uiFx.shakeUntil, Date.now() + durationMs);
+}
+
+function triggerPulse(durationMs: number): void {
+  state.uiFx.pulseUntil = Math.max(state.uiFx.pulseUntil, Date.now() + durationMs);
+}
+
+function triggerConfetti(durationMs: number, strength: number): void {
+  state.uiFx.confettiUntil = Math.max(state.uiFx.confettiUntil, Date.now() + durationMs);
+  state.uiFx.confettiStrength = Math.max(state.uiFx.confettiStrength, strength);
+}
+
+function showTrucoCallFlash(callLabel: string): void {
+  state.uiFx.trucoCall = {
+    text: `${callLabel.toUpperCase()}!`,
+    until: Date.now() + 1200,
+  };
+  triggerShake(460);
+  triggerPulse(720);
+}
+
 function numericLineHeight(style: CSSStyleDeclaration): number {
   const parsed = Number.parseFloat(style.lineHeight);
   if (Number.isFinite(parsed)) {
@@ -1348,6 +1565,21 @@ function lastTrickCopy(match: MatchSnapshot): string {
     return t("trick_tie", match.LastTrickRound);
   }
   return t("trick_win", playerName(match, match.LastTrickWinner), match.LastTrickRound);
+}
+
+function handCardKey(card: Card, index: number): string {
+  return `${index}:${card.Rank}:${card.Suit}`;
+}
+
+function roundCardKey(round: number, played: PlayedCard, index: number): string {
+  return `${round}:${index}:${played.PlayerID}:${played.Card.Rank}:${played.Card.Suit}:${played.FaceDown ? "down" : "up"}`;
+}
+
+function playerHand(match: MatchSnapshot | undefined, playerId: number): Card[] {
+  if (!match) {
+    return [];
+  }
+  return match.Players.find((player) => player.ID === playerId)?.Hand || [];
 }
 
 function playerName(match: MatchSnapshot, playerId: number): string {
