@@ -638,11 +638,67 @@ function isOnlineMode(): boolean {
 }
 
 function render(): void {
+  const focusState = captureFocusState();
   root.innerHTML = renderApp();
+  restoreFocusState(focusState);
   syncRefreshLoop();
   syncMeasuredBlocks();
   scheduleFxRefresh();
   clearTransientFx();
+}
+
+interface FocusState {
+  selector: string;
+  value?: string;
+  selectionStart: number | null;
+  selectionEnd: number | null;
+}
+
+function captureFocusState(): FocusState | null {
+  const active = document.activeElement;
+  if (!(active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement || active instanceof HTMLSelectElement)) {
+    return null;
+  }
+  if (!root.contains(active)) {
+    return null;
+  }
+  const key = active.id || active.name || active.getAttribute("data-focus-key");
+  if (!key) {
+    return null;
+  }
+  const formId = active.closest("form")?.getAttribute("data-form-id");
+  const selector = formId && active.name
+    ? `form[data-form-id="${CSS.escape(formId)}"] [name="${CSS.escape(active.name)}"]`
+    : active.id
+    ? `#${CSS.escape(active.id)}`
+    : `[name="${CSS.escape(active.name || key)}"]`;
+  return {
+    selector,
+    value: active.value,
+    selectionStart: "selectionStart" in active ? active.selectionStart : null,
+    selectionEnd: "selectionEnd" in active ? active.selectionEnd : null,
+  };
+}
+
+function restoreFocusState(stateToRestore: FocusState | null): void {
+  if (!stateToRestore) {
+    return;
+  }
+  const next = root.querySelector<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>(stateToRestore.selector);
+  if (!next) {
+    return;
+  }
+  if (stateToRestore.value !== undefined && next.value !== stateToRestore.value) {
+    next.value = stateToRestore.value;
+  }
+  next.focus({ preventScroll: true });
+  if (
+    (next instanceof HTMLInputElement || next instanceof HTMLTextAreaElement) &&
+    stateToRestore.selectionStart !== null &&
+    stateToRestore.selectionEnd !== null
+  ) {
+    next.setSelectionRange(stateToRestore.selectionStart, stateToRestore.selectionEnd);
+  }
 }
 
 function renderApp(): string {
@@ -657,7 +713,7 @@ function renderApp(): string {
     now < state.uiFx.pulseUntil ? "fx-pulse" : "",
   ].filter(Boolean).join(" ");
   const banner = state.error
-    ? `<section class="runtime-banner" data-pretext-block="lock-height">${escapeHtml(state.error)}</section>`
+    ? `<section class="runtime-banner" role="alert" aria-live="assertive" data-pretext-block="lock-height">${escapeHtml(state.error)}</section>`
     : "";
   const chrome = view === "game" ? "" : `
         <header class="hero-card">
@@ -880,7 +936,7 @@ function renderLobby(): string {
             <button class="ghost-button" type="submit"${busyAttr("pollEvents")}>${buttonLabel("pollEvents", t("lobby_refresh"))}</button>
           </form>
         </div>
-        <pre class="event-feed" data-pretext-block="lock-height" data-pretext-whitespace="pre-wrap">${escapeHtml(renderEventFeed())}</pre>
+        <pre class="event-feed" role="log" aria-live="polite" data-pretext-block="lock-height" data-pretext-whitespace="pre-wrap">${escapeHtml(renderEventFeed())}</pre>
       </article>
 
       <div class="lobby-side-stack">
@@ -981,9 +1037,14 @@ function renderGame(): string {
             </div>
             ${isOnlineMode() ? `<form data-api-action="closeSession" data-form-id="closeSession"><button class="ghost-button danger" type="submit"${busyAttr("closeSession")}>${buttonLabel("closeSession", t("lobby_leave"))}</button></form>` : ""}
           </div>
-          <div class="status-band" data-pretext-block="lock-height">
+          <div class="status-band" role="status" aria-live="polite" data-pretext-block="lock-height">
             <span>${escapeHtml(t("game_status"))}</span>
             <strong>${escapeHtml(topLine)}</strong>
+          </div>
+          <div class="mobile-table-strip" aria-label="${escapeHtml(t("game_table_notes"))}">
+            <span>${escapeHtml(t("game_vira"))}: ${escapeHtml(cardLabel(match.CurrentHand.Vira))}</span>
+            <span>${escapeHtml(t("game_manilha"))}: ${escapeHtml(match.CurrentHand.Manilha || "-")}</span>
+            <span>${escapeHtml(t("game_player_to_move"))}: ${escapeHtml(playerName(match, match.TurnPlayer))}</span>
           </div>
           <div class="board-stage board-stage-${match.NumPlayers}">
             ${renderPlayers(match)}
@@ -1043,7 +1104,7 @@ function renderGame(): string {
             <span class="section-pill">${escapeHtml(t("game_last_trick"))}</span>
           </div>
           <div class="activity-summary" data-pretext-block="lock-height">${escapeHtml(lastTrickCopy(match))}</div>
-          <pre class="event-feed compact" data-pretext-block="lock-height" data-pretext-whitespace="pre-wrap">${escapeHtml(renderEventFeed(match.Logs.slice(-4)))}</pre>
+          <pre class="event-feed compact" role="log" aria-live="polite" data-pretext-block="lock-height" data-pretext-whitespace="pre-wrap">${escapeHtml(renderEventFeed(match.Logs.slice(-4)))}</pre>
         </article>
         <article class="surface-card table-note-card">
           <div class="card-head">
@@ -1058,8 +1119,34 @@ function renderGame(): string {
         </article>
         ${isOnlineMode() ? renderNetworkPanel(bundle) : ""}
       </div>
+      ${renderMobileGamePanel(bundle, match)}
       ${match.MatchFinished ? renderOverlay(match, localTeamId) : ""}
     </section>
+  `;
+}
+
+function renderMobileGamePanel(bundle: SnapshotBundle, match: MatchSnapshot): string {
+  const network = bundle.connection.network;
+  return `
+    <article class="surface-card mobile-game-panel">
+      <details>
+        <summary>${escapeHtml(t("game_activity"))}</summary>
+        <div class="telemetry-grid">
+          ${renderMetric(t("game_vira"), cardLabel(match.CurrentHand.Vira))}
+          ${renderMetric(t("game_manilha"), match.CurrentHand.Manilha || "-")}
+          ${renderMetric(t("game_player_to_move"), playerName(match, match.TurnPlayer))}
+          ${isOnlineMode() ? renderMetric(t("connection_status"), bundle.connection.status) : ""}
+          ${isOnlineMode() ? renderMetric(t("connection_transport"), network?.transport || "-") : ""}
+        </div>
+        <pre class="event-feed compact" role="log" aria-live="polite" data-pretext-block="lock-height" data-pretext-whitespace="pre-wrap">${escapeHtml(renderEventFeed(match.Logs.slice(-6)))}</pre>
+        ${isOnlineMode() ? `
+          <form class="chat-form" data-api-action="sendChat" data-form-id="sendChatMobile">
+            <input name="message" type="text" autocomplete="off" placeholder="${escapeHtml(t("chat_placeholder"))}">
+            <button class="secondary-button" type="submit"${busyAttr("sendChatMobile")}>${buttonLabel("sendChatMobile", t("lobby_chat"))}</button>
+          </form>
+        ` : ""}
+      </details>
+    </article>
   `;
 }
 
@@ -1146,11 +1233,11 @@ function renderPlayableCard(card: Card, index: number, total: number, canPlay: b
     <div class="${classes}" ${style}>
       <form data-api-action="play" data-form-id="play-${index}">
         <input type="hidden" name="cardIndex" value="${index}">
-        <button class="card-button" type="submit"${busyAttr(`play-${index}`)}>${renderCard(card)}</button>
+        <button class="card-button" type="submit" aria-label="${escapeHtml(`${t("game_play")} ${cardLabel(card)}`)}"${busyAttr(`play-${index}`)}>${renderCard(card)}</button>
       </form>
       <div class="play-card-actions">
         <span class="card-caption" aria-hidden="true">${escapeHtml(cardLabel(card))}</span>
-        ${canFaceDown ? `<form data-api-action="play" data-form-id="play-down-${index}"><input type="hidden" name="cardIndex" value="${index}"><input type="hidden" name="faceDown" value="true"><button class="ghost-button" type="submit"${busyAttr(`play-down-${index}`)}>${buttonLabel(`play-down-${index}`, t("game_face_down"))}</button></form>` : ""}
+        ${canFaceDown ? `<form data-api-action="play" data-form-id="play-down-${index}"><input type="hidden" name="cardIndex" value="${index}"><input type="hidden" name="faceDown" value="true"><button class="ghost-button" type="submit" aria-label="${escapeHtml(`${t("game_face_down")} ${cardLabel(card)}`)}"${busyAttr(`play-down-${index}`)}>${buttonLabel(`play-down-${index}`, t("game_face_down"))}</button></form>` : ""}
       </div>
     </div>
   `;
@@ -1205,9 +1292,9 @@ function renderOverlay(match: MatchSnapshot, localTeamId: number): string {
   const youWon = match.WinnerTeam === localTeamId;
   return `
     <div class="overlay-layer">
-      <div class="overlay-card">
+      <div class="overlay-card" role="dialog" aria-modal="true" aria-live="assertive" aria-labelledby="match-result-title">
         <p class="eyebrow">${escapeHtml(t("game_status"))}</p>
-        <h3>${escapeHtml(youWon ? t("overlay_win") : t("overlay_loss"))}</h3>
+        <h3 id="match-result-title">${escapeHtml(youWon ? t("overlay_win") : t("overlay_loss"))}</h3>
         <p>${escapeHtml(t("overlay_score", teamScore(match, 0), teamScore(match, 1)))}</p>
         <form data-api-action="reset" data-form-id="reset">
           <button class="primary-button" type="submit"${busyAttr("reset")}>${buttonLabel("reset", t("game_play_again"))}</button>

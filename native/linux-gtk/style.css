@@ -1,5 +1,13 @@
+@define-color truco_bg #0b1113;
+@define-color truco_panel rgba(8, 14, 18, 0.72);
+@define-color truco_felt #14583f;
+@define-color truco_gold #e9c57a;
+@define-color truco_text #f5f1e8;
+
 window {
-  background: linear-gradient(180deg, #0b1116, #111b23);
+  background:
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.024) 0 1px, transparent 1px 64px),
+    linear-gradient(180deg, #0b1113, #111a1b 52%, #1b120b);
   color: #f5f1e8;
 }
 
@@ -15,13 +23,17 @@ window {
   border-radius: 999px;
   padding: 6px 12px;
   font-weight: 700;
+  border: 1px solid rgba(233, 197, 122, 0.24);
 }
 
 .hero-shell {
-  background: linear-gradient(135deg, rgba(17, 33, 26, 0.82), rgba(43, 25, 15, 0.88));
-  border-radius: 28px;
+  background:
+    linear-gradient(135deg, rgba(233, 197, 122, 0.09), transparent 34%),
+    linear-gradient(135deg, rgba(17, 33, 26, 0.88), rgba(43, 25, 15, 0.9));
+  border-radius: 22px;
   padding: 28px;
-  border: 1px solid rgba(233, 197, 122, 0.16);
+  border: 1px solid rgba(233, 197, 122, 0.22);
+  box-shadow: 0 22px 46px rgba(0, 0, 0, 0.28);
 }
 
 .hero-copy {
@@ -30,8 +42,9 @@ window {
 
 .setup-card {
   background: rgba(11, 17, 22, 0.72);
-  border-radius: 24px;
+  border-radius: 18px;
   border: 1px solid rgba(255, 255, 255, 0.07);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
 .section-title {
@@ -51,23 +64,28 @@ window {
 }
 
 .table-wood {
-  background-image: linear-gradient(145deg, #53301d, #7a4b2d 45%, #a26c3d 58%, #5e3720 90%);
+  background-image:
+    repeating-linear-gradient(90deg, rgba(0, 0, 0, 0.12) 0 2px, transparent 2px 78px),
+    linear-gradient(145deg, #53301d, #7a4b2d 45%, #a26c3d 58%, #5e3720 90%);
   border-radius: 36px;
+  box-shadow: inset 0 0 44px rgba(0, 0, 0, 0.42);
 }
 
 .table-felt {
-  background-image: radial-gradient(circle at 50% 48%, rgba(17, 89, 56, 0.96), rgba(7, 39, 25, 0.99));
+  background-image:
+    repeating-linear-gradient(45deg, rgba(255, 244, 209, 0.035) 0 1px, transparent 1px 14px),
+    radial-gradient(circle at 50% 48%, rgba(20, 104, 72, 0.98), rgba(7, 39, 25, 0.99));
   border-radius: 28px;
   margin: 18px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
 }
 
 .card {
-  background: #fffaf1;
+  background: linear-gradient(145deg, #fffdf8, #eadcc1);
   color: #171717;
   border-radius: 14px;
-  border: 1px solid rgba(0, 0, 0, 0.08);
-  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.24);
+  border: 1px solid rgba(118, 84, 43, 0.26);
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.27);
 }
 
 .card-red {
@@ -75,25 +93,32 @@ window {
 }
 
 .card-clickable {
-  transition: 200ms ease;
+  transition: 180ms ease;
+}
+
+.card-clickable:hover {
+  box-shadow: 0 18px 32px rgba(0, 0, 0, 0.32);
 }
 
 .card-back {
-  background: linear-gradient(180deg, #0d2231, #16354c);
+  background:
+    repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.08) 0 1px, transparent 1px 8px),
+    linear-gradient(180deg, #0d2231, #16354c);
   border-radius: 14px;
-  border: 1px dashed rgba(255, 255, 255, 0.18);
+  border: 1px solid rgba(233, 197, 122, 0.28);
 }
 
 .score-hud {
   background: rgba(8, 10, 12, 0.62);
-  border-radius: 18px;
+  border-radius: 16px;
   padding: 16px 22px;
   border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 12px 22px rgba(0, 0, 0, 0.22);
 }
 
 .stake-badge {
-  background: rgba(8, 10, 12, 0.72);
-  border-radius: 18px;
+  background: linear-gradient(145deg, rgba(233, 197, 122, 0.18), rgba(8, 10, 12, 0.72));
+  border-radius: 16px;
   padding: 16px 24px;
   border: 2px solid rgba(233, 197, 122, 0.5);
 }
@@ -173,12 +198,22 @@ window {
   background: #e9c57a;
   color: #161108;
   padding: 12px 20px;
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.28);
 }
 
 .pill-button {
   background: rgba(255, 255, 255, 0.1);
   color: #f5f1e8;
   padding: 10px 18px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.pill-button:hover,
+.suggested-action:hover,
+.btn-truco:hover,
+.btn-accept:hover,
+.btn-refuse:hover {
+  border-color: rgba(233, 197, 122, 0.34);
 }
 
 .danger-button {

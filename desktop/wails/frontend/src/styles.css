@@ -15,11 +15,14 @@
   --table-soft: #32735a;
   --danger: #e1705d;
   --success: #4e9276;
-  --radius-xl: 34px;
-  --radius-lg: 24px;
-  --radius-md: 18px;
-  --radius-sm: 12px;
-  --shadow: 0 28px 80px rgba(0, 0, 0, 0.34);
+  --ink: #080d0f;
+  --felt-grain: rgba(255, 244, 209, 0.035);
+  --radius-xl: 24px;
+  --radius-lg: 18px;
+  --radius-md: 14px;
+  --radius-sm: 10px;
+  --shadow: 0 22px 58px rgba(0, 0, 0, 0.36);
+  --shadow-tight: 0 12px 28px rgba(0, 0, 0, 0.26);
   --serif: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Palatino, serif;
   --sans: "Avenir Next", "Segoe UI", sans-serif;
   --mono: "SFMono-Regular", "Menlo", monospace;
@@ -39,9 +42,15 @@ body {
   font-family: var(--sans);
   color: var(--text);
   background:
-    radial-gradient(circle at top left, rgba(214, 178, 99, 0.16), transparent 34%),
-    radial-gradient(circle at right 18%, rgba(44, 114, 96, 0.22), transparent 30%),
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.026) 0 1px, transparent 1px 64px),
+    repeating-linear-gradient(0deg, rgba(255, 244, 209, 0.018) 0 1px, transparent 1px 42px),
+    linear-gradient(155deg, rgba(51, 116, 89, 0.18) 0%, transparent 38%),
     linear-gradient(180deg, #101619 0%, #0a1012 100%);
+}
+
+::selection {
+  background: rgba(214, 178, 99, 0.34);
+  color: var(--text);
 }
 
 button,
@@ -83,14 +92,7 @@ select:focus-visible {
 }
 
 .page-aura {
-  position: fixed;
-  inset: auto;
-  width: 42rem;
-  height: 42rem;
-  border-radius: 999px;
-  filter: blur(80px);
-  pointer-events: none;
-  opacity: 0.28;
+  display: none;
 }
 
 .page-aura-left {
@@ -128,7 +130,10 @@ select:focus-visible {
   gap: 1.2rem;
   align-items: end;
   padding: 1.5rem;
-  border-radius: calc(var(--radius-xl) + 4px);
+  border-radius: var(--radius-xl);
+  background:
+    linear-gradient(135deg, rgba(245, 216, 144, 0.08), transparent 35%),
+    linear-gradient(180deg, rgba(18, 28, 32, 0.94), rgba(14, 22, 25, 0.86));
 }
 
 .hero-copy h1,
@@ -244,6 +249,19 @@ input {
   border-radius: var(--radius-sm);
   padding: 0.9rem 1rem;
   background: rgba(6, 12, 14, 0.45);
+  transition: border-color 160ms ease, background 160ms ease, box-shadow 160ms ease;
+}
+
+select:hover,
+input:hover {
+  border-color: rgba(214, 178, 99, 0.34);
+  background: rgba(6, 12, 14, 0.56);
+}
+
+select:focus,
+input:focus {
+  border-color: rgba(245, 216, 144, 0.64);
+  box-shadow: 0 0 0 4px rgba(214, 178, 99, 0.08);
 }
 
 .runtime-banner {
@@ -309,14 +327,26 @@ input {
   border-radius: var(--radius-xl);
   padding: 1.25rem;
   overflow: hidden;
+  transition: border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
 }
 
 .surface-card::before {
   content: "";
   position: absolute;
   inset: 0;
-  background: linear-gradient(140deg, rgba(255, 255, 255, 0.03), transparent 42%);
+  background:
+    linear-gradient(140deg, rgba(255, 255, 255, 0.035), transparent 42%),
+    repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.018) 0 1px, transparent 1px 18px);
   pointer-events: none;
+}
+
+.surface-card > * {
+  position: relative;
+}
+
+.surface-card:hover {
+  border-color: rgba(214, 178, 99, 0.24);
+  box-shadow: 0 26px 70px rgba(0, 0, 0, 0.38);
 }
 
 .score-card,
@@ -441,6 +471,8 @@ input {
   padding: 0 1.2rem;
   font-weight: 700;
   letter-spacing: 0.02em;
+  box-shadow: var(--shadow-tight);
+  transition: transform 160ms ease, filter 160ms ease, border-color 160ms ease, background 160ms ease;
 }
 
 .primary-button {
@@ -461,11 +493,27 @@ input {
 .ghost-button {
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid var(--line);
+  box-shadow: none;
 }
 
 .ghost-button.danger {
   border-color: rgba(225, 112, 93, 0.3);
   color: #ffd1c7;
+}
+
+.primary-button:hover,
+.secondary-button:hover,
+.ghost-button:hover,
+.card-button:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.08);
+}
+
+.primary-button:active,
+.secondary-button:active,
+.ghost-button:active,
+.card-button:active {
+  transform: translateY(0);
 }
 
 .loading-card {
@@ -530,10 +578,12 @@ input {
 
 .seat-tile {
   padding: 1rem;
+  transition: border-color 160ms ease, background 160ms ease;
 }
 
 .seat-tile-local {
   border-color: rgba(214, 178, 99, 0.34);
+  background: linear-gradient(135deg, rgba(214, 178, 99, 0.1), rgba(8, 14, 18, 0.48));
 }
 
 .seat-heading,
@@ -614,6 +664,7 @@ input {
   padding: 1rem;
   background: rgba(8, 14, 18, 0.46);
   text-align: center;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
 .score-block strong,
@@ -661,6 +712,17 @@ input {
     radial-gradient(circle at top, rgba(86, 149, 126, 0.22), transparent 38%),
     linear-gradient(180deg, var(--table) 0%, #15372e 100%);
   overflow: hidden;
+  box-shadow: inset 0 0 0 12px rgba(44, 26, 15, 0.34), inset 0 0 42px rgba(0, 0, 0, 0.34);
+}
+
+.board-stage::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    repeating-linear-gradient(45deg, var(--felt-grain) 0 1px, transparent 1px 14px),
+    repeating-linear-gradient(-45deg, rgba(0, 0, 0, 0.035) 0 1px, transparent 1px 18px);
+  pointer-events: none;
 }
 
 .board-stage::after {
@@ -677,6 +739,7 @@ input {
   inset: 50% auto auto 50%;
   transform: translate(-50%, -50%);
   width: min(40rem, calc(100% - 9rem));
+  z-index: 1;
 }
 
 .table-shell {
@@ -792,6 +855,8 @@ input {
   width: clamp(9.5rem, 11vw, 12rem);
   padding: 0.7rem 0.75rem;
   background: rgba(8, 14, 18, 0.44);
+  z-index: 1;
+  box-shadow: var(--shadow-tight);
 }
 
 .seat-top {
@@ -836,6 +901,17 @@ input {
   color: #222;
   border: 1px solid rgba(45, 33, 20, 0.14);
   box-shadow: 0 12px 28px rgba(0, 0, 0, 0.18);
+  isolation: isolate;
+  transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
+}
+
+.card-face::before {
+  content: "";
+  position: absolute;
+  inset: 0.42rem;
+  border-radius: inherit;
+  border: 1px solid rgba(45, 33, 20, 0.08);
+  pointer-events: none;
 }
 
 .card-face-small,
@@ -851,6 +927,7 @@ input {
 
 .card-back {
   background:
+    repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.08) 0 1px, transparent 1px 8px),
     linear-gradient(135deg, rgba(255, 255, 255, 0.18), transparent 40%),
     linear-gradient(180deg, #244b5a 0%, #12303c 100%);
   border-color: rgba(255, 255, 255, 0.14);
@@ -912,6 +989,12 @@ input {
   border: 0;
   padding: 0;
   background: transparent;
+}
+
+.play-card .card-button:hover .card-face,
+.game10-card-button:hover .card-face {
+  box-shadow: 0 18px 34px rgba(0, 0, 0, 0.3);
+  border-color: rgba(214, 178, 99, 0.36);
 }
 
 .lock-card {
@@ -1294,6 +1377,15 @@ input {
   padding: 0.85rem 0.95rem;
   background: rgba(5, 10, 13, 0.4);
   border: 1px solid rgba(255, 255, 255, 0.08);
+  transition: border-color 160ms ease, background 160ms ease, transform 160ms ease;
+}
+
+.setup10-roster-seat:hover,
+.lobby10-seat:hover,
+.game10-pulse-card:hover,
+.game10-seat-pill:hover {
+  border-color: rgba(214, 178, 99, 0.24);
+  background: rgba(8, 16, 18, 0.56);
 }
 
 .setup10-grid {
@@ -1464,6 +1556,12 @@ input {
   padding: 0.45rem 0.85rem;
   background: rgba(255, 255, 255, 0.03);
   font-size: 0.8rem;
+  transition: border-color 160ms ease, background 160ms ease, color 160ms ease;
+}
+
+.panel-tab:hover {
+  border-color: rgba(214, 178, 99, 0.24);
+  background: rgba(255, 255, 255, 0.06);
 }
 
 .panel-tab-active {
@@ -1599,6 +1697,16 @@ input {
   border: 1px solid rgba(255, 245, 215, 0.12);
 }
 
+.game10-felt::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    repeating-linear-gradient(45deg, var(--felt-grain) 0 1px, transparent 1px 14px),
+    repeating-linear-gradient(-45deg, rgba(0, 0, 0, 0.035) 0 1px, transparent 1px 18px);
+  pointer-events: none;
+}
+
 .game10-seat {
   position: absolute;
   z-index: 2;
@@ -1607,6 +1715,7 @@ input {
   border-radius: 1.2rem;
   background: rgba(8, 14, 18, 0.48);
   border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: var(--shadow-tight);
 }
 
 .game10-seat-top {
@@ -1634,6 +1743,7 @@ input {
 
 .game10-center-stage {
   position: absolute;
+  z-index: 1;
   top: 46%;
   left: 50%;
   transform: translate(-50%, -50%);
@@ -1685,6 +1795,7 @@ input {
 
 .game10-bottom-area {
   position: absolute;
+  z-index: 2;
   left: 50%;
   bottom: 1.2rem;
   transform: translateX(-50%);
@@ -1836,9 +1947,13 @@ input {
   }
 
   .setup10-roster,
-  .game10-hud-cluster,
   .game10-hand-row {
     grid-template-columns: 1fr;
+  }
+
+  .game10-hud-cluster {
+    flex-wrap: wrap;
+    align-items: stretch;
   }
 
   .game10-seat {

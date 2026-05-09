@@ -81,10 +81,22 @@ func (m UIModel) buildStatusLine() string {
 }
 
 func (m UIModel) helpControls() string {
-	parts := []string{
-		renderKeyHint("[1-3]", tr("help_play_cards_short")),
-		renderKeyHint("[t]", tr("help_truco_short")),
-		renderKeyHint("[a/r]", tr("help_answer_short")),
+	parts := []string{}
+	if m.canPlayCardNow() {
+		parts = append(parts, renderKeyHint("[1-3]", tr("help_play_cards_short")))
+	}
+	if m.canFaceDownNow() {
+		label := tr("help_face_down_short")
+		if m.faceDownMode {
+			label = tr("help_face_down_armed_short")
+		}
+		parts = append(parts, renderKeyHint("[v]", label))
+	}
+	if m.canAskOrRaiseNow() {
+		parts = append(parts, renderKeyHint("[t]", tr("help_truco_short")))
+	}
+	if m.mustRespondNow() {
+		parts = append(parts, renderKeyHint("[a/r]", tr("help_answer_short")))
 	}
 	if m.activeTab == "chat" {
 		parts = append(parts, renderKeyHint("[enter]", tr("help_send_short")))
@@ -100,6 +112,47 @@ func (m UIModel) helpControls() string {
 	parts = append(parts, renderKeyHint("[tab]", tr("help_tab_short")))
 	parts = append(parts, renderKeyHint("[q]", tr("help_quit_short")))
 	return strings.Join(parts, "  ")
+}
+
+func (m UIModel) localActionContext() (int, int, bool) {
+	if len(m.snapshot.Players) == 0 {
+		return -1, -1, false
+	}
+	localIdx := m.localPlayerIdx
+	if m.snapshot.CurrentPlayerIdx >= 0 {
+		localIdx = m.snapshot.CurrentPlayerIdx
+	}
+	if localIdx < 0 || localIdx >= len(m.snapshot.Players) {
+		return -1, -1, false
+	}
+	player := m.snapshot.Players[localIdx]
+	return player.ID, player.Team, true
+}
+
+func (m UIModel) canPlayCardNow() bool {
+	localID, _, ok := m.localActionContext()
+	return ok &&
+		!m.snapshot.MatchFinished &&
+		m.snapshot.PendingRaiseFor == -1 &&
+		m.snapshot.TurnPlayer == localID
+}
+
+func (m UIModel) canFaceDownNow() bool {
+	return m.canPlayCardNow() && m.snapshot.CurrentHand.Round >= 2
+}
+
+func (m UIModel) mustRespondNow() bool {
+	_, localTeam, ok := m.localActionContext()
+	return ok &&
+		!m.snapshot.MatchFinished &&
+		m.snapshot.PendingRaiseFor == localTeam
+}
+
+func (m UIModel) canAskOrRaiseNow() bool {
+	localID, _, ok := m.localActionContext()
+	return ok &&
+		!m.snapshot.MatchFinished &&
+		((m.snapshot.PendingRaiseFor == -1 && m.snapshot.TurnPlayer == localID && m.snapshot.CanAskTruco) || m.mustRespondNow())
 }
 
 func (m UIModel) chatCommandsHint() string {
@@ -540,15 +593,15 @@ func renderGhostCard(compact bool, flash bool) string {
 		if flash {
 			st = st.Foreground(lgGreen).Bold(true)
 		}
-		return st.Render("┌··┐\n└──┘")
+		return st.Render("╭··╮\n╰──╯")
 	}
 	st := bigCardBlack.Foreground(lgDim)
 	ghost := strings.Join([]string{
-		"┌─────┐",
+		"╭─────╮",
 		"│··   │",
 		"│  ·  │",
 		"│   ··│",
-		"└─────┘",
+		"╰─────╯",
 	}, "\n")
 	if flash {
 		st = st.Foreground(lgGreen).Bold(true)

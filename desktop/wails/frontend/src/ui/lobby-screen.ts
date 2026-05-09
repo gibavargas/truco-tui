@@ -22,10 +22,10 @@ export function renderLobbyScreen(params: LobbyScreenParams): string {
     return "";
   }
   const slots = bundle.ui.lobby_slots || [];
-  const network = bundle.connection.network;
   const invite = lobby.invite_key || "";
   const occupiedSeats = slots.filter((slot) => !slot.is_empty).length;
   const isHost = bundle.connection.is_host;
+  const canStart = isHost && occupiedSeats >= (lobby.num_players || slots.length || 1);
   const failoverSignal = latestFailoverSignal(events, t);
 
   return `
@@ -38,7 +38,7 @@ export function renderLobbyScreen(params: LobbyScreenParams): string {
             <p class="supporting-copy" data-pretext-block="lock-height">${escapeHtml(failoverSignal || t("invite_hint"))}</p>
           </div>
           <div class="lobby10-banner-actions">
-            ${isHost ? `<form data-api-action="startOnlineMatch" data-form-id="startOnlineMatch"><button class="primary-button" type="submit"${busyAttr("startOnlineMatch")}>${buttonLabel("startOnlineMatch", t("lobby_start"))}</button></form>` : ""}
+            ${isHost ? `<form data-api-action="startOnlineMatch" data-form-id="startOnlineMatch"><button class="primary-button" type="submit"${canStart ? "" : " disabled"}${busyAttr("startOnlineMatch")}>${buttonLabel("startOnlineMatch", canStart ? t("lobby_start") : `${t("lobby_slots")} ${occupiedSeats}/${lobby.num_players || slots.length}`)}</button></form>` : ""}
             <form data-api-action="closeSession" data-form-id="closeSession">
               <button class="ghost-button danger" type="submit"${busyAttr("closeSession")}>${buttonLabel("closeSession", t("lobby_leave"))}</button>
             </form>
@@ -51,9 +51,9 @@ export function renderLobbyScreen(params: LobbyScreenParams): string {
           </div>
           ${invite ? `<button type="button" class="ghost-button strong" data-copy-text="${escapeHtml(invite)}">${escapeHtml(t("invite_copy"))}</button>` : ""}
           <div class="lobby10-network-strip">
-            ${renderMetric(t("connection_transport"), network?.transport || "-")}
-            ${renderMetric(t("connection_protocol"), protocolLabel(network))}
             ${renderMetric(t("connection_status"), bundle.connection.status)}
+            ${renderMetric(t("connection_mode"), bundle.connection.is_online ? t("connection_online") : t("connection_offline"))}
+            ${renderMetric(t("lobby_slots"), `${occupiedSeats}/${lobby.num_players || slots.length}`)}
           </div>
         </div>
       </article>
@@ -155,7 +155,7 @@ function renderLobbyPanel(
     case "chat":
       return `
         <div class="lobby10-panel">
-          <pre class="event-feed" data-pretext-block="lock-height" data-pretext-whitespace="pre-wrap">${escapeHtml(renderEventFeed())}</pre>
+          <pre class="event-feed" role="log" aria-live="polite" data-pretext-block="lock-height" data-pretext-whitespace="pre-wrap">${escapeHtml(renderEventFeed())}</pre>
           <form class="chat-form" data-api-action="sendChat" data-form-id="sendChat">
             <input name="message" type="text" autocomplete="off" placeholder="${escapeHtml(t("chat_placeholder"))}">
             <button class="secondary-button" type="submit"${busyAttr("sendChat")}>${buttonLabel("sendChat", t("lobby_chat"))}</button>
@@ -165,7 +165,7 @@ function renderLobbyPanel(
     default:
       return `
         <div class="lobby10-panel">
-          <pre class="event-feed" data-pretext-block="lock-height" data-pretext-whitespace="pre-wrap">${escapeHtml(renderEventFeed())}</pre>
+          <pre class="event-feed" role="log" aria-live="polite" data-pretext-block="lock-height" data-pretext-whitespace="pre-wrap">${escapeHtml(renderEventFeed())}</pre>
           <div class="lobby10-signal-grid">
             ${renderMetric(t("connection_status"), bundle.connection.status)}
             ${renderMetric(t("lobby_slots"), `${bundle.ui.lobby_slots.filter((slot) => !slot.is_empty).length}/${bundle.lobby?.num_players || bundle.ui.lobby_slots.length}`)}
@@ -177,7 +177,7 @@ function renderLobbyPanel(
 }
 
 function renderPanelTab(value: LobbyPanelTab, active: LobbyPanelTab, label: string, escapeHtml: (value: string) => string): string {
-  return `<button class="panel-tab${active === value ? " panel-tab-active" : ""}" type="button" data-panel-tab="lobby:${value}">${escapeHtml(label)}</button>`;
+  return `<button class="panel-tab${active === value ? " panel-tab-active" : ""}" type="button" role="tab" aria-selected="${active === value ? "true" : "false"}" data-panel-tab="lobby:${value}">${escapeHtml(label)}</button>`;
 }
 
 function tabTitle(tab: LobbyPanelTab, t: (key: string, ...args: Array<string | number>) => string): string {
@@ -187,7 +187,7 @@ function tabTitle(tab: LobbyPanelTab, t: (key: string, ...args: Array<string | n
     case "chat":
       return t("lobby_chat");
     default:
-      return t("lobby_events");
+      return t("lobby_overview");
   }
 }
 

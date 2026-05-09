@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -604,6 +605,10 @@ func newStaticHandler(root string) http.Handler {
 		assetPath := filepath.Join(root, filepath.FromSlash(strings.TrimPrefix(filepath.Clean(r.URL.Path), "/")))
 		if info, err := os.Stat(assetPath); err == nil && !info.IsDir() {
 			fileServer.ServeHTTP(w, r)
+			return
+		}
+		if strings.HasPrefix(r.URL.Path, "/assets/") || path.Ext(r.URL.Path) != "" {
+			http.NotFound(w, r)
 			return
 		}
 

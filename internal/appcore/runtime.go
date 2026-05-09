@@ -425,30 +425,49 @@ func (r *Runtime) applyGameActionLocked(payload GameActionPayload) error {
 }
 
 func (r *Runtime) tickLocked(maxSteps int) error {
-	if maxSteps <= 0 {
-		maxSteps = 6
-	}
-	changed := false
-	for i := 0; i < maxSteps; i++ {
+	changed, err := runTickLoop(maxSteps, func() {
 		if r.mode == ModeHostMatch {
 			r.syncProvisionalCPUsLocked()
 		}
-		stepChanged, err := r.stepCPUIfNeededLocked()
-		if err != nil {
-			return r.failLocked("cpu_step_failed", err)
-		}
-		if !stepChanged {
-			break
-		}
-		changed = true
+	}, r.stepCPUIfNeededLocked, func() {
 		if r.mode == ModeHostMatch && r.host != nil {
 			pushSnapshotsToClients(r.host, r.game)
 		}
+	})
+	if err != nil {
+		return r.failLocked("cpu_step_failed", err)
 	}
 	if changed {
 		r.queueEventLocked("tick", map[string]any{"changed": true})
 	}
 	return nil
+}
+
+func runTickLoop(maxSteps int, beforeStep func(), step func() (bool, error), flush func()) (bool, error) {
+	if maxSteps <= 0 {
+		maxSteps = 6
+	}
+	changed := false
+	for i := 0; i < maxSteps; i++ {
+		if beforeStep != nil {
+			beforeStep()
+		}
+		stepChanged, err := step()
+		if err != nil {
+			if changed && flush != nil {
+				flush()
+			}
+			return changed, err
+		}
+		if !stepChanged {
+			break
+		}
+		changed = true
+	}
+	if changed && flush != nil {
+		flush()
+	}
+	return changed, nil
 }
 
 func (r *Runtime) sendChatLocked(text string) error {

@@ -278,10 +278,10 @@ function renderPlayableCard(
     <div class="game10-hand-card">
       <form data-api-action="play" data-form-id="play-${index}">
         <input type="hidden" name="cardIndex" value="${index}">
-        <button class="card-button game10-card-button" type="submit"${busyAttr(`play-${index}`)}>${renderCard(card)}</button>
+        <button class="card-button game10-card-button" type="submit" aria-label="${escapeHtml(`${t("game_play")} ${cardLabel(card)}`)}"${busyAttr(`play-${index}`)}>${renderCard(card)}</button>
       </form>
       <span class="card-caption">${escapeHtml(cardLabel(card))}</span>
-      ${canFaceDown ? `<form data-api-action="play" data-form-id="play-down-${index}"><input type="hidden" name="cardIndex" value="${index}"><input type="hidden" name="faceDown" value="true"><button class="ghost-button game10-face-down" type="submit"${busyAttr(`play-down-${index}`)}>${buttonLabel(`play-down-${index}`, t("game_face_down"))}</button></form>` : ""}
+      ${canFaceDown ? `<form data-api-action="play" data-form-id="play-down-${index}"><input type="hidden" name="cardIndex" value="${index}"><input type="hidden" name="faceDown" value="true"><button class="ghost-button game10-face-down" type="submit" aria-label="${escapeHtml(`${t("game_face_down")} ${cardLabel(card)}`)}"${busyAttr(`play-down-${index}`)}>${buttonLabel(`play-down-${index}`, t("game_face_down"))}</button></form>` : ""}
     </div>
   `;
 }
@@ -359,7 +359,7 @@ function renderGamePanel(
     case "chat":
       return `
         <div class="game10-panel">
-          <pre class="event-feed compact" data-pretext-block="lock-height" data-pretext-whitespace="pre-wrap">${escapeHtml(renderEventFeed((match.Logs || []).slice(-4)))}</pre>
+          <pre class="event-feed compact" role="log" aria-live="polite" data-pretext-block="lock-height" data-pretext-whitespace="pre-wrap">${escapeHtml(renderEventFeed((match.Logs || []).slice(-4)))}</pre>
           ${isOnlineMode ? `<form class="chat-form" data-api-action="sendChat" data-form-id="sendChat"><input name="message" type="text" autocomplete="off" placeholder="${escapeHtml(t("chat_placeholder"))}"><button class="secondary-button" type="submit"${busyAttr("sendChat")}>${buttonLabel("sendChat", t("lobby_chat"))}</button></form>` : ""}
         </div>
       `;
@@ -376,7 +376,7 @@ function renderGamePanel(
               <strong>${escapeHtml(playerName(match, match.TurnPlayer))}</strong>
             </div>
           </div>
-          <pre class="event-feed compact" data-pretext-block="lock-height" data-pretext-whitespace="pre-wrap">${escapeHtml(renderEventFeed((match.Logs || []).slice(-6)))}</pre>
+          <pre class="event-feed compact" role="log" aria-live="polite" data-pretext-block="lock-height" data-pretext-whitespace="pre-wrap">${escapeHtml(renderEventFeed((match.Logs || []).slice(-6)))}</pre>
         </div>
       `;
   }
@@ -398,7 +398,7 @@ function renderSeatStrip(
 }
 
 function renderPanelTab(value: GamePanelTab, active: GamePanelTab, label: string, escapeHtml: (value: string) => string): string {
-  return `<button class="panel-tab${active === value ? " panel-tab-active" : ""}" type="button" data-panel-tab="game:${value}">${escapeHtml(label)}</button>`;
+  return `<button class="panel-tab${active === value ? " panel-tab-active" : ""}" type="button" role="tab" aria-selected="${active === value ? "true" : "false"}" data-panel-tab="game:${value}">${escapeHtml(label)}</button>`;
 }
 
 function tabTitle(tab: GamePanelTab, t: (key: string, ...args: Array<string | number>) => string): string {
@@ -408,7 +408,7 @@ function tabTitle(tab: GamePanelTab, t: (key: string, ...args: Array<string | nu
     case "chat":
       return t("lobby_chat");
     default:
-      return t("game_activity");
+      return t("game_overview");
   }
 }
 

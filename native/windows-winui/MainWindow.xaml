@@ -24,27 +24,47 @@
             <SolidColorBrush x:Key="MacTextMuted" Color="#B3FFFFFF" />
             <SolidColorBrush x:Key="MacTextYellow" Color="#FFFFD54F" />
             <SolidColorBrush x:Key="MacTextDark" Color="#FF4E342E" />
+            <SolidColorBrush x:Key="MacPanelBorderBrush" Color="#24FFFFFF" />
 
             <LinearGradientBrush x:Key="MacWoodBackground" StartPoint="0,0" EndPoint="0,1">
-                <GradientStop Color="#5E3622" Offset="0" />
-                <GradientStop Color="#422514" Offset="1" />
+                <GradientStop Color="#6A4025" Offset="0" />
+                <GradientStop Color="#422514" Offset="0.48" />
+                <GradientStop Color="#1B120B" Offset="1" />
+            </LinearGradientBrush>
+
+            <LinearGradientBrush x:Key="MacPanelBrush" StartPoint="0,0" EndPoint="1,1">
+                <GradientStop Color="#B3000000" Offset="0" />
+                <GradientStop Color="#66141D1F" Offset="1" />
+            </LinearGradientBrush>
+
+            <LinearGradientBrush x:Key="MacScoreBadgeBrush" StartPoint="0,0" EndPoint="1,1">
+                <GradientStop Color="#A6000000" Offset="0" />
+                <GradientStop Color="#52141D1F" Offset="1" />
+            </LinearGradientBrush>
+
+            <LinearGradientBrush x:Key="MacCardBackBrush" StartPoint="0,0" EndPoint="1,1">
+                <GradientStop Color="#FF102C3C" Offset="0" />
+                <GradientStop Color="#FF071923" Offset="1" />
             </LinearGradientBrush>
 
             <RadialGradientBrush x:Key="MacFeltBrush" Center="0.5,0.5" GradientOrigin="0.5,0.5" RadiusX="0.5" RadiusY="0.5">
-                <GradientStop Color="#1E7338" Offset="0" />
+                <GradientStop Color="#268256" Offset="0" />
+                <GradientStop Color="#14583F" Offset="0.64" />
                 <GradientStop Color="#0D331A" Offset="1" />
             </RadialGradientBrush>
 
             <Style x:Key="MacPillText" TargetType="Border">
                 <Setter Property="CornerRadius" Value="14" />
-                <Setter Property="Background" Value="#80000000" />
+                <Setter Property="Background" Value="{StaticResource MacPanelBrush}" />
+                <Setter Property="BorderBrush" Value="{StaticResource MacPanelBorderBrush}" />
+                <Setter Property="BorderThickness" Value="1" />
                 <Setter Property="Padding" Value="16,6" />
                 <Setter Property="HorizontalAlignment" Value="Center" />
             </Style>
 
             <Style x:Key="MacScoreBadge" TargetType="Border">
                 <Setter Property="CornerRadius" Value="16" />
-                <Setter Property="Background" Value="#66000000" />
+                <Setter Property="Background" Value="{StaticResource MacScoreBadgeBrush}" />
                 <Setter Property="BorderBrush" Value="#1AFFFFFF" />
                 <Setter Property="BorderThickness" Value="1" />
                 <Setter Property="Width" Value="80" />
@@ -58,7 +78,7 @@
             </Style>
 
             <DataTemplate x:Key="GameCardTemplate">
-                <Border Width="110" Height="156" CornerRadius="12" BorderBrush="#D6B16A" BorderThickness="1" Visibility="{Binding CardVisibility, FallbackValue=Collapsed}">
+                <Border Width="110" Height="156" CornerRadius="14" BorderBrush="#66D6B16A" BorderThickness="1" Visibility="{Binding CardVisibility, FallbackValue=Collapsed}">
                     <Border.RenderTransform>
                         <TransformGroup>
                             <ScaleTransform ScaleX="{Binding Scale}" ScaleY="{Binding Scale}" CenterX="55" CenterY="78" />
@@ -77,6 +97,7 @@
                             <RowDefinition Height="*" />
                             <RowDefinition Height="Auto" />
                         </Grid.RowDefinitions>
+                        <Border Grid.RowSpan="3" CornerRadius="8" BorderBrush="#184E342E" BorderThickness="1" />
 
                         <Grid Visibility="{Binding IsFaceUp, Converter={StaticResource BoolToVisibilityConverter}}">
                             <Grid.RowDefinitions>
@@ -91,6 +112,7 @@
                             </StackPanel>
 
                             <Grid Grid.Row="1">
+                                <TextBlock Text="TP" FontSize="34" FontWeight="Black" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="#144E342E" CharacterSpacing="120" />
                                 <TextBlock Text="{Binding Card.SuitSymbol}" FontSize="52" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="{Binding Card.IsRed, Converter={StaticResource SuitToBrushConverter}}" Opacity="0.8"/>
                             </Grid>
 
@@ -104,10 +126,11 @@
                         </Grid>
 
                         <Grid Visibility="{Binding IsFaceUp, Converter={StaticResource BoolToVisibilityConverter}, ConverterParameter=invert}">
-                            <Border CornerRadius="8" Background="#112433" BorderBrush="#339FC08A" BorderThickness="1">
+                            <Border CornerRadius="8" Background="{StaticResource MacCardBackBrush}" BorderBrush="#66D6B16A" BorderThickness="1">
                                 <Grid>
                                     <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="2">
                                         <TextBlock Text="TP" FontSize="20" FontWeight="Bold" HorizontalAlignment="Center" Foreground="#F5DE9B" />
+                                        <TextBlock Text="TRUCO" FontSize="9" FontWeight="Bold" HorizontalAlignment="Center" Foreground="#99F5DE9B" CharacterSpacing="120" />
                                     </StackPanel>
                                 </Grid>
                             </Border>
@@ -209,8 +232,9 @@
             <!-- Main Layout -->
             <Grid Margin="20" RowSpacing="16" x:Name="GameLayoutGrid">
                 <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto" x:Name="GameMainRow" />
-                    <RowDefinition Height="*" x:Name="GameSidebarRow" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" x:Name="GameMainRow" />
+                    <RowDefinition Height="Auto" x:Name="GameSidebarRow" />
                 </Grid.RowDefinitions>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" x:Name="GameMainColumn" />
@@ -218,15 +242,25 @@
                 </Grid.ColumnDefinitions>
 
                 <!-- Modern translucent header replacing the rustic one -->
-                <Border Grid.Row="0" Grid.ColumnSpan="2" CornerRadius="20" Padding="16,12" Background="#66000000" BorderBrush="#1AFFFFFF" BorderThickness="1">
-                    <Grid>
-                        <StackPanel Orientation="Horizontal" Spacing="16" VerticalAlignment="Center">
-                            <TextBlock Text="Truco Paulista" FontSize="20" FontWeight="Bold" Foreground="{StaticResource MacTextPrimary}" />
-                            <TextBlock Text="{Binding StatusText}" Foreground="{StaticResource MacTextYellow}" VerticalAlignment="Center"/>
-                            <TextBlock Text="{Binding ConnectionDetails}" Foreground="{StaticResource MacTextMuted}" VerticalAlignment="Center" FontSize="12"/>
-                        </StackPanel>
+                <Border Grid.Row="0" Grid.ColumnSpan="2" CornerRadius="20" Padding="16,12" Background="{StaticResource MacPanelBrush}" BorderBrush="{StaticResource MacPanelBorderBrush}" BorderThickness="1">
+                    <Grid ColumnSpacing="12">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
 
-                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+                        <Grid ColumnSpacing="16" VerticalAlignment="Center">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="Truco Paulista" FontSize="20" FontWeight="Bold" Foreground="{StaticResource MacTextPrimary}" />
+                            <TextBlock Grid.Column="1" Text="{Binding StatusText}" Foreground="{StaticResource MacTextYellow}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                            <TextBlock Grid.Column="2" Text="{Binding ConnectionDetails}" Foreground="{StaticResource MacTextMuted}" VerticalAlignment="Center" FontSize="12" TextTrimming="CharacterEllipsis"/>
+                        </Grid>
+
+                        <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
                             <Button Content="Idioma" Command="{Binding ToggleLocaleCommand}" Background="#33FFFFFF" Foreground="White" BorderThickness="0" CornerRadius="8"/>
                             <Button Content="Sair" Command="{Binding CloseSessionCommand}" IsEnabled="{Binding HasActiveSession}" Background="#33FF5252" Foreground="White" BorderThickness="0" CornerRadius="8"/>
                         </StackPanel>
@@ -234,7 +268,7 @@
                 </Border>
 
                 <!-- Main Board Area -->
-                <Border x:Name="MainBoardBorder" Grid.Row="1" Grid.Column="0" CornerRadius="120" Background="{StaticResource MacFeltBrush}" BorderBrush="#26FFFFFF" BorderThickness="2" Margin="16" Padding="32">
+                <Border x:Name="MainBoardBorder" Grid.Row="1" Grid.Column="0" CornerRadius="120" Background="{StaticResource MacFeltBrush}" BorderBrush="#42D6B16A" BorderThickness="2" Margin="16" Padding="32">
                     <Grid>
                         <!-- Top left/right HUD (Scores and Stakes) -->
                         <Grid Visibility="{Binding GameVisibility}" VerticalAlignment="Top" Margin="0,20,0,0">
@@ -344,6 +378,13 @@
                                     </Border>
                                 </Grid>
 
+                                <Border Background="{StaticResource MacPanelBrush}" BorderBrush="{StaticResource MacPanelBorderBrush}" BorderThickness="1" CornerRadius="14" Padding="12,8" MaxWidth="520">
+                                    <StackPanel Spacing="4">
+                                        <TextBlock Text="{Binding CurrentTurnText}" Foreground="{StaticResource MacTextPrimary}" TextWrapping="Wrap" HorizontalAlignment="Center"/>
+                                        <TextBlock Text="{Binding PendingRaiseText}" Foreground="{StaticResource MacTextYellow}" TextWrapping="Wrap" HorizontalAlignment="Center"/>
+                                    </StackPanel>
+                                </Border>
+
                                 <!-- Player Hand -->
                                 <ItemsControl ItemsSource="{Binding BottomSeat.HandCards}">
                                     <ItemsControl.ItemsPanel>
@@ -353,18 +394,21 @@
                                     </ItemsControl.ItemsPanel>
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate>
-                                            <Button Style="{StaticResource CardButtonStyle}" Command="{Binding ElementName=RootPanel, Path=DataContext.PlayCardCommand}" CommandParameter="{Binding Card}" Margin="0,0,16,0">
-                                                <ContentControl Content="{Binding}" ContentTemplate="{StaticResource GameCardTemplate}" />
-                                            </Button>
+                                            <StackPanel Spacing="6" Margin="0,0,16,0">
+                                                <Button Style="{StaticResource CardButtonStyle}" Command="{Binding ElementName=RootPanel, Path=DataContext.PlayCardCommand}" CommandParameter="{Binding Card}" IsEnabled="{Binding ElementName=RootPanel, Path=DataContext.CanPlayCards}">
+                                                    <ContentControl Content="{Binding}" ContentTemplate="{StaticResource GameCardTemplate}" />
+                                                </Button>
+                                                <Button Content="Virada" Command="{Binding ElementName=RootPanel, Path=DataContext.PlayFaceDownCardCommand}" CommandParameter="{Binding Card}" IsEnabled="{Binding ElementName=RootPanel, Path=DataContext.CanPlayFaceDown}" Background="#33FFFFFF" Foreground="White" FontSize="11" Padding="8,4" CornerRadius="8" BorderThickness="0"/>
+                                            </StackPanel>
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>
 
                                 <!-- Action Buttons -->
                                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Spacing="12">
-                                    <Button Content="TRUCO" Command="{Binding RequestTrucoCommand}" IsEnabled="{Binding CanRequestTruco}" Background="#FFF57F17" Foreground="White" FontWeight="Bold" Padding="20,10" CornerRadius="8" BorderThickness="0"/>
-                                    <Button Content="Aceitar" Command="{Binding AcceptTrucoCommand}" IsEnabled="{Binding CanAnswerRaise}" Background="#FF43A047" Foreground="White" FontWeight="Bold" Padding="20,10" CornerRadius="8" BorderThickness="0"/>
-                                    <Button Content="Recusar" Command="{Binding RefuseTrucoCommand}" IsEnabled="{Binding CanAnswerRaise}" Background="#FFE53935" Foreground="White" FontWeight="Bold" Padding="20,10" CornerRadius="8" BorderThickness="0"/>
+                                    <Button Content="{Binding RequestTrucoLabel}" Command="{Binding RequestTrucoCommand}" IsEnabled="{Binding CanRequestTruco}" Background="#FFF57F17" Foreground="White" FontWeight="Bold" Padding="20,10" CornerRadius="8" BorderThickness="0"/>
+                                    <Button Content="Aceitar" Command="{Binding AcceptTrucoCommand}" IsEnabled="{Binding CanAcceptTruco}" Background="#FF43A047" Foreground="White" FontWeight="Bold" Padding="20,10" CornerRadius="8" BorderThickness="0"/>
+                                    <Button Content="Recusar" Command="{Binding RefuseTrucoCommand}" IsEnabled="{Binding CanRefuseTruco}" Background="#FFE53935" Foreground="White" FontWeight="Bold" Padding="20,10" CornerRadius="8" BorderThickness="0"/>
                                     <Button Content="Nova mão" Command="{Binding NewHandCommand}" IsEnabled="{Binding CanStartNewHand}" Background="#33FFFFFF" Foreground="White" FontWeight="Bold" Padding="20,10" CornerRadius="8" BorderThickness="0"/>
                                 </StackPanel>
                             </StackPanel>
@@ -373,7 +417,7 @@
                         <!-- Non Game Screens Overlay -->
                         <!-- Home Overlay -->
                         <Grid Visibility="{Binding HomeVisibility}">
-                            <Border Background="#D9000000" CornerRadius="24" Padding="40" HorizontalAlignment="Center" VerticalAlignment="Center">
+                            <Border Background="{StaticResource MacPanelBrush}" BorderBrush="{StaticResource MacPanelBorderBrush}" BorderThickness="1" CornerRadius="24" Padding="40" HorizontalAlignment="Center" VerticalAlignment="Center">
                                 <StackPanel Spacing="20" MaxWidth="560">
                                     <TextBlock Text="Truco Paulista" FontSize="36" FontWeight="Black" Foreground="{StaticResource MacTextPrimary}" HorizontalAlignment="Center" />
                                     <TextBlock Text="O clássico reintepretado." Foreground="{StaticResource MacTextMuted}" HorizontalAlignment="Center" FontSize="16"/>
@@ -387,7 +431,7 @@
                         </Grid>
 
                         <Grid Visibility="{Binding OfflineVisibility}">
-                            <Border Background="#D9000000" CornerRadius="24" Padding="40" HorizontalAlignment="Center" VerticalAlignment="Center">
+                            <Border Background="{StaticResource MacPanelBrush}" BorderBrush="{StaticResource MacPanelBorderBrush}" BorderThickness="1" CornerRadius="24" Padding="40" HorizontalAlignment="Center" VerticalAlignment="Center">
                                 <StackPanel MaxWidth="500" Spacing="16">
                                     <TextBlock Text="Partida Offline" FontSize="28" FontWeight="Bold" Foreground="{StaticResource MacTextPrimary}"/>
                                     <TextBox Text="{Binding OfflinePlayerName, Mode=TwoWay}" PlaceholderText="Seu nome" Background="#33FFFFFF" Foreground="White" BorderThickness="0" Padding="12" CornerRadius="8"/>
@@ -404,7 +448,7 @@
                         </Grid>
 
                         <Grid Visibility="{Binding HostVisibility}">
-                            <Border Background="#D9000000" CornerRadius="24" Padding="40" HorizontalAlignment="Center" VerticalAlignment="Center">
+                            <Border Background="{StaticResource MacPanelBrush}" BorderBrush="{StaticResource MacPanelBorderBrush}" BorderThickness="1" CornerRadius="24" Padding="40" HorizontalAlignment="Center" VerticalAlignment="Center">
                                 <StackPanel MaxWidth="520" Spacing="16">
                                     <TextBlock Text="Criar Mesa Online" FontSize="28" FontWeight="Bold" Foreground="{StaticResource MacTextPrimary}"/>
                                     <TextBox Text="{Binding HostName, Mode=TwoWay}" PlaceholderText="Seu nome" Background="#33FFFFFF" Foreground="White" BorderThickness="0" Padding="12" CornerRadius="8"/>
@@ -427,7 +471,7 @@
                         </Grid>
 
                         <Grid Visibility="{Binding JoinVisibility}">
-                            <Border Background="#D9000000" CornerRadius="24" Padding="40" HorizontalAlignment="Center" VerticalAlignment="Center">
+                            <Border Background="{StaticResource MacPanelBrush}" BorderBrush="{StaticResource MacPanelBorderBrush}" BorderThickness="1" CornerRadius="24" Padding="40" HorizontalAlignment="Center" VerticalAlignment="Center">
                                 <StackPanel MaxWidth="500" Spacing="16">
                                     <TextBlock Text="Entrar em Mesa" FontSize="28" FontWeight="Bold" Foreground="{StaticResource MacTextPrimary}"/>
                                     <TextBox Text="{Binding JoinKey, Mode=TwoWay}" PlaceholderText="Código do Convite" Background="#33FFFFFF" Foreground="White" BorderThickness="0" Padding="12" CornerRadius="8"/>
@@ -446,12 +490,12 @@
                         </Grid>
 
                         <Grid Visibility="{Binding LobbyVisibility}">
-                            <Border Background="#D9000000" CornerRadius="24" Padding="32" HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="760">
+                            <Border Background="{StaticResource MacPanelBrush}" BorderBrush="{StaticResource MacPanelBorderBrush}" BorderThickness="1" CornerRadius="24" Padding="32" HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="760">
                                 <StackPanel Spacing="16">
                                     <TextBlock Text="Lobby Online" FontSize="28" FontWeight="Bold" Foreground="{StaticResource MacTextPrimary}"/>
                                     <TextBlock Text="{Binding ConnectionDetails}" TextWrapping="Wrap" Foreground="{StaticResource MacTextMuted}"/>
 
-                                    <Border Background="#1AFFFFFF" CornerRadius="12" Padding="12" Visibility="{Binding InviteVisibility}">
+                                    <Border Background="#1AFFFFFF" BorderBrush="{StaticResource MacPanelBorderBrush}" BorderThickness="1" CornerRadius="12" Padding="12" Visibility="{Binding InviteVisibility}">
                                         <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
                                             <TextBlock Text="Convite" Foreground="{StaticResource MacTextMuted}" VerticalAlignment="Center"/>
                                             <TextBlock Text="{Binding InviteKey}" Foreground="{StaticResource MacTextYellow}" FontFamily="Consolas" FontSize="16" VerticalAlignment="Center"/>
@@ -462,7 +506,7 @@
                                     <ItemsControl ItemsSource="{Binding LobbySeats}">
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate>
-                                                <Border Background="#14000000" BorderBrush="#1AFFFFFF" BorderThickness="1" CornerRadius="12" Padding="12" Margin="0,0,0,8">
+                                                <Border Background="#26000000" BorderBrush="{StaticResource MacPanelBorderBrush}" BorderThickness="1" CornerRadius="12" Padding="12" Margin="0,0,0,8">
                                                     <Grid ColumnSpacing="12">
                                                         <Grid.ColumnDefinitions>
                                                             <ColumnDefinition Width="*" />
@@ -482,6 +526,8 @@
                                                             <Border Background="#33FFD54F" CornerRadius="999" Padding="8,4">
                                                                 <TextBlock Text="{Binding ProtocolBadge}" Foreground="{StaticResource MacTextDark}" FontSize="11" FontWeight="Bold"/>
                                                             </Border>
+                                                            <Button Content="Votar host" Command="{Binding ElementName=RootPanel, Path=DataContext.VoteHostForSeatCommand}" CommandParameter="{Binding}" IsEnabled="{Binding CanVoteHost}" Background="#33FFFFFF" Foreground="White" BorderThickness="0" CornerRadius="8"/>
+                                                            <Button Content="Chamar substituto" Command="{Binding ElementName=RootPanel, Path=DataContext.RequestReplacementInviteForSeatCommand}" CommandParameter="{Binding}" IsEnabled="{Binding CanRequestReplacement}" Background="#33FFD54F" Foreground="{StaticResource MacTextDark}" BorderThickness="0" CornerRadius="8"/>
                                                         </StackPanel>
                                                     </Grid>
                                                 </Border>
@@ -501,12 +547,12 @@
                 </Border>
 
                 <!-- Floating Sidebar (Chat/Logs) -->
-                <Border x:Name="SidebarBorder" Grid.Row="1" Grid.Column="1" Background="#B3111111" CornerRadius="20" Margin="0,16,0,16" Padding="16">
+                <Border x:Name="SidebarBorder" Grid.Row="1" Grid.Column="1" Background="{StaticResource MacPanelBrush}" BorderBrush="{StaticResource MacPanelBorderBrush}" BorderThickness="1" CornerRadius="20" Margin="0,16,0,16" Padding="16">
                     <ScrollViewer VerticalScrollBarVisibility="Auto">
                         <StackPanel Spacing="16">
                             <TextBlock Text="Painel da Mesa" FontSize="20" FontWeight="Bold" Foreground="{StaticResource MacTextPrimary}"/>
 
-                            <Border Background="#1AFFFFFF" CornerRadius="12" Padding="12">
+                            <Border Background="#1AFFFFFF" BorderBrush="{StaticResource MacPanelBorderBrush}" BorderThickness="1" CornerRadius="12" Padding="12">
                                 <StackPanel Spacing="4">
                                     <TextBlock Text="Eventos" FontWeight="SemiBold" Foreground="{StaticResource MacTextPrimary}"/>
                                     <TextBlock Text="{Binding InfoBannerText}" Foreground="#FF81C784" TextWrapping="Wrap"/>

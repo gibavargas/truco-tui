@@ -46,10 +46,13 @@ test:
 ffi:
 	go build -buildmode=c-shared -o bin/libtruco_core.dylib ./cmd/truco-core-ffi
 
-ffi-macos:
-	go build -buildmode=c-shared -o bin/libtruco_core.dylib ./cmd/truco-core-ffi
+ifeq ($(HOST_GOOS),darwin)
 	install_name_tool -id "@rpath/libtruco_core.dylib" bin/libtruco_core.dylib
 	cp bin/libtruco_core.h native/macos/Truco/Truco/truco_core.h
+endif
+
+ffi-macos:
+	$(MAKE) ffi
 
 ffi-linux:
 	GOOS=linux GOARCH=amd64 go build -buildmode=c-shared -o bin/libtruco_core.so ./cmd/truco-core-ffi

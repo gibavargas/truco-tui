@@ -19,12 +19,12 @@ struct TrucoApp: App {
         }
         .commands {
             CommandGroup(replacing: .newItem) {
-                Button("Nova Partida Offline") {
+                Button("Nova mesa offline") {
                     store.startOfflineDemo()
                 }
                 .keyboardShortcut("n")
                 
-                Button("Sair da Sala") {
+                Button("Sair da mesa") {
                     store.closeSession()
                 }
                 .keyboardShortcut("w")

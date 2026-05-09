@@ -281,8 +281,64 @@ function isOnlineMode(): boolean {
 }
 
 function render(): void {
+  const focusState = captureFocusState();
   root.innerHTML = renderApp();
+  restoreFocusState(focusState);
   syncMeasuredBlocks();
+}
+
+interface FocusState {
+  selector: string;
+  value?: string;
+  selectionStart: number | null;
+  selectionEnd: number | null;
+}
+
+function captureFocusState(): FocusState | null {
+  const active = document.activeElement;
+  if (!(active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement || active instanceof HTMLSelectElement)) {
+    return null;
+  }
+  if (!root.contains(active)) {
+    return null;
+  }
+  const key = active.id || active.name || active.getAttribute("data-focus-key");
+  if (!key) {
+    return null;
+  }
+  const formId = active.closest("form")?.getAttribute("data-form-id");
+  const selector = formId && active.name
+    ? `form[data-form-id="${CSS.escape(formId)}"] [name="${CSS.escape(active.name)}"]`
+    : active.id
+      ? `#${CSS.escape(active.id)}`
+      : `[name="${CSS.escape(active.name || key)}"]`;
+  return {
+    selector,
+    value: active.value,
+    selectionStart: "selectionStart" in active ? active.selectionStart : null,
+    selectionEnd: "selectionEnd" in active ? active.selectionEnd : null,
+  };
+}
+
+function restoreFocusState(stateToRestore: FocusState | null): void {
+  if (!stateToRestore) {
+    return;
+  }
+  const next = root.querySelector<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>(stateToRestore.selector);
+  if (!next) {
+    return;
+  }
+  if (stateToRestore.value !== undefined && next.value !== stateToRestore.value) {
+    next.value = stateToRestore.value;
+  }
+  next.focus({ preventScroll: true });
+  if (
+    (next instanceof HTMLInputElement || next instanceof HTMLTextAreaElement) &&
+    stateToRestore.selectionStart !== null &&
+    stateToRestore.selectionEnd !== null
+  ) {
+    next.setSelectionRange(stateToRestore.selectionStart, stateToRestore.selectionEnd);
+  }
 }
 
 function renderApp(): string {
@@ -353,7 +409,7 @@ function renderRuntimeBanner(): string {
   }
 
   return `
-    <section class="${classes.join(" ")}" data-pretext-block="lock-height">
+    <section class="${classes.join(" ")}" role="${state.lastRenderError || state.lastRefreshState === "error" ? "alert" : "status"}" aria-live="${state.lastRenderError || state.lastRefreshState === "error" ? "assertive" : "polite"}" data-pretext-block="lock-height">
       <div class="runtime-banner-copy">${escapeHtml(message)}</div>
       <div class="runtime-banner-actions">
         <button class="ghost-button strong" type="button" data-client-action="refresh">${escapeHtml(t("header_resync"))}</button>
