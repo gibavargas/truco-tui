@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"errors"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -35,6 +36,7 @@ type UIModel struct {
 	localPlayerIdx int
 	isOnline       bool
 	isHost         bool
+	faceDownMode   bool
 
 	visualState
 }
@@ -149,6 +151,9 @@ func (m UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case syncMsg:
 		prev := m.snapshot
 		m.snapshot = msg.snapshot
+		if !m.canFaceDownNow() {
+			m.faceDownMode = false
+		}
 		m.visualState.applySnapshotVisualTransitions(prev, m.snapshot)
 		cmds := []tea.Cmd{
 			m.visualState.updateTrickOverlay(m.snapshot, m.localPlayerIdx),
@@ -203,12 +208,25 @@ func (m UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		switch msg.String() {
+		case "v":
+			if !m.canFaceDownNow() {
+				return m, m.setTransientError(errors.New("carta virada indisponível agora"))
+			}
+			m.faceDownMode = !m.faceDownMode
+			return m, nil
 		case "1", "2", "3":
 			if m.trickOverlayMsg != "" {
 				return m, nil
 			}
 			idx := int(msg.Runes[0] - '1')
-			if err := m.game.PlayCard(m.localPlayerIdx, idx); err != nil {
+			var err error
+			if m.faceDownMode {
+				err = m.game.PlayCardFaceDown(m.localPlayerIdx, idx)
+				m.faceDownMode = false
+			} else {
+				err = m.game.PlayCard(m.localPlayerIdx, idx)
+			}
+			if err != nil {
 				return m, tea.Batch(snapshotCmd(m.game, m.localPlayerIdx), m.setTransientError(err))
 			}
 			m.visualState.onCardAccepted(idx)

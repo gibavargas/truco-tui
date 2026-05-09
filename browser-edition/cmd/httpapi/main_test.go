@@ -584,4 +584,18 @@ func TestStaticHandlerServesIndexAndAssets(t *testing.T) {
 	if !strings.Contains(w.Body.String(), "<title>browser</title>") {
 		t.Fatalf("client route fallback returned unexpected body: %s", w.Body.String())
 	}
+
+	req = httptest.NewRequest(http.MethodGet, "/assets/missing.js", nil)
+	w = httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("GET /assets/missing.js = %d, want 404", w.Code)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/favicon-missing.ico", nil)
+	w = httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("GET /favicon-missing.ico = %d, want 404", w.Code)
+	}
 }

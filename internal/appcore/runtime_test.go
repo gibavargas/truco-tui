@@ -267,6 +267,58 @@ func TestRuntimeClientLobbyPreservesDesiredRoleAcrossRefresh(t *testing.T) {
 	}
 }
 
+func TestRunTickLoopFlushesOnceAfterMultipleSteps(t *testing.T) {
+	stepCalls := 0
+	flushCalls := 0
+
+	changed, err := runTickLoop(12, nil, func() (bool, error) {
+		stepCalls++
+		return stepCalls <= 3, nil
+	}, func() {
+		flushCalls++
+	})
+	if err != nil {
+		t.Fatalf("runTickLoop returned error: %v", err)
+	}
+	if !changed {
+		t.Fatal("expected changed=true")
+	}
+	if stepCalls != 4 {
+		t.Fatalf("stepCalls = %d, want 4", stepCalls)
+	}
+	if flushCalls != 1 {
+		t.Fatalf("flushCalls = %d, want 1", flushCalls)
+	}
+}
+
+func TestRunTickLoopFlushesPendingChangesBeforeError(t *testing.T) {
+	stepCalls := 0
+	flushCalls := 0
+
+	changed, err := runTickLoop(12, nil, func() (bool, error) {
+		stepCalls++
+		switch stepCalls {
+		case 1:
+			return true, nil
+		case 2:
+			return false, json.Unmarshal([]byte("{"), &struct{}{})
+		default:
+			return false, nil
+		}
+	}, func() {
+		flushCalls++
+	})
+	if err == nil {
+		t.Fatal("expected runTickLoop to return an error")
+	}
+	if !changed {
+		t.Fatal("expected changed=true before error")
+	}
+	if flushCalls != 1 {
+		t.Fatalf("flushCalls = %d, want 1", flushCalls)
+	}
+}
+
 func ptrMatch(s truco.Snapshot) *truco.Snapshot {
 	return &s
 }

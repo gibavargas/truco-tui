@@ -59,7 +59,7 @@ public sealed partial class MainWindow : Window
         GameLayoutGrid.RowSpacing = compactLayout ? 12 : 16;
         MainBoardBorder.Padding = compactLayout ? new Thickness(12) : new Thickness(16);
         SidebarBorder.Padding = compactLayout ? new Thickness(12) : new Thickness(16);
-        MainBoardBorder.BorderThickness = compactLayout ? new Thickness(10) : new Thickness(12);
+        MainBoardBorder.BorderThickness = new Thickness(2);
         SidebarBorder.BorderThickness = compactLayout ? new Thickness(1) : new Thickness(1);
 
         if (wideLayout)
@@ -69,14 +69,14 @@ public sealed partial class MainWindow : Window
             GameMainRow.Height = new GridLength(1, GridUnitType.Star);
             GameSidebarRow.Height = GridLength.Auto;
 
-            Grid.SetRow(MainBoardBorder, 0);
+            Grid.SetRow(MainBoardBorder, 1);
             Grid.SetColumn(MainBoardBorder, 0);
-            Grid.SetRowSpan(MainBoardBorder, 2);
+            Grid.SetRowSpan(MainBoardBorder, 1);
             Grid.SetColumnSpan(MainBoardBorder, 1);
 
-            Grid.SetRow(SidebarBorder, 0);
+            Grid.SetRow(SidebarBorder, 1);
             Grid.SetColumn(SidebarBorder, 1);
-            Grid.SetRowSpan(SidebarBorder, 2);
+            Grid.SetRowSpan(SidebarBorder, 1);
             Grid.SetColumnSpan(SidebarBorder, 1);
         }
         else
@@ -86,12 +86,12 @@ public sealed partial class MainWindow : Window
             GameMainRow.Height = new GridLength(1, GridUnitType.Star);
             GameSidebarRow.Height = GridLength.Auto;
 
-            Grid.SetRow(MainBoardBorder, 0);
+            Grid.SetRow(MainBoardBorder, 1);
             Grid.SetColumn(MainBoardBorder, 0);
             Grid.SetRowSpan(MainBoardBorder, 1);
             Grid.SetColumnSpan(MainBoardBorder, 1);
 
-            Grid.SetRow(SidebarBorder, 1);
+            Grid.SetRow(SidebarBorder, 2);
             Grid.SetColumn(SidebarBorder, 0);
             Grid.SetRowSpan(SidebarBorder, 1);
             Grid.SetColumnSpan(SidebarBorder, 1);

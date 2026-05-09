@@ -1621,6 +1621,11 @@ input:focus {
   font-size: 0.98rem;
 }
 
+.mobile-table-strip,
+.mobile-game-panel {
+  display: none;
+}
+
 .app-shell-game .player-seat {
   display: flex;
   width: auto;
@@ -1940,6 +1945,26 @@ input:focus {
     display: none;
   }
 
+  .app-shell-game .mobile-game-panel {
+    display: block;
+    width: min(44rem, calc(100% - 1rem));
+    margin: calc(100svh + 0.75rem) auto 1rem;
+    padding: 0.9rem;
+  }
+
+  .app-shell-game .mobile-game-panel details {
+    display: grid;
+    gap: 0.8rem;
+  }
+
+  .app-shell-game .mobile-game-panel summary {
+    cursor: pointer;
+    color: var(--accent-strong);
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+
   .app-shell-game .center-table {
     width: min(42rem, calc(100% - 3rem));
   }
@@ -2002,6 +2027,29 @@ input:focus {
   .app-shell-game .status-band {
     bottom: 13.4rem;
     width: calc(100% - 2rem);
+  }
+
+  .app-shell-game .mobile-table-strip {
+    position: absolute;
+    left: 50%;
+    bottom: 11.35rem;
+    z-index: 34;
+    display: flex;
+    width: calc(100% - 2rem);
+    transform: translateX(-50%);
+    justify-content: center;
+    gap: 0.4rem;
+    flex-wrap: wrap;
+  }
+
+  .app-shell-game .mobile-table-strip span {
+    border: 1px solid rgba(245, 216, 144, 0.22);
+    border-radius: 999px;
+    padding: 0.24rem 0.5rem;
+    background: rgba(0, 0, 0, 0.5);
+    color: rgba(255, 255, 255, 0.84);
+    font-size: 0.68rem;
+    font-weight: 800;
   }
 
   .app-shell-game .player-seat {

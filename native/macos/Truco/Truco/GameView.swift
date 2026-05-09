@@ -123,7 +123,16 @@ struct GameView: View {
         case 6: return "NOVE!"
         case 9: return "DOZE!"
         case 12: return "DOZE!"
-        default: return "TRUCO!"
+            default: return "TRUCO!"
+        }
+    }
+
+    private func nextStake(after stake: Int) -> Int {
+        switch stake {
+        case 1: return 3
+        case 3: return 6
+        case 6: return 9
+        default: return 12
         }
     }
     
@@ -215,7 +224,7 @@ struct GameView: View {
                             }) {
                                 HStack {
                                     Image(systemName: "chevron.left")
-                                    Text("Sair da Partida")
+                                    Text("Sair da mesa")
                                         .fontWeight(.bold)
                                 }
                             }
@@ -279,24 +288,40 @@ struct GameView: View {
                     
                     if let me = snap.Players?.first(where: { $0.playerID == snap.CurrentPlayerIdx }) {
                         VStack(spacing: 24) {
-                            // Action Buttons (Truco, Accept, Refuse)
+                            // Action buttons follow the shared runtime action flags.
                             if actions?.must_respond == true {
                                 HStack(spacing: 20) {
-                                    Button("ACEITAR") {
-                                        store.dispatchGameAction(action: "accept")
+                                    if actions?.can_ask_or_raise == true {
+                                        let raiseTo = snap.PendingRaiseTo ?? nextStake(after: snap.CurrentHand?.Stake ?? 1)
+                                        Button(raiseLabel(for: raiseTo)) {
+                                            store.dispatchGameAction(action: "truco")
+                                        }
+                                        .buttonStyle(.borderedProminent)
+                                        .tint(.yellow)
+                                        .foregroundColor(.black)
+                                        .controlSize(.large)
+                                        .font(.headline.weight(.black))
                                     }
-                                    .buttonStyle(.borderedProminent)
-                                    .tint(.green)
-                                    .controlSize(.large)
-                                    .font(.headline.weight(.black))
-                                    
-                                    Button("CORRER") {
-                                        store.dispatchGameAction(action: "refuse")
+
+                                    if actions?.can_accept == true {
+                                        Button("ACEITAR") {
+                                            store.dispatchGameAction(action: "accept")
+                                        }
+                                        .buttonStyle(.borderedProminent)
+                                        .tint(.green)
+                                        .controlSize(.large)
+                                        .font(.headline.weight(.black))
                                     }
-                                    .buttonStyle(.borderedProminent)
-                                    .tint(.red)
-                                    .controlSize(.large)
-                                    .font(.headline.weight(.black))
+
+                                    if actions?.can_refuse == true {
+                                        Button("CORRER") {
+                                            store.dispatchGameAction(action: "refuse")
+                                        }
+                                        .buttonStyle(.borderedProminent)
+                                        .tint(.red)
+                                        .controlSize(.large)
+                                        .font(.headline.weight(.black))
+                                    }
                                 }
                                 .padding(.top, 10)
                             } else if actions?.can_ask_or_raise == true {
@@ -368,16 +393,16 @@ struct GameView: View {
                             Spacer()
                             VStack(alignment: .leading, spacing: 12) {
                                 VStack(alignment: .leading, spacing: 8) {
-                                    Text("Conexão")
+                                    Text("Detalhes da mesa")
                                         .font(.caption.bold())
                                         .foregroundColor(.white.opacity(0.6))
-                                    connectionLine("Status", connection?.status ?? store.mode)
+                                    connectionLine("Estado", connection?.status ?? store.mode)
                                     connectionLine("Modo", connection?.is_online == true ? "online" : "offline")
                                     if let network {
-                                        connectionLine("Transporte", network.transportLabel)
-                                        connectionLine("Protocolo", network.compatibilitySummary(isHost: connection?.is_host == true))
+                                        connectionLine("Rede", network.transportLabel)
+                                        connectionLine("Compatibilidade", network.compatibilitySummary(isHost: connection?.is_host == true))
                                     }
-                                    connectionLine("Fila", "\(diagnostics?.event_backlog ?? 0)")
+                                    connectionLine("Eventos", "\(diagnostics?.event_backlog ?? 0)")
                                     if let message = connection?.last_error?.message, !message.isEmpty {
                                         connectionLine("Erro", message, tint: .red.opacity(0.9))
                                     }
@@ -388,7 +413,7 @@ struct GameView: View {
 
                                 if !slotStates.isEmpty {
                                     VStack(alignment: .leading, spacing: 8) {
-                                        Text("Mesa Online")
+                                        Text("Assentos")
                                             .font(.caption.bold())
                                             .foregroundColor(.white.opacity(0.6))
                                         ForEach(slotStates) { slot in
@@ -410,14 +435,14 @@ struct GameView: View {
                                                 }
                                                 HStack(spacing: 8) {
                                                     if slot.can_vote_host {
-                                                        Button("Votar Host") {
+                                                        Button("Votar host") {
                                                             store.voteHost(candidateSeat: slot.seat)
                                                         }
                                                         .font(.caption2)
                                                         .buttonStyle(.bordered)
                                                     }
                                                     if slot.can_request_replacement {
-                                                        Button("Substituição") {
+                                                        Button("Chamar substituto") {
                                                             store.requestReplacementInvite(targetSeat: slot.seat)
                                                         }
                                                         .font(.caption2)
@@ -437,7 +462,7 @@ struct GameView: View {
                                 }
 
                                 VStack(alignment: .leading, spacing: 10) {
-                                    Text("Chat e Eventos")
+                                    Text("Atualizações")
                                         .font(.caption.bold())
                                         .foregroundColor(.white.opacity(0.6))
                                     ScrollView {
@@ -482,7 +507,7 @@ struct GameView: View {
                         .ignoresSafeArea()
                     
                     VStack(spacing: 24) {
-                        Text("FIM DE JOGO")
+                        Text("Fim de jogo")
                             .font(.system(size: 48, weight: .black, design: .rounded))
                             .foregroundColor(.yellow)
                         
@@ -492,12 +517,12 @@ struct GameView: View {
                             .foregroundColor(.white)
                         
                         let didWinMatch = snap.WinnerTeam == localTeam
-                        Text(didWinMatch ? "VOCÊ VENCEU! 🏆" : "VOCÊ PERDEU 😢")
+                            Text(didWinMatch ? "Você venceu! 🏆" : "Você perdeu 😢")
                             .font(.system(size: 28, weight: .bold, design: .rounded))
                             .foregroundColor(didWinMatch ? .yellow : .red)
                         
                         if isOnline {
-                            Button("SAIR DA SESSÃO") {
+                            Button("Sair da mesa") {
                                 store.closeSession()
                             }
                             .disabled(!store.canCloseSession)
@@ -507,7 +532,7 @@ struct GameView: View {
                             .controlSize(.large)
                             .font(.headline.weight(.black))
                         } else {
-                            Button("NOVA PARTIDA") {
+                            Button("Nova mesa") {
                                 store.replayOfflineMatch()
                             }
                             .buttonStyle(.borderedProminent)
@@ -687,12 +712,21 @@ private struct ScoreView: View {
                 .foregroundColor(.white)
         }
         .frame(width: 80, height: 80)
-        .background(Color.black.opacity(0.4))
-        .cornerRadius(16)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [Color.black.opacity(0.58), Color.black.opacity(0.32)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+        )
         .overlay(
             RoundedRectangle(cornerRadius: 16)
-                .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                .stroke(Color.white.opacity(0.14), lineWidth: 1)
         )
+        .shadow(color: .black.opacity(0.22), radius: 12, x: 0, y: 7)
     }
 }
 
@@ -710,13 +744,22 @@ private struct StakeBadge: View {
                 .foregroundColor(.yellow)
         }
         .frame(width: 90, height: 80)
-        .background(Color.black.opacity(0.5))
-        .cornerRadius(16)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [Color.yellow.opacity(0.18), Color.black.opacity(0.46)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+        )
         .overlay(
             RoundedRectangle(cornerRadius: 16)
                 .stroke(Color.yellow.opacity(0.6), lineWidth: 2)
                 .shadow(color: .yellow.opacity(0.4), radius: 5)
         )
+        .shadow(color: .black.opacity(0.26), radius: 12, x: 0, y: 7)
     }
 }
 
@@ -754,8 +797,14 @@ private struct LogView: View {
             }
         }
         .padding(12)
-        .background(Color.black.opacity(0.3))
-        .cornerRadius(12)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(.black.opacity(0.34))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(.white.opacity(0.08), lineWidth: 1)
+        )
         .frame(maxWidth: 250)
     }
 }
@@ -1044,14 +1093,14 @@ private struct TrickResultToast: View {
     var body: some View {
         VStack(spacing: 10) {
             if tie {
-                Text("EMPATE")
+                Text("Empate")
                     .font(.caption.bold())
                     .foregroundColor(.white.opacity(0.8))
                     .tracking(2)
                 Text("😐")
                     .font(.system(size: 54))
             } else if winnerTeam == localTeam {
-                Text("VOCÊ VENCEU")
+                Text("Você venceu")
                     .font(.headline.weight(.heavy))
                     .foregroundColor(.green)
                     .tracking(1.5)
@@ -1059,7 +1108,7 @@ private struct TrickResultToast: View {
                     .font(.caption.bold())
                     .foregroundColor(.white.opacity(0.8))
             } else {
-                Text("ELES VENCERAM")
+                Text("Eles venceram")
                     .font(.headline.weight(.heavy))
                     .foregroundColor(.red)
                     .tracking(1.5)

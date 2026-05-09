@@ -168,7 +168,19 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
     private bool canAnswerRaise;
 
     [ObservableProperty]
+    private bool canAcceptTruco;
+
+    [ObservableProperty]
+    private bool canRefuseTruco;
+
+    [ObservableProperty]
     private bool canPlayCards;
+
+    [ObservableProperty]
+    private bool canPlayFaceDown;
+
+    [ObservableProperty]
+    private string requestTrucoLabel = "TRUCO!";
 
     [ObservableProperty]
     private bool canSendChat;
@@ -372,17 +384,7 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private void PlayCard(CardState? card)
     {
-        if (card is null || BottomSeat.HandCards.Count == 0)
-        {
-            return;
-        }
-
-        int index = BottomSeat.HandCards.FindIndex(c => c.Card is not null && ReferenceEquals(c.Card, card));
-        if (index < 0)
-        {
-            index = BottomSeat.HandCards.FindIndex(c => c.Card is not null && c.Card.Rank == card.Rank && c.Card.Suit == card.Suit);
-        }
-
+        int index = FindLocalHandCardIndex(card);
         if (index < 0)
         {
             ErrorBannerText = "Carta não encontrada na mão local.";
@@ -390,6 +392,44 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
         }
 
         HandleDispatchResult(_core.PlayCard(index), "Carta enviada.");
+        RefreshSnapshot(_core.GetSnapshot(), preserveMenuPane: false);
+    }
+
+    [RelayCommand]
+    private void PlayFaceDownCard(CardState? card)
+    {
+        int index = FindLocalHandCardIndex(card);
+        if (index < 0)
+        {
+            ErrorBannerText = "Carta não encontrada na mão local.";
+            return;
+        }
+
+        HandleDispatchResult(_core.PlayCard(index, faceDown: true), "Carta virada enviada.");
+        RefreshSnapshot(_core.GetSnapshot(), preserveMenuPane: false);
+    }
+
+    [RelayCommand]
+    private void VoteHostForSeat(LobbySeatViewModel? seat)
+    {
+        if (seat is null || !seat.CanVoteHost)
+        {
+            return;
+        }
+
+        HandleDispatchResult(_core.VoteHost(seat.SeatIndex), "Voto de host enviado.");
+        RefreshSnapshot(_core.GetSnapshot(), preserveMenuPane: false);
+    }
+
+    [RelayCommand]
+    private void RequestReplacementInviteForSeat(LobbySeatViewModel? seat)
+    {
+        if (seat is null || !seat.CanRequestReplacement)
+        {
+            return;
+        }
+
+        HandleDispatchResult(_core.RequestReplacementInvite(seat.SeatIndex), "Pedido de substituição enviado.");
         RefreshSnapshot(_core.GetSnapshot(), preserveMenuPane: false);
     }
 
@@ -568,22 +608,29 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
     {
         List<LobbySeatViewModel> seats = [];
         Dictionary<int, int> seatProtocolVersions = _bundle.Connection.Network?.SeatProtocolVersions ?? [];
+        Dictionary<int, LobbySlotState> uiSlots = _bundle.Ui.LobbySlots.ToDictionary(slot => slot.Seat, slot => slot);
         if (lobby is not null)
         {
             for (int i = 0; i < lobby.NumPlayers; i++)
             {
+                uiSlots.TryGetValue(i, out LobbySlotState? uiSlot);
                 string name = i < lobby.Slots.Count ? lobby.Slots[i] : string.Empty;
                 bool connected = lobby.ConnectedSeats.GetValueOrDefault(i) || i == 0 && (lobby.HostSeat == 0 || lobby.AssignedSeat == 0);
+                bool isEmpty = uiSlot?.IsEmpty ?? string.IsNullOrWhiteSpace(name);
                 seats.Add(new LobbySeatViewModel
                 {
                     SeatIndex = i,
-                    Name = string.IsNullOrWhiteSpace(name) ? "assento vazio" : name,
-                    IsAssigned = i == lobby.AssignedSeat,
-                    IsConnected = connected,
-                    IsHost = i == lobby.HostSeat,
-                    IsEmpty = string.IsNullOrWhiteSpace(name),
+                    Name = string.IsNullOrWhiteSpace(uiSlot?.Name) ? string.IsNullOrWhiteSpace(name) ? "assento vazio" : name : uiSlot.Name,
+                    IsAssigned = uiSlot?.IsLocal ?? i == lobby.AssignedSeat,
+                    IsConnected = uiSlot?.IsConnected ?? connected,
+                    IsHost = uiSlot?.IsHost ?? i == lobby.HostSeat,
+                    IsEmpty = isEmpty,
+                    CanVoteHost = uiSlot?.CanVoteHost ?? false,
+                    CanRequestReplacement = uiSlot?.CanRequestReplacement ?? false,
                     ProtocolVersion = seatProtocolVersions.GetValueOrDefault(i),
-                    StatusText = connected ? "conectado" : lobby.Started && !string.IsNullOrWhiteSpace(name) ? "aguardando reconexão" : "livre",
+                    StatusText = string.IsNullOrWhiteSpace(uiSlot?.Status)
+                        ? connected ? "conectado" : lobby.Started && !isEmpty ? "aguardando reconexão" : "livre"
+                        : uiSlot.Status,
                 });
             }
         }
@@ -648,15 +695,20 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
     {
         MatchSnapshot? match = bundle.Match;
         bool hasMatch = match is not null;
+        ActionSnapshot actions = bundle.Ui.Actions;
         HasActiveSession = bundle.Mode != "idle";
         CanResetSession = HasActiveSession;
         CanSendChat = HasActiveSession;
         CanStartNewHand = hasMatch && (bundle.Mode == "offline_match" || bundle.Mode == "host_match");
-        CanRequestTruco = hasMatch &&
-            BottomSeat.IsCurrentTurn &&
-            (match!.CanAskTruco || match.PendingRaiseFor == BottomSeat.TeamIndex);
-        CanAnswerRaise = hasMatch && match!.PendingRaiseFor != -1 && BottomSeat.TeamIndex == match.PendingRaiseFor;
-        CanPlayCards = hasMatch && BottomSeat.IsCurrentTurn && match!.PendingRaiseFor == -1 && BottomSeat.HandCount > 0;
+        CanRequestTruco = hasMatch && actions.CanAskOrRaise;
+        CanAcceptTruco = hasMatch && actions.CanAccept;
+        CanRefuseTruco = hasMatch && actions.CanRefuse;
+        CanAnswerRaise = hasMatch && actions.MustRespond;
+        CanPlayCards = hasMatch && actions.CanPlayCard && BottomSeat.HandCount > 0;
+        CanPlayFaceDown = CanPlayCards && (match?.CurrentHand?.Round ?? 0) >= 2;
+        RequestTrucoLabel = hasMatch
+            ? GameStateHelper.GetAskTrucoLabel(match?.CurrentHand?.Stake)
+            : "TRUCO!";
     }
 
     private void HandleEvent(AppEvent appEvent)
@@ -1008,6 +1060,9 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
 
     private static void NormalizeBundle(SnapshotBundle bundle)
     {
+        bundle.Ui ??= new UIStateSnapshot();
+        bundle.Ui.LobbySlots ??= [];
+        bundle.Ui.Actions ??= new ActionSnapshot();
         bundle.Lobby ??= new LobbySnapshot();
         bundle.Lobby.Slots ??= [];
         bundle.Lobby.ConnectedSeats ??= [];
@@ -1036,5 +1091,21 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
         }
 
         bundle.Diagnostics.EventLog ??= [];
+    }
+
+    private int FindLocalHandCardIndex(CardState? card)
+    {
+        if (card is null || BottomSeat.HandCards.Count == 0)
+        {
+            return -1;
+        }
+
+        int index = BottomSeat.HandCards.FindIndex(c => c.Card is not null && ReferenceEquals(c.Card, card));
+        if (index >= 0)
+        {
+            return index;
+        }
+
+        return BottomSeat.HandCards.FindIndex(c => c.Card is not null && c.Card.Rank == card.Rank && c.Card.Suit == card.Suit);
     }
 }

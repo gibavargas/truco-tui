@@ -131,11 +131,80 @@ public sealed class SnapshotBundle
     [JsonPropertyName("lobby")]
     public LobbySnapshot? Lobby { get; set; }
 
+    [JsonPropertyName("ui")]
+    public UIStateSnapshot Ui { get; set; } = new();
+
     [JsonPropertyName("connection")]
     public ConnectionSnapshot Connection { get; set; } = new();
 
     [JsonPropertyName("diagnostics")]
     public DiagnosticsSnapshot Diagnostics { get; set; } = new();
+}
+
+public sealed class UIStateSnapshot
+{
+    [JsonPropertyName("lobby_slots")]
+    public List<LobbySlotState> LobbySlots { get; set; } = [];
+
+    [JsonPropertyName("actions")]
+    public ActionSnapshot Actions { get; set; } = new();
+}
+
+public sealed class LobbySlotState
+{
+    [JsonPropertyName("seat")]
+    public int Seat { get; set; }
+
+    [JsonPropertyName("name")]
+    public string Name { get; set; } = string.Empty;
+
+    [JsonPropertyName("status")]
+    public string Status { get; set; } = string.Empty;
+
+    [JsonPropertyName("is_empty")]
+    public bool IsEmpty { get; set; }
+
+    [JsonPropertyName("is_local")]
+    public bool IsLocal { get; set; }
+
+    [JsonPropertyName("is_host")]
+    public bool IsHost { get; set; }
+
+    [JsonPropertyName("is_connected")]
+    public bool IsConnected { get; set; }
+
+    [JsonPropertyName("can_vote_host")]
+    public bool CanVoteHost { get; set; }
+
+    [JsonPropertyName("can_request_replacement")]
+    public bool CanRequestReplacement { get; set; }
+}
+
+public sealed class ActionSnapshot
+{
+    [JsonPropertyName("local_player_id")]
+    public int LocalPlayerId { get; set; } = -1;
+
+    [JsonPropertyName("local_team")]
+    public int LocalTeam { get; set; } = -1;
+
+    [JsonPropertyName("can_play_card")]
+    public bool CanPlayCard { get; set; }
+
+    [JsonPropertyName("can_ask_or_raise")]
+    public bool CanAskOrRaise { get; set; }
+
+    [JsonPropertyName("must_respond")]
+    public bool MustRespond { get; set; }
+
+    [JsonPropertyName("can_accept")]
+    public bool CanAccept { get; set; }
+
+    [JsonPropertyName("can_refuse")]
+    public bool CanRefuse { get; set; }
+
+    [JsonPropertyName("can_close_session")]
+    public bool CanCloseSession { get; set; }
 }
 
 public sealed class AppEvent
@@ -330,6 +399,8 @@ public sealed class LobbySeatViewModel
     public bool IsConnected { get; set; }
     public bool IsHost { get; set; }
     public bool IsEmpty { get; set; }
+    public bool CanVoteHost { get; set; }
+    public bool CanRequestReplacement { get; set; }
     public int ProtocolVersion { get; set; }
     public string StatusText { get; set; } = string.Empty;
     public string DisplayLabel => $"Slot {SeatIndex + 1}: {Name}";

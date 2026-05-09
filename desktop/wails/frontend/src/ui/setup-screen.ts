@@ -22,10 +22,9 @@ export function renderSetupScreen(params: SetupScreenParams): string {
     <section class="setup10">
       <article class="surface-card setup10-hero">
         <div class="setup10-hero-copy">
-          <p class="eyebrow">${escapeHtml(t("setup_title"))}</p>
+          <p class="eyebrow">${escapeHtml(t("app_kicker"))}</p>
           <h2>${escapeHtml(t("setup_title"))}</h2>
           <p class="setup10-lede" data-pretext-block="lock-height">${escapeHtml(t("setup_intro"))}</p>
-          <p class="supporting-copy">${escapeHtml(t("setup_help"))}</p>
         </div>
         <div class="setup10-atlas">
           <div class="setup10-atlas-header">
@@ -121,7 +120,7 @@ export function renderSetupScreen(params: SetupScreenParams): string {
             <form class="setup10-pane" data-api-action="startOnlineHost" data-form-id="startOnlineHost">
               <div class="setup10-pane-head">
                 <div>
-                  <span class="eyebrow">${escapeHtml(t("setup_host"))}</span>
+                  <span class="eyebrow">${escapeHtml(t("setup_mode_online"))}</span>
                   <h4>${escapeHtml(t("setup_host"))}</h4>
                 </div>
               </div>
@@ -154,7 +153,7 @@ export function renderSetupScreen(params: SetupScreenParams): string {
             <form class="setup10-pane" data-api-action="joinOnline" data-form-id="joinOnline">
               <div class="setup10-pane-head">
                 <div>
-                  <span class="eyebrow">${escapeHtml(t("setup_join"))}</span>
+                  <span class="eyebrow">${escapeHtml(t("setup_mode_online"))}</span>
                   <h4>${escapeHtml(t("setup_join"))}</h4>
                 </div>
               </div>

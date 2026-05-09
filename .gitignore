@@ -16,6 +16,7 @@ native/**/target/
 
 # Output of go coverage
 *.out
+*.profraw
 
 # Go workspace file
 go.work

@@ -27,7 +27,7 @@ final class TrucoAppStore: ObservableObject {
             "player_names": names,
             "cpu_flags": cpuFlags,
         ])
-        dispatchAndPoll(intent: intent, successStatus: "Partida offline")
+        dispatchAndPoll(intent: intent, successStatus: "Mesa offline pronta")
     }
 
     func startOfflineDemo() {
@@ -36,16 +36,17 @@ final class TrucoAppStore: ObservableObject {
 
     // MARK: - Online Host
 
-    func createHost(name: String, numPlayers: Int, relayURL: String?) {
+    func createHost(name: String, numPlayers: Int, relayURL: String?, transportMode: String = "tcp_tls") {
         var payload: [String: Any] = [
             "host_name": name,
             "num_players": numPlayers,
+            "transport_mode": transportMode,
         ]
         if let relay = relayURL {
             payload["relay_url"] = relay
         }
         let intent = makeIntentJSON(kind: "create_host_session", payload: payload)
-        dispatchAndPoll(intent: intent, successStatus: "Sala criada")
+        dispatchAndPoll(intent: intent, successStatus: "Mesa criada")
     }
 
     // MARK: - Online Join
@@ -56,7 +57,7 @@ final class TrucoAppStore: ObservableObject {
             "player_name": name,
             "desired_role": desiredRole,
         ])
-        dispatchAndPoll(intent: intent, successStatus: "Conectado à sala")
+        dispatchAndPoll(intent: intent, successStatus: "Conectado por convite")
     }
 
     // MARK: - Game Actions
