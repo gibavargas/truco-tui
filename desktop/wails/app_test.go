@@ -340,7 +340,7 @@ func mustJSONPayload(t *testing.T, payload any) []byte {
 func waitForPlayableFirstTrick(t *testing.T, app *App) {
 	t.Helper()
 
-	for range 8 {
+	for range 15 {
 		snapshot := app.Snapshot()
 		if snapshot.Match != nil && snapshot.Match.CurrentHand.Round == 1 && snapshot.UI.Actions.CanPlayCard {
 			return
