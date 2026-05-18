@@ -2,3 +2,8 @@
 **Vulnerability:** Several functions (`newRelayServer` and `randomHex` in `cmd/truco-relay/main.go`, and `randomKey` in `browser-edition/cmd/httpapi/main.go`) used predictable fallback values (hardcoded strings or timestamps) if `crypto/rand` failed to generate entropy.
 **Learning:** Falling back to predictable values when entropy generation fails compromises the security of cryptographic operations, session keys, and secrets. It creates a silent failure where the system appears to work but is fundamentally insecure.
 **Prevention:** If an entropy source fails during cryptographic operations or secret generation, the application must panic and fail-closed rather than continuing with insecure fallback values.
+
+## 2024-05-18 - Missing Expiration Check in Custom TLS Verification
+**Vulnerability:** The application used `VerifyPeerCertificate` alongside `InsecureSkipVerify: true` to pin P2P certificates by SHA-256 fingerprint, but failed to validate the `NotBefore` and `NotAfter` expiration dates.
+**Learning:** `VerifyPeerCertificate` only provides the raw certificates. When bypassing standard verification, developers must explicitly implement all required PKI checks, including temporal validity.
+**Prevention:** Use `VerifyConnection` (preferred in Go 1.15+) instead of `VerifyPeerCertificate` when `InsecureSkipVerify: true` is set, as it provides `tls.ConnectionState` allowing direct access to parsed `PeerCertificates` for validating fields like expiration. Additionally, always use `crypto/subtle.ConstantTimeCompare` to verify fingerprints to prevent timing attacks.
