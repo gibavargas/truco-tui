@@ -2143,3 +2143,21 @@ input:focus {
     width: 3.7rem;
   }
 }
+
+
+/* Mobile collision cleanup: compact opponent badges and keep table clear. */
+@media (max-width: 760px) {
+  .app-shell-game .board-stage { inset: 5.6rem .55rem 9.2rem; }
+  .app-shell-game .seat-top { top: .35rem; }
+  .app-shell-game .seat-left { left: .75rem; top: 3.6rem; }
+  .app-shell-game .seat-right { right: .75rem; top: 3.6rem; }
+  .app-shell-game .player-seat { max-width: 8.7rem; gap: .35rem; }
+  .app-shell-game .player-head { padding: .38rem .55rem; max-width: 8.4rem; }
+  .app-shell-game .player-head strong { max-width: 7.2rem; font-size: .7rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .app-shell-game .player-head span { font-size: .55rem; }
+  .app-shell-game .player-cards { display: none; }
+  .app-shell-game .center-table { top: 54%; width: calc(100% - 1.25rem); z-index: 2; }
+  .app-shell-game .table-core { width: min(15rem, calc(100vw - 3rem)); height: min(15rem, calc(100vw - 3rem)); padding: .55rem; }
+  .app-shell-game .round-pile { min-height: 4.8rem; }
+  .app-shell-game .status-band { bottom: 12.8rem; }
+}
