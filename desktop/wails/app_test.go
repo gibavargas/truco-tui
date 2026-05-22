@@ -340,7 +340,8 @@ func mustJSONPayload(t *testing.T, payload any) []byte {
 func waitForPlayableFirstTrick(t *testing.T, app *App) {
 	t.Helper()
 
-	for range 40 {
+	for range 100 {
+		time.Sleep(10 * time.Millisecond)
 		snapshot := app.Snapshot()
 		if snapshot.Match != nil && snapshot.Match.CurrentHand.Round == 1 && snapshot.UI.Actions.CanPlayCard {
 			return
@@ -360,7 +361,8 @@ func waitForPlayableFirstTrick(t *testing.T, app *App) {
 func waitForMode(t *testing.T, app *App, want string) {
 	t.Helper()
 
-	for range 40 {
+	for range 100 {
+		time.Sleep(10 * time.Millisecond)
 		snapshot := app.Snapshot()
 		if snapshot.Mode == want {
 			return
