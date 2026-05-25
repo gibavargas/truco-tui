@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"crypto/subtle"
 
 	"truco-tui/internal/netrelay"
 	"truco-tui/internal/truco"
@@ -1175,7 +1176,7 @@ func (h *HostSession) handleConn(conn net.Conn) {
 		closeConnWithLog(conn, "protocol version mismatch")
 		return
 	}
-	if joinMsg.Token != h.token {
+	if subtle.ConstantTimeCompare([]byte(joinMsg.Token), []byte(h.token)) != 1 {
 		h.mu.Unlock()
 		_ = writeMessage(conn, Message{Type: "error", Error: "token inválido"})
 		closeConnWithLog(conn, "invalid token")
