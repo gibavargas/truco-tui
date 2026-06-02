@@ -2,3 +2,8 @@
 **Vulnerability:** Several functions (`newRelayServer` and `randomHex` in `cmd/truco-relay/main.go`, and `randomKey` in `browser-edition/cmd/httpapi/main.go`) used predictable fallback values (hardcoded strings or timestamps) if `crypto/rand` failed to generate entropy.
 **Learning:** Falling back to predictable values when entropy generation fails compromises the security of cryptographic operations, session keys, and secrets. It creates a silent failure where the system appears to work but is fundamentally insecure.
 **Prevention:** If an entropy source fails during cryptographic operations or secret generation, the application must panic and fail-closed rather than continuing with insecure fallback values.
+
+## 2026-06-02 - Fix timing attack in TLS fingerprint check and add expiration validation
+**Vulnerability:** The P2P TLS transport logic used `VerifyPeerCertificate` to manually check self-signed certificate fingerprints against an expected value. It validated the hashes using standard string inequality (`!=`) and completely omitted explicit certificate lifetime validation (`NotBefore` / `NotAfter`).
+**Learning:** Manual implementation of `InsecureSkipVerify: true` is risky. Using standard string comparison on cryptographic hashes or API keys leaves the application vulnerable to timing attacks. Relying on `VerifyPeerCertificate` in Go 1.15+ bypasses connection-level validation mechanisms.
+**Prevention:** Always use `VerifyConnection` (preferred over `VerifyPeerCertificate` in newer Go versions) when manually pinning or validating certificates. Explicitly validate `NotBefore` and `NotAfter` for custom certs. Always use `crypto/subtle.ConstantTimeCompare` (comparing `[]byte`) for validating sensitive strings like hashes or tokens.
