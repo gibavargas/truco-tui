@@ -89,8 +89,14 @@ func TestRuntimePumpEmitsAsyncUpdates(t *testing.T) {
 
 func TestPlayFaceDownCardUsesFaceDownPath(t *testing.T) {
 	app := NewApp()
-	if err := app.StartOfflineGame("Mesa", 2); err != nil {
-		t.Fatalf("StartOfflineGame: %v", err)
+	payload := mustJSONPayload(t, appcore.NewOfflineGamePayload{
+		PlayerNames: []string{"Mesa", "CPU-2"},
+		CPUFlags:    []bool{false, true},
+		SeedLo:      12345,
+		SeedHi:      67890,
+	})
+	if err := app.runtime.DispatchIntent(appcore.AppIntent{Kind: appcore.IntentNewOfflineGame, Payload: payload}); err != nil {
+		t.Fatalf("Dispatch IntentNewOfflineGame: %v", err)
 	}
 	waitForPlayableFirstTrick(t, app)
 
