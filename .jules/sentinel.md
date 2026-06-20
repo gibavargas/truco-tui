@@ -2,3 +2,7 @@
 **Vulnerability:** Several functions (`newRelayServer` and `randomHex` in `cmd/truco-relay/main.go`, and `randomKey` in `browser-edition/cmd/httpapi/main.go`) used predictable fallback values (hardcoded strings or timestamps) if `crypto/rand` failed to generate entropy.
 **Learning:** Falling back to predictable values when entropy generation fails compromises the security of cryptographic operations, session keys, and secrets. It creates a silent failure where the system appears to work but is fundamentally insecure.
 **Prevention:** If an entropy source fails during cryptographic operations or secret generation, the application must panic and fail-closed rather than continuing with insecure fallback values.
+## 2026-06-20 - [Fix timing attack vulnerability]
+**Vulnerability:** Found `==` and `!=` used for comparing secrets like tokens, credentials, certificate fingerprints, and SPKI pins.
+**Learning:** Comparing sensitive strings with non-constant time comparison can allow attackers to perform timing attacks and guess tokens, since string equality breaks early when characters don't match.
+**Prevention:** Always use `crypto/subtle.ConstantTimeCompare` to compare secrets.

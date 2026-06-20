@@ -7,6 +7,7 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/subtle"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/hex"
@@ -143,7 +144,7 @@ func tlsClientConfig(inv InviteKey) (*tls.Config, error) {
 				return errors.New("certificado TLS ausente")
 			}
 			got := sha256.Sum256(rawCerts[0])
-			if hex.EncodeToString(got[:]) != want {
+			if subtle.ConstantTimeCompare([]byte(hex.EncodeToString(got[:])), []byte(want)) != 1 {
 				return errors.New("fingerprint TLS inválido")
 			}
 			return nil
