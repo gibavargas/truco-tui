@@ -90,7 +90,7 @@ func TestRuntimePumpEmitsAsyncUpdates(t *testing.T) {
 func TestPlayFaceDownCardUsesFaceDownPath(t *testing.T) {
 	app := NewApp()
 	if err := app.StartOfflineGame("Mesa", 2); err != nil {
-		t.Fatalf("StartOfflineGame: %v", err)
+		t.Fatalf("DispatchIntent: %v", err)
 	}
 	waitForPlayableFirstTrick(t, app)
 
@@ -109,7 +109,7 @@ func TestPlayFaceDownCardUsesFaceDownPath(t *testing.T) {
 func TestResetAliasesCloseSession(t *testing.T) {
 	app := NewApp()
 	if err := app.StartOfflineGame("Mesa", 2); err != nil {
-		t.Fatalf("StartOfflineGame: %v", err)
+		t.Fatalf("DispatchIntent: %v", err)
 	}
 	if err := app.Reset(); err != nil {
 		t.Fatalf("Reset: %v", err)
