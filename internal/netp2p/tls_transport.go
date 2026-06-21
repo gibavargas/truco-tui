@@ -7,6 +7,7 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/subtle"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/hex"
@@ -125,7 +126,7 @@ func deterministicSerial(seed string) *big.Int {
 func randomTLSSeed() (string, error) {
 	var b [32]byte
 	if _, err := rand.Read(b[:]); err != nil {
-		return "", err
+		panic("entropy source failed")
 	}
 	return hex.EncodeToString(b[:]), nil
 }
@@ -138,12 +139,18 @@ func tlsClientConfig(inv InviteKey) (*tls.Config, error) {
 	cfg := &tls.Config{
 		MinVersion:         tls.VersionTLS13,
 		InsecureSkipVerify: true,
-		VerifyPeerCertificate: func(rawCerts [][]byte, _ [][]*x509.Certificate) error {
-			if len(rawCerts) == 0 {
+		VerifyConnection: func(cs tls.ConnectionState) error {
+			if len(cs.PeerCertificates) == 0 {
 				return errors.New("certificado TLS ausente")
 			}
-			got := sha256.Sum256(rawCerts[0])
-			if hex.EncodeToString(got[:]) != want {
+			cert := cs.PeerCertificates[0]
+			now := time.Now()
+			if now.Before(cert.NotBefore) || now.After(cert.NotAfter) {
+				return errors.New("certificado TLS expirado ou não ativo")
+			}
+			got := sha256.Sum256(cert.Raw)
+			gotStr := hex.EncodeToString(got[:])
+			if subtle.ConstantTimeCompare([]byte(gotStr), []byte(want)) != 1 {
 				return errors.New("fingerprint TLS inválido")
 			}
 			return nil
