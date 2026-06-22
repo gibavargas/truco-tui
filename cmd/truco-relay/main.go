@@ -8,6 +8,7 @@ import (
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/subtle"
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
@@ -385,7 +386,7 @@ func (s *relayServer) handleHeartbeat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	mem, ok := sess.Members[req.PeerID]
-	if !ok || mem.Credential != req.PeerCredential {
+	if !ok || subtle.ConstantTimeCompare([]byte(mem.Credential), []byte(req.PeerCredential)) != 1 {
 		s.metrics.authFailures.Add(1)
 		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "auth_failed"})
 		return
@@ -506,7 +507,7 @@ func (s *relayServer) handleHostRegister(conn quic.Connection, stream quic.Strea
 		return errors.New("session expired")
 	}
 	mem, ok := sess.Members[h.PeerID]
-	if !ok || mem.Credential != h.Credential || mem.ExpiresAt.Before(now) {
+	if !ok || subtle.ConstantTimeCompare([]byte(mem.Credential), []byte(h.Credential)) != 1 || mem.ExpiresAt.Before(now) {
 		return errors.New("auth_failed")
 	}
 	if h.PeerID != sess.AuthorityPeerID {
@@ -534,7 +535,7 @@ func (s *relayServer) handlePeerTunnel(downstreamReader io.Reader, downstream qu
 		return errors.New("session expired")
 	}
 	mem, ok := sess.Members[h.PeerID]
-	if !ok || mem.Credential != h.Credential || mem.ExpiresAt.Before(now) {
+	if !ok || subtle.ConstantTimeCompare([]byte(mem.Credential), []byte(h.Credential)) != 1 || mem.ExpiresAt.Before(now) {
 		s.mu.Unlock()
 		s.metrics.tunnelsFailed.Add(1)
 		s.metrics.authFailures.Add(1)

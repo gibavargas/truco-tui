@@ -1,0 +1,7 @@
+🚨 **Severity:** HIGH
+💡 **Vulnerability:** Timing attack vulnerability during session credential and token verification in the relay server.
+🎯 **Impact:** Malicious actors could theoretically use timing attacks (monitoring response times to guess credentials byte-by-byte) to bypass authentication or intercept sessions.
+🔧 **Fix:** Replaced standard string equality (`!=`) with `crypto/subtle.ConstantTimeCompare`, which compares byte slices in constant time.
+✅ **Verification:**
+1. Code reviewed to verify `crypto/subtle.ConstantTimeCompare` is used for all `Credential` comparisons.
+2. Verified unit tests run normally via `go test ./...`.
