@@ -125,7 +125,7 @@ func deterministicSerial(seed string) *big.Int {
 func randomTLSSeed() (string, error) {
 	var b [32]byte
 	if _, err := rand.Read(b[:]); err != nil {
-		return "", err
+		panic("entropy source failed")
 	}
 	return hex.EncodeToString(b[:]), nil
 }
