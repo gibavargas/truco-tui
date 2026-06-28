@@ -89,8 +89,14 @@ func TestRuntimePumpEmitsAsyncUpdates(t *testing.T) {
 
 func TestPlayFaceDownCardUsesFaceDownPath(t *testing.T) {
 	app := NewApp()
-	if err := app.StartOfflineGame("Mesa", 2); err != nil {
-		t.Fatalf("StartOfflineGame: %v", err)
+	// Initialize deterministically to avoid StartOfflineGame's non-deterministic seed flakiness
+	if err := app.dispatch("new_offline_game", appcore.NewOfflineGamePayload{
+		PlayerNames: []string{"Mesa", "CPU"},
+		CPUFlags:    []bool{false, true},
+		SeedLo:      1,
+		SeedHi:      0,
+	}); err != nil {
+		t.Fatalf("dispatch new_offline_game: %v", err)
 	}
 	waitForPlayableFirstTrick(t, app)
 
