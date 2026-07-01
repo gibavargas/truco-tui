@@ -775,9 +775,17 @@ function renderSetup(): string {
         </div>
         <p class="lede" data-pretext-block="lock-height">${escapeHtml(t("setup_intro"))}</p>
         <p class="supporting-copy">${escapeHtml(t("setup_help"))}</p>
-        <div class="intro-grid">
-          ${renderSetupNote(t("setup_signal_title"), t("setup_signal_body"))}
-          ${renderSetupNote(t("setup_runtime_title"), t("setup_runtime_body"))}
+        <div class="rules-card">
+          <div class="rules-grid">
+            <div class="rules-item">
+              <strong>${escapeHtml(t("setup_rules_title"))}</strong>
+              <p>${escapeHtml(t("setup_rules_body"))}</p>
+            </div>
+            <div class="rules-item">
+              <strong>${escapeHtml(t("setup_rules_manilha"))}</strong>
+              <p><code>${escapeHtml(t("setup_rules_manilha_detail"))}</code></p>
+            </div>
+          </div>
         </div>
       </article>
       <div class="setup-stack">
@@ -832,10 +840,15 @@ function renderSetup(): string {
                   </select>
                 </label>
               </div>
-              <label>
-                <span>${escapeHtml(t("setup_relay"))}</span>
-                <input name="relay_url" type="text" value="${escapeHtml(state.relayURL)}" placeholder="${escapeHtml(t("relay_placeholder"))}" autocomplete="off">
-              </label>
+              <details class="details-advanced">
+                <summary>${escapeHtml(t("setup_advanced"))}</summary>
+                <div>
+                  <label>
+                    <span>${escapeHtml(t("setup_relay"))}</span>
+                    <input name="relay_url" type="text" value="${escapeHtml(state.relayURL)}" placeholder="${escapeHtml(t("relay_placeholder"))}" autocomplete="off" title="${escapeHtml(t("setup_relay_hint"))}">
+                  </label>
+                </div>
+              </details>
               <button class="secondary-button" type="submit"${busyAttr("startOnlineHost")}>${buttonLabel("startOnlineHost", t("setup_host"))}</button>
             </form>
             <form class="mode-form" data-api-action="joinOnline" data-form-id="joinOnline">
@@ -903,8 +916,7 @@ function renderLobby(): string {
         </div>
         <div class="telemetry-strip">
           ${renderMetric(t("connection_status"), bundle.connection.status)}
-          ${renderMetric(t("connection_transport"), network?.transport || "-")}
-          ${renderMetric(t("connection_protocol"), protocolLabel(network))}
+          ${renderMetric(t("connection_mode"), bundle.connection.is_online ? t("connection_online") : t("connection_offline"))}
         </div>
       </article>
 
@@ -922,9 +934,6 @@ function renderLobby(): string {
         <div class="telemetry-grid">
           ${renderMetric(t("connection_status"), bundle.connection.status)}
           ${renderMetric(t("connection_mode"), bundle.connection.is_online ? t("connection_online") : t("connection_offline"))}
-          ${renderMetric(t("connection_transport"), network?.transport || "-")}
-          ${renderMetric(t("connection_protocol"), protocolLabel(network))}
-          ${renderMetric(t("connection_backlog"), String(bundle.diagnostics.event_backlog || 0))}
           ${bundle.lobby?.role ? renderMetric(t("connection_role"), bundle.lobby.role) : ""}
         </div>
       </article>
@@ -1021,10 +1030,21 @@ function renderGame(): string {
         <div class="score-center">
           <span>${escapeHtml(t("game_round"))} ${match.CurrentHand.Round}/3</span>
           <strong>${escapeHtml(stakeLabel)}</strong>
+          <span class="score-target">${escapeHtml(t("game_target"))}</span>
         </div>
         <div class="score-block">
           <span>${escapeHtml(t("team_them"))}</span>
           <strong>${themScore}</strong>
+        </div>
+        <div class="score-progress">
+          <div class="score-progress-track">
+            <div class="score-progress-fill-us" style="width:${Math.min(usScore / 12 * 100, 100)}%"></div>
+            <div class="score-progress-fill-them" style="width:${Math.min(themScore / 12 * 100, 100)}%"></div>
+          </div>
+          <div class="score-progress-label">
+            <span><strong>${usScore}</strong> / 12</span>
+            <span>12 / <strong>${themScore}</strong></span>
+          </div>
         </div>
       </article>
 
@@ -1032,10 +1052,9 @@ function renderGame(): string {
         <article class="surface-card board-card">
           <div class="card-head board-head">
             <div>
-              <p class="eyebrow">${escapeHtml(tableTitle)}</p>
               <h2>${escapeHtml(tableTitle)}</h2>
             </div>
-            ${isOnlineMode() ? `<form data-api-action="closeSession" data-form-id="closeSession"><button class="ghost-button danger" type="submit"${busyAttr("closeSession")}>${buttonLabel("closeSession", t("lobby_leave"))}</button></form>` : ""}
+            <form data-api-action="closeSession" data-form-id="closeSession"><button class="ghost-button danger" type="submit"${busyAttr("closeSession")}>${buttonLabel("closeSession", isOnlineMode() ? t("lobby_leave") : t("game_leave"))}</button></form>
           </div>
           <div class="status-band" role="status" aria-live="polite" data-pretext-block="lock-height">
             <span>${escapeHtml(t("game_status"))}</span>
@@ -1064,6 +1083,7 @@ function renderGame(): string {
                 <div class="table-chip table-chip-manilha">
                   <span>${escapeHtml(t("game_manilha"))}</span>
                   <strong>${escapeHtml(match.CurrentHand.Manilha || "-")}</strong>
+                  <span class="manilha-hint" title="${escapeHtml(t("game_manilha_hint"))}: ${escapeHtml(t("game_manilha_detail"))}">${escapeHtml(t("game_manilha_detail"))}</span>
                 </div>
               </div>
             </div>
@@ -1136,7 +1156,6 @@ function renderMobileGamePanel(bundle: SnapshotBundle, match: MatchSnapshot): st
           ${renderMetric(t("game_manilha"), match.CurrentHand.Manilha || "-")}
           ${renderMetric(t("game_player_to_move"), playerName(match, match.TurnPlayer))}
           ${isOnlineMode() ? renderMetric(t("connection_status"), bundle.connection.status) : ""}
-          ${isOnlineMode() ? renderMetric(t("connection_transport"), network?.transport || "-") : ""}
         </div>
         <pre class="event-feed compact" role="log" aria-live="polite" data-pretext-block="lock-height" data-pretext-whitespace="pre-wrap">${escapeHtml(renderEventFeed(match.Logs.slice(-6)))}</pre>
         ${isOnlineMode() ? `
@@ -1167,7 +1186,7 @@ function renderPlayers(match: MatchSnapshot): string {
             <span>${escapeHtml(relation)}${player.CPU ? ` · ${escapeHtml(t("game_cpu"))}` : ""}</span>
           </div>
           <div class="player-cards">
-            ${player.Hand.map(() => `<span class="card-back tiny"></span>`).join("")}
+            ${player.Hand.map(() => `<span class="card-back tiny" aria-hidden="true"></span>`).join("")}
           </div>
         </div>
       `;
@@ -1194,7 +1213,7 @@ function renderRoundCards(match: MatchSnapshot): string {
     return `
       <div class="${classes}">
         <span>${escapeHtml(playerName(match, played.PlayerID))}</span>
-        ${played.FaceDown ? `<span class="${faceDownClasses}"></span>` : renderCard(played.Card, "small")}
+        ${played.FaceDown ? `<span class="${faceDownClasses}" aria-hidden="true"></span>` : renderCard(played.Card, "small")}
       </div>
     `;
   }).join("");
@@ -1275,10 +1294,6 @@ function renderNetworkPanel(bundle: SnapshotBundle): string {
       <div class="telemetry-grid">
         ${renderMetric(t("connection_status"), bundle.connection.status)}
         ${renderMetric(t("connection_mode"), bundle.connection.is_online ? t("connection_online") : t("connection_offline"))}
-        ${renderMetric(t("connection_transport"), network?.transport || "-")}
-        ${renderMetric(t("connection_protocol"), protocolLabel(network))}
-        ${renderMetric(t("connection_backlog"), String(bundle.diagnostics.event_backlog || 0))}
-        ${bundle.lobby?.role ? renderMetric(t("connection_role"), bundle.lobby.role) : ""}
       </div>
       <form class="chat-form" data-api-action="sendChat" data-form-id="sendChat">
         <input name="message" type="text" autocomplete="off" placeholder="${escapeHtml(t("chat_placeholder"))}">

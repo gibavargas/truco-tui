@@ -2161,3 +2161,160 @@ input:focus {
   .app-shell-game .round-pile { min-height: 4.8rem; }
   .app-shell-game .status-band { bottom: 12.8rem; }
 }
+
+/* === UX Improvements === */
+
+/* Rules section on setup page */
+.rules-card {
+  margin-top: 1rem;
+}
+.rules-grid {
+  display: grid;
+  gap: .9rem;
+  margin-top: 1rem;
+}
+.rules-item {
+  display: grid;
+  gap: .35rem;
+  padding: 1rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: #080e127a;
+}
+.rules-item strong {
+  color: var(--accent-strong);
+  font-size: .92rem;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+.rules-item p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.5;
+  font-size: .92rem;
+}
+.rules-item code {
+  font-family: var(--mono);
+  font-size: .85rem;
+  color: var(--text);
+  background: #ffffff0a;
+  padding: .15rem .35rem;
+  border-radius: 4px;
+}
+
+/* Score progress bar */
+.score-progress {
+  grid-column: 1 / -1;
+  margin-top: .5rem;
+}
+.score-progress-track {
+  display: flex;
+  gap: .2rem;
+  height: .4rem;
+  border-radius: 999px;
+  overflow: hidden;
+  background: #ffffff0d;
+}
+.score-progress-fill-us {
+  background: linear-gradient(90deg, var(--accent-deep), var(--accent-strong));
+  transition: width .4s ease;
+}
+.score-progress-fill-them {
+  background: linear-gradient(90deg, var(--danger), #c45a48);
+  transition: width .4s ease;
+}
+.score-progress-label {
+  display: flex;
+  justify-content: space-between;
+  font-size: .7rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .12em;
+  margin-top: .35rem;
+}
+.score-progress-label strong {
+  color: var(--text);
+}
+
+/* Target score badge in score-center */
+.score-target {
+  display: block;
+  margin-top: .25rem;
+  font-size: .65rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .1em;
+  color: var(--accent-strong);
+  opacity: .8;
+}
+
+/* Manilha hint badge */
+.manilha-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: .4rem;
+  margin-top: .5rem;
+  padding: .4rem .7rem;
+  border-radius: 999px;
+  background: #ffffff0a;
+  border: 1px solid var(--line);
+  font-size: .75rem;
+  color: var(--muted);
+  cursor: help;
+}
+.manilha-hint:hover {
+  border-color: var(--line-strong);
+}
+.manilha-hint strong {
+  color: var(--accent-strong);
+  font-size: .7rem;
+}
+
+/* Advanced/relay details */
+.details-advanced {
+  margin-top: .9rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+.details-advanced summary {
+  padding: .7rem 1rem;
+  cursor: pointer;
+  font-size: .85rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .1em;
+  color: var(--muted);
+  background: #080e127a;
+  transition: background .16s ease;
+}
+.details-advanced summary:hover {
+  background: #080e1299;
+}
+.details-advanced[open] summary {
+  border-bottom: 1px solid var(--line);
+}
+.details-advanced > div {
+  padding: .9rem;
+}
+
+/* Game leave button container for offline */
+.game-leave-offline {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  z-index: 50;
+}
+.app-shell-game .game-leave-offline {
+  top: .8rem;
+  right: .8rem;
+}
+@media (max-width: 760px) {
+  .rules-grid { grid-template-columns: 1fr !important; }
+  .manilha-hint { font-size: .68rem; }
+}
+
+/* Card-back aria improvements: hide decorative text from screen readers */
+.card-back {
+  /* The ::after "TRUCO" text is decorative */
+}
