@@ -800,17 +800,13 @@ function renderSetup(): string {
           </div>
           <form data-api-action="startGame" data-form-id="startGame">
             <div class="field-grid">
-              <label>
-                <span>${escapeHtml(t("setup_name"))}</span>
-                <input name="name" type="text" value="${escapeHtml(state.playerName || t("name_placeholder"))}" autocomplete="off">
-              </label>
-              <label>
-                <span>${escapeHtml(t("setup_players"))}</span>
-                <select name="numPlayers">
-                  <option value="2">2</option>
-                  <option value="4">4</option>
-                </select>
-              </label>
+              <label for="offlineName">${escapeHtml(t("setup_name"))}</label>
+              <input id="offlineName" name="name" type="text" value="${escapeHtml(state.playerName || t("name_placeholder"))}" autocomplete="off" required>
+              <label for="offlinePlayers">${escapeHtml(t("setup_players"))}</label>
+              <select id="offlinePlayers" name="numPlayers" required>
+                <option value="2">2</option>
+                <option value="4">4</option>
+              </select>
             </div>
             <button class="primary-button" type="submit"${busyAttr("startGame")}>${buttonLabel("startGame", t("setup_start"))}</button>
           </form>
@@ -828,25 +824,19 @@ function renderSetup(): string {
             <form class="mode-form" data-api-action="startOnlineHost" data-form-id="startOnlineHost">
               <div class="mini-head">${escapeHtml(t("setup_host"))}</div>
               <div class="field-grid">
-                <label>
-                  <span>${escapeHtml(t("setup_name"))}</span>
-                  <input name="name" type="text" value="${escapeHtml(state.playerName || t("name_placeholder"))}" autocomplete="off">
-                </label>
-                <label>
-                  <span>${escapeHtml(t("setup_players"))}</span>
-                  <select name="numPlayers">
-                    <option value="2">2</option>
-                    <option value="4">4</option>
-                  </select>
-                </label>
+                <label for="hostName">${escapeHtml(t("setup_name"))}</label>
+                <input id="hostName" name="name" type="text" value="${escapeHtml(state.playerName || t("name_placeholder"))}" autocomplete="off" required>
+                <label for="hostPlayers">${escapeHtml(t("setup_players"))}</label>
+                <select id="hostPlayers" name="numPlayers" required>
+                  <option value="2">2</option>
+                  <option value="4">4</option>
+                </select>
               </div>
               <details class="details-advanced">
                 <summary>${escapeHtml(t("setup_advanced"))}</summary>
                 <div>
-                  <label>
-                    <span>${escapeHtml(t("setup_relay"))}</span>
-                    <input name="relay_url" type="text" value="${escapeHtml(state.relayURL)}" placeholder="${escapeHtml(t("relay_placeholder"))}" autocomplete="off" title="${escapeHtml(t("setup_relay_hint"))}">
-                  </label>
+                  <label for="hostRelay">${escapeHtml(t("setup_relay"))}</label>
+                  <input id="hostRelay" name="relay_url" type="text" value="${escapeHtml(state.relayURL)}" placeholder="${escapeHtml(t("relay_placeholder"))}" autocomplete="off" title="${escapeHtml(t("setup_relay_hint"))}">
                 </div>
               </details>
               <button class="secondary-button" type="submit"${busyAttr("startOnlineHost")}>${buttonLabel("startOnlineHost", t("setup_host"))}</button>
@@ -854,23 +844,17 @@ function renderSetup(): string {
             <form class="mode-form" data-api-action="joinOnline" data-form-id="joinOnline">
               <div class="mini-head">${escapeHtml(t("setup_join"))}</div>
               <div class="field-grid">
-                <label>
-                  <span>${escapeHtml(t("setup_name"))}</span>
-                  <input name="name" type="text" value="${escapeHtml(state.playerName || t("name_placeholder"))}" autocomplete="off">
-                </label>
-                <label>
-                  <span>${escapeHtml(t("setup_invite"))}</span>
-                  <input name="key" type="text" autocomplete="off">
-                </label>
+                <label for="joinName">${escapeHtml(t("setup_name"))}</label>
+                <input id="joinName" name="name" type="text" value="${escapeHtml(state.playerName || t("name_placeholder"))}" autocomplete="off" required>
+                <label for="joinInvite">${escapeHtml(t("setup_invite"))}</label>
+                <input id="joinInvite" name="key" type="text" autocomplete="off" required>
               </div>
-              <label>
-                <span>${escapeHtml(t("setup_role"))}</span>
-                <select name="role">
+              <label for="joinRole">${escapeHtml(t("setup_role"))}</label>
+                <select id="joinRole" name="role">
                   <option value="auto">${escapeHtml(t("role_auto"))}</option>
                   <option value="partner">${escapeHtml(t("role_partner"))}</option>
                   <option value="opponent">${escapeHtml(t("role_opponent"))}</option>
                 </select>
-              </label>
               <button class="secondary-button strong" type="submit"${busyAttr("joinOnline")}>${buttonLabel("joinOnline", t("setup_join"))}</button>
             </form>
           </div>
@@ -954,7 +938,7 @@ function renderLobby(): string {
             <h3>${escapeHtml(t("lobby_chat"))}</h3>
           </div>
           <form class="chat-form" data-api-action="sendChat" data-form-id="sendChat">
-            <input name="message" type="text" autocomplete="off" placeholder="${escapeHtml(t("chat_placeholder"))}">
+            <input name="message" type="text" autocomplete="off" placeholder="${escapeHtml(t("chat_placeholder"))}" aria-label="${escapeHtml(t("chat_placeholder"))}" required>
             <button class="secondary-button" type="submit"${busyAttr("sendChat")}>${buttonLabel("sendChat", t("lobby_chat"))}</button>
           </form>
           <form data-api-action="closeSession" data-form-id="closeSession">
@@ -1160,7 +1144,7 @@ function renderMobileGamePanel(bundle: SnapshotBundle, match: MatchSnapshot): st
         <pre class="event-feed compact" role="log" aria-live="polite" data-pretext-block="lock-height" data-pretext-whitespace="pre-wrap">${escapeHtml(renderEventFeed(match.Logs.slice(-6)))}</pre>
         ${isOnlineMode() ? `
           <form class="chat-form" data-api-action="sendChat" data-form-id="sendChatMobile">
-            <input name="message" type="text" autocomplete="off" placeholder="${escapeHtml(t("chat_placeholder"))}">
+            <input name="message" type="text" autocomplete="off" placeholder="${escapeHtml(t("chat_placeholder"))}" aria-label="${escapeHtml(t("chat_placeholder"))}" required>
             <button class="secondary-button" type="submit"${busyAttr("sendChatMobile")}>${buttonLabel("sendChatMobile", t("lobby_chat"))}</button>
           </form>
         ` : ""}
@@ -1296,7 +1280,7 @@ function renderNetworkPanel(bundle: SnapshotBundle): string {
         ${renderMetric(t("connection_mode"), bundle.connection.is_online ? t("connection_online") : t("connection_offline"))}
       </div>
       <form class="chat-form" data-api-action="sendChat" data-form-id="sendChat">
-        <input name="message" type="text" autocomplete="off" placeholder="${escapeHtml(t("chat_placeholder"))}">
+        <input name="message" type="text" autocomplete="off" placeholder="${escapeHtml(t("chat_placeholder"))}" aria-label="${escapeHtml(t("chat_placeholder"))}" required>
         <button class="secondary-button" type="submit"${busyAttr("sendChat")}>${buttonLabel("sendChat", t("lobby_chat"))}</button>
       </form>
     </article>
