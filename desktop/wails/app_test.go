@@ -89,12 +89,18 @@ func TestRuntimePumpEmitsAsyncUpdates(t *testing.T) {
 
 func TestPlayFaceDownCardUsesFaceDownPath(t *testing.T) {
 	app := NewApp()
-	if err := app.StartOfflineGame("Mesa", 2); err != nil {
-		t.Fatalf("StartOfflineGame: %v", err)
+	err := app.dispatch("new_offline_game", map[string]any{
+		"player_names": []string{"Mesa", "CPU-2"},
+		"cpu_flags":    []bool{false, true},
+		"seed_lo":      float64(42),
+		"seed_hi":      float64(42),
+	})
+	if err != nil {
+		t.Fatalf("dispatch new_offline_game: %v", err)
 	}
 	waitForPlayableFirstTrick(t, app)
 
-	err := app.PlayFaceDownCard(0)
+	err = app.PlayFaceDownCard(0)
 	if err == nil {
 		t.Fatal("expected first-trick face-down play to fail")
 	}
@@ -108,8 +114,14 @@ func TestPlayFaceDownCardUsesFaceDownPath(t *testing.T) {
 
 func TestResetAliasesCloseSession(t *testing.T) {
 	app := NewApp()
-	if err := app.StartOfflineGame("Mesa", 2); err != nil {
-		t.Fatalf("StartOfflineGame: %v", err)
+	err := app.dispatch("new_offline_game", map[string]any{
+		"player_names": []string{"Mesa", "CPU-2"},
+		"cpu_flags":    []bool{false, true},
+		"seed_lo":      float64(42),
+		"seed_hi":      float64(42),
+	})
+	if err != nil {
+		t.Fatalf("dispatch new_offline_game: %v", err)
 	}
 	if err := app.Reset(); err != nil {
 		t.Fatalf("Reset: %v", err)
