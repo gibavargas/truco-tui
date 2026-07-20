@@ -3,6 +3,8 @@ package netp2p
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
+	"crypto/subtle"
 	"crypto/tls"
 	"encoding/hex"
 	"errors"
@@ -960,7 +962,8 @@ func (h *HostSession) createReplacementInviteLocked(requesterSeat, targetSeat in
 	if err != nil {
 		return "", err
 	}
-	h.replaceInvites[replaceToken] = targetSeat
+	sum := sha256.Sum256([]byte(replaceToken))
+	h.replaceInvites[hex.EncodeToString(sum[:])] = targetSeat
 	inv := h.inviteBase
 	inv.ReplaceToken = replaceToken
 	if h.cfg.TransportMode == "relay_quic_v2" {
@@ -972,7 +975,8 @@ func (h *HostSession) createReplacementInviteLocked(requesterSeat, targetSeat in
 			TargetSeat:     targetSeat,
 		})
 		if err != nil {
-			delete(h.replaceInvites, replaceToken)
+			sum := sha256.Sum256([]byte(replaceToken))
+			delete(h.replaceInvites, hex.EncodeToString(sum[:]))
 			return "", err
 		}
 		inv.RelayJoinTicket = ticketResp.JoinTicket
@@ -1175,7 +1179,7 @@ func (h *HostSession) handleConn(conn net.Conn) {
 		closeConnWithLog(conn, "protocol version mismatch")
 		return
 	}
-	if joinMsg.Token != h.token {
+	if subtle.ConstantTimeCompare([]byte(joinMsg.Token), []byte(h.token)) != 1 {
 		h.mu.Unlock()
 		_ = writeMessage(conn, Message{Type: "error", Error: "token inválido"})
 		closeConnWithLog(conn, "invalid token")
@@ -1210,7 +1214,9 @@ func (h *HostSession) handleConn(conn net.Conn) {
 			}
 			reconnect = true
 		} else if joinMsg.ReplaceToken != "" {
-			target, ok := h.replaceInvites[joinMsg.ReplaceToken]
+			sum := sha256.Sum256([]byte(joinMsg.ReplaceToken))
+			hashedToken := hex.EncodeToString(sum[:])
+			target, ok := h.replaceInvites[hashedToken]
 			if !ok {
 				h.mu.Unlock()
 				_ = writeMessage(conn, Message{Type: "error", Error: "convite de reposição inválido"})
@@ -1291,7 +1297,8 @@ func (h *HostSession) handleConn(conn net.Conn) {
 				delete(h.seatID, slot)
 			}
 			if replacementToken != "" {
-				h.replaceInvites[replacementToken] = slot
+				sum := sha256.Sum256([]byte(replacementToken))
+				h.replaceInvites[hex.EncodeToString(sum[:])] = slot
 			}
 		}
 		h.dropClientLocked(slot, "falha no handshake")
@@ -1300,7 +1307,8 @@ func (h *HostSession) handleConn(conn net.Conn) {
 		return
 	}
 	if replacementToken != "" {
-		delete(h.replaceInvites, replacementToken)
+		sum := sha256.Sum256([]byte(replacementToken))
+		delete(h.replaceInvites, hex.EncodeToString(sum[:]))
 	}
 	if reconnect && hasCachedState {
 		snap := cloneSnapshot(cachedState)
