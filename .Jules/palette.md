@@ -1,1 +1,5 @@
 ## 2025-03-11 - Playing Card Accessibility\n**Learning:** When rendering custom CSS-based playing cards that use repeated characters and decorative unicode symbols for the suit, screen readers will read out confusing, nonsensical strings like '4 ♦ ♦ 4 ♦'. To fix this, mark the entire card container with `role="img"` and an `aria-label` containing the readable label (e.g. '4 de Ouros'), while setting `aria-hidden="true"` on all the child elements containing the visual symbols and duplicating caption texts. \n**Action:** Use this `role="img"` with `aria-label` pattern anytime visual text/unicode combinations act purely as decorative graphical elements rather than meaningful flowing text.
+
+## 2023-10-27 - Chat Inputs without Labels
+**Learning:** Compact chat inputs in this app rely purely on placeholders for context. Without explicit labels, this creates accessibility issues for screen readers.
+**Action:** Always add an `aria-label` attribute to input fields that do not have a visible `<label>` element.
