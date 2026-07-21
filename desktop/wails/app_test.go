@@ -27,7 +27,12 @@ func TestStartOfflineGameEmitsRuntimeUpdate(t *testing.T) {
 		updates <- update
 	}
 
-	if err := app.StartOfflineGame("Mesa", 4); err != nil {
+	if err := app.dispatch(appcore.IntentNewOfflineGame, appcore.NewOfflineGamePayload{
+		PlayerNames: []string{"Mesa", "CPU 1", "CPU 2", "CPU 3"},
+		CPUFlags:    []bool{false, true, true, true},
+		SeedLo:      123,
+		SeedHi:      456,
+	}); err != nil {
 		t.Fatalf("StartOfflineGame: %v", err)
 	}
 
@@ -89,7 +94,12 @@ func TestRuntimePumpEmitsAsyncUpdates(t *testing.T) {
 
 func TestPlayFaceDownCardUsesFaceDownPath(t *testing.T) {
 	app := NewApp()
-	if err := app.StartOfflineGame("Mesa", 2); err != nil {
+	if err := app.dispatch(appcore.IntentNewOfflineGame, appcore.NewOfflineGamePayload{
+		PlayerNames: []string{"Mesa", "CPU 1"},
+		CPUFlags:    []bool{false, true},
+		SeedLo:      123,
+		SeedHi:      456,
+	}); err != nil {
 		t.Fatalf("StartOfflineGame: %v", err)
 	}
 	waitForPlayableFirstTrick(t, app)
@@ -108,7 +118,12 @@ func TestPlayFaceDownCardUsesFaceDownPath(t *testing.T) {
 
 func TestResetAliasesCloseSession(t *testing.T) {
 	app := NewApp()
-	if err := app.StartOfflineGame("Mesa", 2); err != nil {
+	if err := app.dispatch(appcore.IntentNewOfflineGame, appcore.NewOfflineGamePayload{
+		PlayerNames: []string{"Mesa", "CPU 1"},
+		CPUFlags:    []bool{false, true},
+		SeedLo:      123,
+		SeedHi:      456,
+	}); err != nil {
 		t.Fatalf("StartOfflineGame: %v", err)
 	}
 	if err := app.Reset(); err != nil {
