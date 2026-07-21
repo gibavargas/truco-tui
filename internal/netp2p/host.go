@@ -3,6 +3,8 @@ package netp2p
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
+	"crypto/subtle"
 	"crypto/tls"
 	"encoding/hex"
 	"errors"
@@ -107,7 +109,7 @@ type seatRateState struct {
 func randomToken() (string, error) {
 	b := make([]byte, 16)
 	if _, err := rand.Read(b); err != nil {
-		return "", err
+		panic("entropy source failed")
 	}
 	return hex.EncodeToString(b), nil
 }
@@ -960,7 +962,7 @@ func (h *HostSession) createReplacementInviteLocked(requesterSeat, targetSeat in
 	if err != nil {
 		return "", err
 	}
-	h.replaceInvites[replaceToken] = targetSeat
+	h.replaceInvites[hashToken(replaceToken)] = targetSeat
 	inv := h.inviteBase
 	inv.ReplaceToken = replaceToken
 	if h.cfg.TransportMode == "relay_quic_v2" {
@@ -972,7 +974,7 @@ func (h *HostSession) createReplacementInviteLocked(requesterSeat, targetSeat in
 			TargetSeat:     targetSeat,
 		})
 		if err != nil {
-			delete(h.replaceInvites, replaceToken)
+			delete(h.replaceInvites, hashToken(replaceToken))
 			return "", err
 		}
 		inv.RelayJoinTicket = ticketResp.JoinTicket
@@ -1175,7 +1177,7 @@ func (h *HostSession) handleConn(conn net.Conn) {
 		closeConnWithLog(conn, "protocol version mismatch")
 		return
 	}
-	if joinMsg.Token != h.token {
+	if subtle.ConstantTimeCompare([]byte(joinMsg.Token), []byte(h.token)) != 1 {
 		h.mu.Unlock()
 		_ = writeMessage(conn, Message{Type: "error", Error: "token inválido"})
 		closeConnWithLog(conn, "invalid token")
@@ -1210,7 +1212,7 @@ func (h *HostSession) handleConn(conn net.Conn) {
 			}
 			reconnect = true
 		} else if joinMsg.ReplaceToken != "" {
-			target, ok := h.replaceInvites[joinMsg.ReplaceToken]
+			target, ok := h.replaceInvites[hashToken(joinMsg.ReplaceToken)]
 			if !ok {
 				h.mu.Unlock()
 				_ = writeMessage(conn, Message{Type: "error", Error: "convite de reposição inválido"})
@@ -1291,7 +1293,7 @@ func (h *HostSession) handleConn(conn net.Conn) {
 				delete(h.seatID, slot)
 			}
 			if replacementToken != "" {
-				h.replaceInvites[replacementToken] = slot
+				h.replaceInvites[hashToken(replacementToken)] = slot
 			}
 		}
 		h.dropClientLocked(slot, "falha no handshake")
@@ -1300,7 +1302,7 @@ func (h *HostSession) handleConn(conn net.Conn) {
 		return
 	}
 	if replacementToken != "" {
-		delete(h.replaceInvites, replacementToken)
+		delete(h.replaceInvites, hashToken(replacementToken))
 	}
 	if reconnect && hasCachedState {
 		snap := cloneSnapshot(cachedState)
@@ -1522,4 +1524,9 @@ func (h *HostSession) SendGameStateToSeat(seat int, state Message) {
 	if !ok && !h.started {
 		h.broadcastLobbyLocked()
 	}
+}
+
+func hashToken(token string) string {
+	h := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(h[:])
 }
