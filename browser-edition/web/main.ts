@@ -951,11 +951,11 @@ function renderLobby(): string {
       <div class="lobby-side-stack">
         <article class="surface-card chat-card">
           <div class="card-head">
-            <h3>${escapeHtml(t("lobby_chat"))}</h3>
+            <h3>${escapeHtml(t('lobby_chat'))}</h3>
           </div>
           <form class="chat-form" data-api-action="sendChat" data-form-id="sendChat">
-            <input name="message" type="text" autocomplete="off" placeholder="${escapeHtml(t("chat_placeholder"))}">
-            <button class="secondary-button" type="submit"${busyAttr("sendChat")}>${buttonLabel("sendChat", t("lobby_chat"))}</button>
+            <input name="message" type="text" aria-label="${escapeHtml(t('chat_placeholder'))}" autocomplete="off" placeholder="${escapeHtml(t('chat_placeholder'))}">
+            <button class="secondary-button" type="submit"${busyAttr("sendChat")}>${buttonLabel("sendChat", t('lobby_chat'))}</button>
           </form>
           <form data-api-action="closeSession" data-form-id="closeSession">
             <button class="ghost-button danger" type="submit"${busyAttr("closeSession")}>${buttonLabel("closeSession", t("lobby_leave"))}</button>
@@ -1160,8 +1160,8 @@ function renderMobileGamePanel(bundle: SnapshotBundle, match: MatchSnapshot): st
         <pre class="event-feed compact" role="log" aria-live="polite" data-pretext-block="lock-height" data-pretext-whitespace="pre-wrap">${escapeHtml(renderEventFeed(match.Logs.slice(-6)))}</pre>
         ${isOnlineMode() ? `
           <form class="chat-form" data-api-action="sendChat" data-form-id="sendChatMobile">
-            <input name="message" type="text" autocomplete="off" placeholder="${escapeHtml(t("chat_placeholder"))}">
-            <button class="secondary-button" type="submit"${busyAttr("sendChatMobile")}>${buttonLabel("sendChatMobile", t("lobby_chat"))}</button>
+            <input name="message" type="text" aria-label="${escapeHtml(t('chat_placeholder'))}" autocomplete="off" placeholder="${escapeHtml(t('chat_placeholder'))}">
+            <button class="secondary-button" type="submit"${busyAttr("sendChatMobile")}>${buttonLabel("sendChatMobile", t('lobby_chat'))}</button>
           </form>
         ` : ""}
       </details>
@@ -1296,8 +1296,8 @@ function renderNetworkPanel(bundle: SnapshotBundle): string {
         ${renderMetric(t("connection_mode"), bundle.connection.is_online ? t("connection_online") : t("connection_offline"))}
       </div>
       <form class="chat-form" data-api-action="sendChat" data-form-id="sendChat">
-        <input name="message" type="text" autocomplete="off" placeholder="${escapeHtml(t("chat_placeholder"))}">
-        <button class="secondary-button" type="submit"${busyAttr("sendChat")}>${buttonLabel("sendChat", t("lobby_chat"))}</button>
+        <input name="message" type="text" aria-label="${escapeHtml(t('chat_placeholder'))}" autocomplete="off" placeholder="${escapeHtml(t('chat_placeholder'))}">
+        <button class="secondary-button" type="submit"${busyAttr("sendChat")}>${buttonLabel("sendChat", t('lobby_chat'))}</button>
       </form>
     </article>
   `;
