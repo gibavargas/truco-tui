@@ -1,0 +1,11 @@
+🛡️ Sentinel: [HIGH] Fix side-channel and memory-disclosure vulnerabilities
+
+🚨 Severity: HIGH
+💡 Vulnerability:
+1. `replaceInvites` map in `host.go` stored sensitive plaintext replacement tokens directly as map keys, potentially exposing them in memory dumps.
+2. Reconnection `sessionID` validation in `reconnectSlotLocked` used standard string equality (`==`), making it vulnerable to timing attacks.
+🎯 Impact: Attackers could potentially extract plaintext tokens from memory dumps or exploit timing differences to forge session IDs and hijack player seats.
+🔧 Fix:
+1. Created `hashToken` using SHA-256 to hash replacement tokens before using them as keys in the `replaceInvites` map.
+2. Replaced `==` with `crypto/subtle.ConstantTimeCompare` when comparing `sessionID` with `seatID` during reconnects.
+✅ Verification: Ran unit tests (`go test -v ./...`) and `staticcheck` to ensure there are no regressions or styling errors.
