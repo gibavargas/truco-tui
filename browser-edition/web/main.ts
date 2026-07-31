@@ -1132,7 +1132,7 @@ function renderGame(): string {
     : `${t("game_stake")} ${match.CurrentHand.Stake}`;
   const tableTitle = isOnlineMode() ? t("game_title_online") : t("game_title_offline");
   const waitingOnOthers = !match.MatchFinished && !canPlay && !canRespond;
-  const statusBandClasses = ["status-band", waitingOnOthers ? "status-band-waiting" : "status-band-action"].filter(Boolean).join(" ");
+  const handStatusClasses = ["hand-status", waitingOnOthers ? "hand-status-waiting" : "hand-status-action"].filter(Boolean).join(" ");
 
   return `
     <section class="game-layout">
@@ -1144,6 +1144,7 @@ function renderGame(): string {
         <div class="score-center">
           <span>${escapeHtml(t("game_round"))} ${Math.min(match.CurrentHand.Round, 3)}/3</span>
           <strong>${escapeHtml(stakeLabel)}</strong>
+          <div class="trick-dots" aria-label="${escapeHtml(t("game_trick_track"))}">${renderTrickDots(match)}</div>
           <span class="score-target">${escapeHtml(t("game_target"))}</span>
         </div>
         <div class="score-block">
@@ -1170,37 +1171,15 @@ function renderGame(): string {
             </div>
             <form data-api-action="closeSession" data-form-id="closeSession"><button class="ghost-button danger" type="submit"${busyAttr("closeSession")}>${buttonLabel("closeSession", isOnlineMode() ? t("lobby_leave") : t("game_leave"))}</button></form>
           </div>
-          <div class="${statusBandClasses}" role="status" aria-live="polite" data-pretext-block="lock-height">
-            <span>${escapeHtml(t("game_status"))}</span>
-            <strong>${waitingOnOthers ? `<i class="status-dot" aria-hidden="true"></i>` : ""}${escapeHtml(topLine)}</strong>
-          </div>
-          <div class="mobile-table-strip" aria-label="${escapeHtml(t("game_table_notes"))}">
-            <span>${escapeHtml(t("game_vira"))}: ${escapeHtml(cardLabel(match.CurrentHand.Vira))}</span>
-            <span>${escapeHtml(t("game_manilha"))}: ${escapeHtml(match.CurrentHand.Manilha || "-")}</span>
-            <span>${escapeHtml(t("game_player_to_move"))}: ${escapeHtml(playerName(match, match.TurnPlayer))}</span>
-          </div>
           <div class="board-stage board-stage-${match.NumPlayers}">
             ${renderPlayers(match)}
+            ${renderViraCorner(match)}
             <div class="center-table">
-              <div class="table-shell">
-                <div class="table-chip table-chip-vira">
-                  <span class="table-chip-label">${escapeHtml(t("game_vira"))}</span>
-                  ${renderCard(match.CurrentHand.Vira, "regular")}
-                </div>
-                <div class="table-core">
-                  <div class="table-rail">
-                    <span>${escapeHtml(t("game_trick_track"))}</span>
-                    <div class="trick-track">${renderTrickTrack(match)}</div>
-                  </div>
-                  <div class="round-pile">${renderRoundCards(match)}</div>
-                </div>
-                <div class="table-chip table-chip-manilha">
-                  <span class="table-chip-label">${escapeHtml(t("game_manilha"))}</span>
-                  <strong>${escapeHtml(match.CurrentHand.Manilha || "-")}</strong>
-                  <span class="manilha-hint" title="${escapeHtml(t("game_manilha_hint"))}: ${escapeHtml(t("game_manilha_detail"))}">${escapeHtml(t("game_manilha_detail"))}</span>
-                </div>
+              <div class="table-core">
+                <div class="round-pile">${renderRoundCards(match)}</div>
               </div>
             </div>
+            ${renderTrickPiles(match)}
           </div>
         </article>
 
@@ -1214,6 +1193,7 @@ function renderGame(): string {
           </div>
           <div class="action-dock-grid">
             <div class="hand-tray">
+              <div class="${handStatusClasses}" role="status" aria-live="polite">${waitingOnOthers ? `<i class="status-dot" aria-hidden="true"></i>` : ""}<span>${escapeHtml(topLine)}</span></div>
               <div class="hand-row">
                 ${(localPlayer?.Hand || []).map((card, index, hand) => renderPlayableCard(card, index, hand.length, canPlay, match.CurrentHand.Round >= 2, match.CurrentHand.Manilha)).join("")}
               </div>
@@ -1327,7 +1307,7 @@ function renderRoundCards(match: MatchSnapshot): string {
         `;
       }).join("");
     }
-    return `<div class="round-card-placeholder">${escapeHtml(t("game_table_waiting"))}</div>`;
+    return "";
   }
   return roundCards.map((played, index) => {
     const key = roundCardKey(match.CurrentHand.Round, played, index);
@@ -1349,21 +1329,62 @@ function renderRoundCards(match: MatchSnapshot): string {
   }).join("");
 }
 
-function renderTrickTrack(match: MatchSnapshot): string {
+function renderTrickDots(match: MatchSnapshot): string {
   const localTeamId = localTeam(match);
   return Array.from({ length: 3 }, (_, index) => {
     const result = match.CurrentHand.TrickResults[index];
     let label = t("game_trick_pending");
-    let className = "trick-pill";
+    let className = "trick-dot";
     if (result === -1) {
       label = t("game_trick_draw");
-      className += " trick-pill-draw";
+      className += " trick-dot-draw";
     } else if (result === 0 || result === 1) {
       label = result === localTeamId ? t("team_us") : t("team_them");
-      className += ` trick-pill-team-${result + 1}`;
+      className += result === localTeamId ? " trick-dot-us" : " trick-dot-them";
     }
-    return `<span class="${className}">${escapeHtml(t("game_trick_label", index + 1))} · ${escapeHtml(label)}</span>`;
+    return `<span class="${className}" title="${escapeHtml(t("game_trick_label", index + 1))} · ${escapeHtml(label)}"></span>`;
   }).join("");
+}
+
+function renderViraCorner(match: MatchSnapshot): string {
+  const vira = match.CurrentHand.Vira;
+  if (!vira || !vira.Rank) {
+    return "";
+  }
+  const manilha = match.CurrentHand.Manilha || "-";
+  return `
+    <div class="table-vira-corner">
+      <span class="table-vira-label">${escapeHtml(t("game_vira"))}</span>
+      ${renderCard(vira, "small")}
+      <span class="manilha-badge" title="${escapeHtml(t("game_manilha_hint"))}: ${escapeHtml(t("game_manilha_detail"))}">${escapeHtml(t("game_manilha"))} · ${escapeHtml(manilha)}</span>
+    </div>
+  `;
+}
+
+function renderTrickPiles(match: MatchSnapshot): string {
+  const localTeamId = localTeam(match);
+  const piles = match.TrickPiles || [];
+  const renderSide = (team: number, side: string, label: string): string => {
+    const packets = piles
+      .filter((pile) => pile.Team === team && pile.Cards.length > 0)
+      .map((pile, pileIndex) => {
+        const cards = pile.Cards.map((played, cardIndex) => {
+          const face = played.FaceDown
+            ? `<span class="card-back tiny" aria-hidden="true"></span>`
+            : renderCard(played.Card, "tiny", played.Card.Rank === match.CurrentHand.Manilha);
+          return `<span class="pile-card" style="--pile-card:${cardIndex}">${face}</span>`;
+        }).join("");
+        return `<div class="trick-pile-packet" style="--pile-index:${pileIndex}" title="${escapeHtml(t("game_trick_label", pile.Round))} · ${escapeHtml(playerName(match, pile.Winner))}">${cards}</div>`;
+      })
+      .join("");
+    return `
+      <div class="trick-pile-side trick-pile-${side}">
+        <span class="trick-pile-label">${escapeHtml(label)}</span>
+        <div class="trick-pile-stack">${packets}</div>
+      </div>
+    `;
+  };
+  return renderSide(localTeamId, "us", t("team_us")) + renderSide(localTeamId === 0 ? 1 : 0, "them", t("team_them"));
 }
 
 function renderPlayableCard(card: Card, index: number, total: number, canPlay: boolean, canFaceDown: boolean, manilhaRank: string): string {
