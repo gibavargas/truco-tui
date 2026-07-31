@@ -932,7 +932,7 @@ func (r *Runtime) stepCPUIfNeededLocked() (bool, error) {
 	if r.mode == ModeHostMatch && pid == 0 {
 		return false, nil
 	}
-	act := truco.DecideCPUAction(r.game, pid)
+	act := truco.DecideCPUActionCpp(r.game, pid)
 	if err := applyCPUActionToGame(r.game, pid, act); err != nil {
 		return false, err
 	}
