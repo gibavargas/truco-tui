@@ -23,6 +23,9 @@ interface AppState {
   error: string;
   busyForm: string;
   initialized: boolean;
+  renderSig: string;
+  lastMatchSig: string;
+  lastMatchChangeAt: number;
   uiFx: UIFxState;
 }
 
@@ -36,6 +39,7 @@ interface UIFxState {
   confettiStrength: number;
   trucoCall: { text: string; until: number } | null;
   lastRaiseSignal: string;
+  announcement: { title: string; sub: string; kind: string; until: number } | null;
 }
 
 const SESSION_KEY = "truco-browser-session-id";
@@ -61,6 +65,9 @@ const state: AppState = {
   error: "",
   busyForm: "",
   initialized: false,
+  renderSig: "",
+  lastMatchSig: "",
+  lastMatchChangeAt: 0,
   uiFx: {
     dealtCardKeys: new Set<string>(),
     playedCardKeys: new Set<string>(),
@@ -71,6 +78,7 @@ const state: AppState = {
     confettiStrength: 1,
     trucoCall: null,
     lastRaiseSignal: "",
+    announcement: null,
   },
 };
 
@@ -100,6 +108,18 @@ root.addEventListener("click", (event) => {
   }
 });
 
+root.addEventListener("keydown", (event) => {
+  if (event.key !== "Enter" && event.key !== " ") {
+    return;
+  }
+  const target = event.target as HTMLElement | null;
+  const copyTarget = target?.closest<HTMLElement>("[data-copy-text][role='button']");
+  if (copyTarget) {
+    event.preventDefault();
+    void copyInvite(copyTarget);
+  }
+});
+
 root.addEventListener("change", (event) => {
   const select = event.target as HTMLSelectElement | null;
   if (!select || select.name !== "locale") {
@@ -111,6 +131,21 @@ root.addEventListener("change", (event) => {
 window.addEventListener("resize", () => {
   window.clearTimeout(resizeTimer);
   resizeTimer = window.setTimeout(() => syncMeasuredBlocks(), 90);
+});
+
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden || !state.bundle) {
+    return;
+  }
+  void (async () => {
+    try {
+      await syncSnapshot({ withEvents: true });
+      state.error = "";
+    } catch (error) {
+      state.error = errorMessage(error);
+    }
+    render();
+  })();
 });
 
 void bootstrap();
@@ -142,7 +177,7 @@ async function ensureSession(force = false): Promise<void> {
   sessionStorage.setItem(SESSION_KEY, state.sessionId);
 
   const localeResult = await sendRequest("setLocale", { locale: state.locale }, { retryOnSessionMiss: false });
-  updateStateFromResult(localeResult, { replaceEvents: true });
+  updateStateFromResult(localeResult);
 }
 
 async function applyLocale(locale: LocaleCode): Promise<void> {
@@ -155,7 +190,7 @@ async function applyLocale(locale: LocaleCode): Promise<void> {
       await ensureSession();
     }
     const result = await sendRequest("setLocale", { locale });
-    updateStateFromResult(result, { replaceEvents: true });
+    updateStateFromResult(result);
     state.error = "";
   } catch (error) {
     state.error = errorMessage(error);
@@ -228,7 +263,7 @@ async function syncSnapshot(options: { withEvents: boolean }): Promise<void> {
   if (!result.ok) {
     throw new Error(result.error || "snapshot failed");
   }
-  updateStateFromResult(result, { replaceEvents: action === "pollEvents" });
+  updateStateFromResult(result);
 }
 
 async function sendRequest(
@@ -564,7 +599,7 @@ function boolValue(source: unknown, key: string, fallback: boolean): boolean {
   return isRecord(source) && typeof source[key] === "boolean" ? source[key] : fallback;
 }
 
-function updateStateFromResult(result: ApiResult, options?: { replaceEvents?: boolean }): void {
+function updateStateFromResult(result: ApiResult): void {
   const previousMatch = state.bundle?.match;
 
   if (result.bundle) {
@@ -575,22 +610,66 @@ function updateStateFromResult(result: ApiResult, options?: { replaceEvents?: bo
   }
 
   if (result.events) {
-    state.events = options?.replaceEvents
-      ? result.events.slice(-EVENT_LIMIT)
-      : [...state.events, ...result.events].slice(-EVENT_LIMIT);
+    mergeEvents(result.events);
   }
 
   if (result.error) {
     state.error = result.error;
   }
 
+  trackMatchChange(state.bundle?.match);
   updateVisualFx(previousMatch, state.bundle?.match, result.events || []);
+}
+
+function mergeEvents(incoming: RuntimeEvent[]): void {
+  if (incoming.length === 0) {
+    return;
+  }
+  const seen = new Set(state.events.map((event) => event.sequence));
+  const fresh = incoming.filter((event) => !seen.has(event.sequence));
+  if (fresh.length === 0) {
+    return;
+  }
+  state.events = [...state.events, ...fresh]
+    .sort((a, b) => a.sequence - b.sequence)
+    .slice(-EVENT_LIMIT);
+}
+
+function matchSignature(match: MatchSnapshot | undefined): string {
+  if (!match) {
+    return "";
+  }
+  return JSON.stringify([
+    match.TurnPlayer,
+    match.CurrentHand.Round,
+    match.CurrentHand.RoundCards.length,
+    match.CurrentHand.TrickResults,
+    match.CurrentHand.Stake,
+    match.PendingRaiseFor,
+    match.MatchPoints,
+    match.MatchFinished,
+    match.LastTrickSeq,
+    match.CurrentHand.Vira.Rank,
+    match.CurrentHand.Vira.Suit,
+    match.Logs.length,
+  ]);
+}
+
+function trackMatchChange(nextMatch: MatchSnapshot | undefined): void {
+  const sig = matchSignature(nextMatch);
+  if (sig !== state.lastMatchSig) {
+    state.lastMatchSig = sig;
+    state.lastMatchChangeAt = Date.now();
+  }
 }
 
 function clearSession(): void {
   state.sessionId = "";
   sessionStorage.removeItem(SESSION_KEY);
   state.bundle = null;
+  state.events = [];
+  state.lastMatchSig = "";
+  state.lastMatchChangeAt = 0;
 }
 
 function clearTransientFx(): void {
@@ -608,11 +687,15 @@ function scheduleFxRefresh(): void {
   if (state.uiFx.trucoCall && state.uiFx.trucoCall.until <= now) {
     state.uiFx.trucoCall = null;
   }
+  if (state.uiFx.announcement && state.uiFx.announcement.until <= now) {
+    state.uiFx.announcement = null;
+  }
   const deadlines = [
     state.uiFx.shakeUntil,
     state.uiFx.pulseUntil,
     state.uiFx.confettiUntil,
     state.uiFx.trucoCall?.until || 0,
+    state.uiFx.announcement?.until || 0,
   ].filter((time) => time > now);
   if (deadlines.length === 0) {
     return;
@@ -639,12 +722,39 @@ function isOnlineMode(): boolean {
 
 function render(): void {
   const focusState = captureFocusState();
+  const detailsState = captureDetailsState();
   root.innerHTML = renderApp();
   restoreFocusState(focusState);
+  restoreDetailsState(detailsState);
+  state.renderSig = computeRenderSignature();
   syncRefreshLoop();
   syncMeasuredBlocks();
+  scrollEventFeeds();
   scheduleFxRefresh();
   clearTransientFx();
+}
+
+function captureDetailsState(): Record<string, boolean> {
+  const open: Record<string, boolean> = {};
+  for (const details of root.querySelectorAll<HTMLDetailsElement>("details[data-details-key]")) {
+    open[details.dataset.detailsKey || ""] = details.open;
+  }
+  return open;
+}
+
+function restoreDetailsState(open: Record<string, boolean>): void {
+  for (const details of root.querySelectorAll<HTMLDetailsElement>("details[data-details-key]")) {
+    const key = details.dataset.detailsKey || "";
+    if (key in open) {
+      details.open = open[key];
+    }
+  }
+}
+
+function scrollEventFeeds(): void {
+  for (const feed of root.querySelectorAll<HTMLElement>(".event-feed")) {
+    feed.scrollTop = feed.scrollHeight;
+  }
 }
 
 interface FocusState {
@@ -840,7 +950,7 @@ function renderSetup(): string {
                   </select>
                 </label>
               </div>
-              <details class="details-advanced">
+              <details class="details-advanced" data-details-key="advanced-relay">
                 <summary>${escapeHtml(t("setup_advanced"))}</summary>
                 <div>
                   <label>
@@ -910,10 +1020,11 @@ function renderLobby(): string {
           <span class="section-pill">${escapeHtml(isHost ? t("slot_host") : t("connection_online"))}</span>
         </div>
         <div class="invite-code-row invite-code-row-wide">
-          <code class="invite-code">${escapeHtml(invite || "----")}</code>
+          <code class="invite-code"${invite ? ` data-copy-text="${escapeHtml(invite)}" role="button" tabindex="0" title="${escapeHtml(t("invite_click_copy"))}"` : ""}>${escapeHtml(invite || "----")}</code>
           ${invite ? `<button type="button" class="ghost-button" data-copy-text="${escapeHtml(invite)}">${escapeHtml(t("invite_copy"))}</button>` : ""}
           ${isHost ? `<form data-api-action="startOnlineMatch" data-form-id="startOnlineMatch"><button class="primary-button" type="submit"${busyAttr("startOnlineMatch")}>${buttonLabel("startOnlineMatch", t("lobby_start"))}</button></form>` : ""}
         </div>
+        ${invite ? `<p class="supporting-copy invite-copy-hint">${escapeHtml(t("invite_click_copy"))}</p>` : ""}
         <div class="telemetry-strip">
           ${renderMetric(t("connection_status"), bundle.connection.status)}
           ${renderMetric(t("connection_mode"), bundle.connection.is_online ? t("connection_online") : t("connection_offline"))}
@@ -973,11 +1084,12 @@ function renderSeat(slot: LobbySlotState): string {
     slot.is_provisional_cpu ? t("slot_cpu") : "",
     slot.is_connected ? t("slot_online") : t("slot_offline"),
   ].filter(Boolean);
+  const presence = slot.is_empty ? "empty" : slot.is_provisional_cpu ? "cpu" : slot.is_connected ? "online" : "offline";
 
   return `
     <div class="seat-tile${slot.is_local ? " seat-tile-local" : ""}">
       <div class="seat-heading">
-        <strong>${escapeHtml(slot.name || t("slot_empty"))}</strong>
+        <strong><i class="presence-dot presence-${presence}" aria-hidden="true"></i>${escapeHtml(slot.name || t("slot_empty"))}</strong>
         <span>#${slot.seat + 1}</span>
       </div>
       <div class="tag-row">${tags.map((tag) => `<span>${escapeHtml(tag)}</span>`).join("")}</div>
@@ -1019,6 +1131,8 @@ function renderGame(): string {
     ? `${t("game_pending_raise")} ${raiseLabel(pendingTo)}`
     : `${t("game_stake")} ${match.CurrentHand.Stake}`;
   const tableTitle = isOnlineMode() ? t("game_title_online") : t("game_title_offline");
+  const waitingOnOthers = !match.MatchFinished && !canPlay && !canRespond;
+  const statusBandClasses = ["status-band", waitingOnOthers ? "status-band-waiting" : "status-band-action"].filter(Boolean).join(" ");
 
   return `
     <section class="game-layout">
@@ -1028,7 +1142,7 @@ function renderGame(): string {
           <strong>${usScore}</strong>
         </div>
         <div class="score-center">
-          <span>${escapeHtml(t("game_round"))} ${match.CurrentHand.Round}/3</span>
+          <span>${escapeHtml(t("game_round"))} ${Math.min(match.CurrentHand.Round, 3)}/3</span>
           <strong>${escapeHtml(stakeLabel)}</strong>
           <span class="score-target">${escapeHtml(t("game_target"))}</span>
         </div>
@@ -1056,9 +1170,9 @@ function renderGame(): string {
             </div>
             <form data-api-action="closeSession" data-form-id="closeSession"><button class="ghost-button danger" type="submit"${busyAttr("closeSession")}>${buttonLabel("closeSession", isOnlineMode() ? t("lobby_leave") : t("game_leave"))}</button></form>
           </div>
-          <div class="status-band" role="status" aria-live="polite" data-pretext-block="lock-height">
+          <div class="${statusBandClasses}" role="status" aria-live="polite" data-pretext-block="lock-height">
             <span>${escapeHtml(t("game_status"))}</span>
-            <strong>${escapeHtml(topLine)}</strong>
+            <strong>${waitingOnOthers ? `<i class="status-dot" aria-hidden="true"></i>` : ""}${escapeHtml(topLine)}</strong>
           </div>
           <div class="mobile-table-strip" aria-label="${escapeHtml(t("game_table_notes"))}">
             <span>${escapeHtml(t("game_vira"))}: ${escapeHtml(cardLabel(match.CurrentHand.Vira))}</span>
@@ -1070,7 +1184,7 @@ function renderGame(): string {
             <div class="center-table">
               <div class="table-shell">
                 <div class="table-chip table-chip-vira">
-                  <span>${escapeHtml(t("game_vira"))}</span>
+                  <span class="table-chip-label">${escapeHtml(t("game_vira"))}</span>
                   ${renderCard(match.CurrentHand.Vira, "regular")}
                 </div>
                 <div class="table-core">
@@ -1081,7 +1195,7 @@ function renderGame(): string {
                   <div class="round-pile">${renderRoundCards(match)}</div>
                 </div>
                 <div class="table-chip table-chip-manilha">
-                  <span>${escapeHtml(t("game_manilha"))}</span>
+                  <span class="table-chip-label">${escapeHtml(t("game_manilha"))}</span>
                   <strong>${escapeHtml(match.CurrentHand.Manilha || "-")}</strong>
                   <span class="manilha-hint" title="${escapeHtml(t("game_manilha_hint"))}: ${escapeHtml(t("game_manilha_detail"))}">${escapeHtml(t("game_manilha_detail"))}</span>
                 </div>
@@ -1090,7 +1204,7 @@ function renderGame(): string {
           </div>
         </article>
 
-        <article class="surface-card action-dock">
+        <article class="surface-card action-dock${canPlay || canRespond ? " action-dock-turn" : ""}">
           <div class="card-head">
             <div>
               <p class="eyebrow">${escapeHtml(t("game_hand"))}</p>
@@ -1101,7 +1215,7 @@ function renderGame(): string {
           <div class="action-dock-grid">
             <div class="hand-tray">
               <div class="hand-row">
-                ${(localPlayer?.Hand || []).map((card, index, hand) => renderPlayableCard(card, index, hand.length, canPlay, match.CurrentHand.Round >= 2)).join("")}
+                ${(localPlayer?.Hand || []).map((card, index, hand) => renderPlayableCard(card, index, hand.length, canPlay, match.CurrentHand.Round >= 2, match.CurrentHand.Manilha)).join("")}
               </div>
             </div>
             <div class="dock-controls">
@@ -1129,7 +1243,7 @@ function renderGame(): string {
         <article class="surface-card table-note-card">
           <div class="card-head">
             <h3>${escapeHtml(t("game_table_notes"))}</h3>
-            <span class="section-pill">${escapeHtml(t("game_round"))} ${match.CurrentHand.Round}/3</span>
+            <span class="section-pill">${escapeHtml(t("game_round"))} ${Math.min(match.CurrentHand.Round, 3)}/3</span>
           </div>
           <div class="telemetry-grid table-note-grid">
             ${renderMetric(t("game_vira"), cardLabel(match.CurrentHand.Vira))}
@@ -1149,7 +1263,7 @@ function renderMobileGamePanel(bundle: SnapshotBundle, match: MatchSnapshot): st
   const network = bundle.connection.network;
   return `
     <article class="surface-card mobile-game-panel">
-      <details>
+      <details data-details-key="mobile-game-panel">
         <summary>${escapeHtml(t("game_activity"))}</summary>
         <div class="telemetry-grid">
           ${renderMetric(t("game_vira"), cardLabel(match.CurrentHand.Vira))}
@@ -1197,6 +1311,22 @@ function renderPlayers(match: MatchSnapshot): string {
 function renderRoundCards(match: MatchSnapshot): string {
   const roundCards = match.CurrentHand.RoundCards || [];
   if (roundCards.length === 0) {
+    const announcement = state.uiFx.announcement;
+    const replayActive = announcement !== null
+      && (announcement.kind === "trick" || announcement.kind === "tie")
+      && announcement.until > Date.now();
+    const lastCards = match.LastTrickCards || [];
+    if (replayActive && lastCards.length > 0) {
+      return lastCards.map((played) => {
+        const winner = !match.LastTrickTie && played.PlayerID === match.LastTrickWinner;
+        return `
+          <div class="played-card played-card-replay${winner ? " played-card-winner" : ""}">
+            <span>${escapeHtml(playerName(match, played.PlayerID))}</span>
+            ${played.FaceDown ? `<span class="card-back small" aria-hidden="true"></span>` : renderCard(played.Card, "small", played.Card.Rank === match.CurrentHand.Manilha)}
+          </div>
+        `;
+      }).join("");
+    }
     return `<div class="round-card-placeholder">${escapeHtml(t("game_table_waiting"))}</div>`;
   }
   return roundCards.map((played, index) => {
@@ -1213,13 +1343,14 @@ function renderRoundCards(match: MatchSnapshot): string {
     return `
       <div class="${classes}">
         <span>${escapeHtml(playerName(match, played.PlayerID))}</span>
-        ${played.FaceDown ? `<span class="${faceDownClasses}" aria-hidden="true"></span>` : renderCard(played.Card, "small")}
+        ${played.FaceDown ? `<span class="${faceDownClasses}" aria-hidden="true"></span>` : renderCard(played.Card, "small", played.Card.Rank === match.CurrentHand.Manilha)}
       </div>
     `;
   }).join("");
 }
 
 function renderTrickTrack(match: MatchSnapshot): string {
+  const localTeamId = localTeam(match);
   return Array.from({ length: 3 }, (_, index) => {
     const result = match.CurrentHand.TrickResults[index];
     let label = t("game_trick_pending");
@@ -1228,31 +1359,33 @@ function renderTrickTrack(match: MatchSnapshot): string {
       label = t("game_trick_draw");
       className += " trick-pill-draw";
     } else if (result === 0 || result === 1) {
-      label = t("game_trick_team", result + 1);
+      label = result === localTeamId ? t("team_us") : t("team_them");
       className += ` trick-pill-team-${result + 1}`;
     }
     return `<span class="${className}">${escapeHtml(t("game_trick_label", index + 1))} · ${escapeHtml(label)}</span>`;
   }).join("");
 }
 
-function renderPlayableCard(card: Card, index: number, total: number, canPlay: boolean, canFaceDown: boolean): string {
+function renderPlayableCard(card: Card, index: number, total: number, canPlay: boolean, canFaceDown: boolean, manilhaRank: string): string {
   const key = handCardKey(card, index);
+  const isManilha = manilhaRank !== "" && card.Rank === manilhaRank;
   const classes = [
     "play-card",
     canPlay ? "play-card-playable" : "",
     state.uiFx.dealtCardKeys.has(key) ? "deal-in" : "",
   ].filter(Boolean).join(" ");
   const style = `style="--card-index:${index}; --card-total:${total};"`;
+  const cardFace = renderCard(card, "regular", isManilha);
 
   if (!canPlay) {
-    return `<div class="${classes} lock-card" ${style}>${renderCard(card)}<span class="card-caption" aria-hidden="true">${escapeHtml(cardLabel(card))}</span></div>`;
+    return `<div class="${classes} lock-card" ${style}>${cardFace}<span class="card-caption" aria-hidden="true">${escapeHtml(cardLabel(card))}</span></div>`;
   }
 
   return `
     <div class="${classes}" ${style}>
       <form data-api-action="play" data-form-id="play-${index}">
         <input type="hidden" name="cardIndex" value="${index}">
-        <button class="card-button" type="submit" aria-label="${escapeHtml(`${t("game_play")} ${cardLabel(card)}`)}"${busyAttr(`play-${index}`)}>${renderCard(card)}</button>
+        <button class="card-button" type="submit" aria-label="${escapeHtml(`${t("game_play")} ${cardLabel(card)}`)}"${busyAttr(`play-${index}`)}>${cardFace}</button>
       </form>
       <div class="play-card-actions">
         <span class="card-caption" aria-hidden="true">${escapeHtml(cardLabel(card))}</span>
@@ -1305,12 +1438,24 @@ function renderNetworkPanel(bundle: SnapshotBundle): string {
 
 function renderOverlay(match: MatchSnapshot, localTeamId: number): string {
   const youWon = match.WinnerTeam === localTeamId;
+  const usScore = teamScore(match, localTeamId);
+  const themScore = teamScore(match, localTeamId === 0 ? 1 : 0);
   return `
-    <div class="overlay-layer">
-      <div class="overlay-card" role="dialog" aria-modal="true" aria-live="assertive" aria-labelledby="match-result-title">
-        <p class="eyebrow">${escapeHtml(t("game_status"))}</p>
+    <div class="overlay-layer overlay-layer-end">
+      <div class="overlay-card overlay-card-${youWon ? "win" : "loss"}" role="dialog" aria-modal="true" aria-live="assertive" aria-labelledby="match-result-title">
+        <p class="eyebrow">${escapeHtml(t("status_match_end"))}</p>
         <h3 id="match-result-title">${escapeHtml(youWon ? t("overlay_win") : t("overlay_loss"))}</h3>
-        <p>${escapeHtml(t("overlay_score", teamScore(match, 0), teamScore(match, 1)))}</p>
+        <div class="overlay-final-score">
+          <div class="overlay-score-block overlay-score-us">
+            <span>${escapeHtml(t("team_us"))}</span>
+            <strong>${usScore}</strong>
+          </div>
+          <span class="overlay-score-divider" aria-hidden="true">×</span>
+          <div class="overlay-score-block">
+            <span>${escapeHtml(t("team_them"))}</span>
+            <strong>${themScore}</strong>
+          </div>
+        </div>
         <form data-api-action="reset" data-form-id="reset">
           <button class="primary-button" type="submit"${busyAttr("reset")}>${buttonLabel("reset", t("game_play_again"))}</button>
         </form>
@@ -1331,6 +1476,19 @@ function renderFxLayers(): string {
     `);
   }
 
+  if (state.uiFx.announcement && state.uiFx.announcement.until > now && !state.bundle?.match?.MatchFinished) {
+    const announcement = state.uiFx.announcement;
+    const remaining = Math.max(200, announcement.until - now);
+    layers.push(`
+      <div class="announcement-layer" aria-live="polite" aria-atomic="true">
+        <div class="announcement-card announcement-${escapeHtml(announcement.kind)}" style="animation-duration:${remaining}ms">
+          <strong>${escapeHtml(announcement.title)}</strong>
+          ${announcement.sub ? `<span>${escapeHtml(announcement.sub)}</span>` : ""}
+        </div>
+      </div>
+    `);
+  }
+
   if (state.uiFx.confettiUntil > now) {
     const pieces = Array.from({ length: state.uiFx.confettiStrength > 1 ? 52 : 30 }, (_, index) => `
       <span class="confetti-piece" style="--piece:${index}; --hue:${(index * 37) % 360}; --drift:${index % 2 === 0 ? 1 : -1};"></span>
@@ -1341,13 +1499,19 @@ function renderFxLayers(): string {
   return layers.join("");
 }
 
-function renderCard(card: Card, size: "tiny" | "small" | "regular" = "regular"): string {
+function renderCard(card: Card, size: "tiny" | "small" | "regular" = "regular", manilha = false): string {
   const red = card.Suit === "Copas" || card.Suit === "Ouros";
+  const classes = [
+    "card-face",
+    `card-face-${size}`,
+    red ? "card-face-red" : "",
+    manilha ? "card-face-manilha" : "",
+  ].filter(Boolean).join(" ");
   return `
-    <span class="card-face card-face-${size}${red ? " card-face-red" : ""}" role="img" aria-label="${escapeHtml(cardLabel(card))}">
-      <span class="card-corner" aria-hidden="true">${escapeHtml(card.Rank)}${escapeHtml(suitSymbol(card.Suit))}</span>
+    <span class="${classes}" role="img" aria-label="${escapeHtml(cardLabel(card))}">
+      <span class="card-corner" aria-hidden="true"><b>${escapeHtml(card.Rank)}</b><i>${escapeHtml(suitSymbol(card.Suit))}</i></span>
       <span class="card-center" aria-hidden="true">${escapeHtml(suitSymbol(card.Suit))}</span>
-      <span class="card-corner card-corner-bottom" aria-hidden="true">${escapeHtml(card.Rank)}${escapeHtml(suitSymbol(card.Suit))}</span>
+      <span class="card-corner card-corner-bottom" aria-hidden="true"><b>${escapeHtml(card.Rank)}</b><i>${escapeHtml(suitSymbol(card.Suit))}</i></span>
     </span>
   `;
 }
@@ -1356,8 +1520,19 @@ function renderMetric(label: string, value: string): string {
   return `<div class="metric"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`;
 }
 
+const HIDDEN_EVENT_KINDS = new Set([
+  "match_updated",
+  "lobby_updated",
+  "tick",
+  "session_ready",
+  "session_closed",
+  "locale_changed",
+]);
+
 function renderEventFeed(extraLines: string[] = []): string {
-  const fromEvents = state.events.map(formatEventLine);
+  const fromEvents = state.events
+    .filter((event) => !HIDDEN_EVENT_KINDS.has(event.kind))
+    .map(formatEventLine);
   const localizedExtra = extraLines.map((line) => localizeLogLine(line));
   const lines = localizedExtra.length > 0 ? [...localizedExtra, ...fromEvents.slice(-8)] : fromEvents;
   if (lines.length === 0) {
@@ -1439,21 +1614,71 @@ function syncRefreshLoop(): void {
   }
 
   const view = currentView();
-  const delay = view === "game" && !isOnlineMode() ? 850 : isOnlineMode() ? 1200 : 0;
+  const delay = view === "game" && !isOnlineMode() ? 450 : isOnlineMode() ? 900 : 0;
   if (delay === 0) {
     return;
   }
 
   refreshTimer = window.setTimeout(async () => {
     try {
-      await syncSnapshot({ withEvents: true });
+      if (document.hidden) {
+        syncRefreshLoop();
+        return;
+      }
+      const sigBefore = state.renderSig || computeRenderSignature();
+      if (shouldNudgeCpu()) {
+        // Safety net: the runtime advances CPU turns on its own 850ms ticker,
+        // but if the table looks stuck on a CPU turn, force a tick. The
+        // endpoint doubles as a snapshot fetch.
+        const result = await sendRequest("autoCpuLoopTick", undefined);
+        if (result.ok) {
+          updateStateFromResult(result);
+        }
+      } else {
+        await syncSnapshot({ withEvents: true });
+      }
       state.error = "";
-      render();
+      if (computeRenderSignature() !== sigBefore) {
+        render();
+      } else {
+        syncRefreshLoop();
+      }
     } catch (error) {
       state.error = errorMessage(error);
       render();
     }
   }, delay);
+}
+
+function shouldNudgeCpu(): boolean {
+  if (isOnlineMode() || currentView() !== "game") {
+    return false;
+  }
+  const match = state.bundle?.match;
+  if (!match || match.MatchFinished) {
+    return false;
+  }
+  const localId = match.CurrentPlayerIdx;
+  const localTeamId = localTeam(match);
+  if (match.PendingRaiseFor === localTeamId) {
+    return false;
+  }
+  const actor = match.Players.find((player) => player.ID === match.TurnPlayer);
+  if (!actor || !actor.CPU || actor.ID === localId) {
+    return false;
+  }
+  return Date.now() - state.lastMatchChangeAt > 2500;
+}
+
+function computeRenderSignature(): string {
+  return JSON.stringify([
+    state.bundle,
+    state.events,
+    state.error,
+    state.busyForm,
+    state.locale,
+    state.initialized,
+  ]);
 }
 
 function syncMeasuredBlocks(): void {
@@ -1539,6 +1764,11 @@ function updateVisualFx(
     }
   }
 
+  if (previousMatch) {
+    announceTrickResult(previousMatch, nextMatch);
+    announceHandResult(previousMatch, nextMatch);
+  }
+
   if (previousMatch && previousMatch.CurrentHand.WinnerTeam < 0 && nextMatch.CurrentHand.WinnerTeam >= 0) {
     triggerConfetti(1800, 1);
   }
@@ -1546,6 +1776,43 @@ function updateVisualFx(
     triggerConfetti(3000, 2);
     triggerShake(580);
     triggerPulse(900);
+  }
+}
+
+function announceTrickResult(previousMatch: MatchSnapshot, nextMatch: MatchSnapshot): void {
+  if (nextMatch.LastTrickSeq <= previousMatch.LastTrickSeq || nextMatch.LastTrickRound <= 0) {
+    return;
+  }
+  if (nextMatch.LastTrickTie) {
+    showAnnouncement(t("trick_tie", nextMatch.LastTrickRound), "", "tie", 2000);
+    return;
+  }
+  showAnnouncement(
+    t("trick_win", playerName(nextMatch, nextMatch.LastTrickWinner), nextMatch.LastTrickRound),
+    "",
+    "trick",
+    2000,
+  );
+}
+
+function announceHandResult(previousMatch: MatchSnapshot, nextMatch: MatchSnapshot): void {
+  const localTeamId = localTeam(nextMatch);
+  const opponentTeamId = localTeamId === 0 ? 1 : 0;
+  const usBefore = teamScore(previousMatch, localTeamId);
+  const themBefore = teamScore(previousMatch, opponentTeamId);
+  const usDelta = teamScore(nextMatch, localTeamId) - usBefore;
+  const themDelta = teamScore(nextMatch, opponentTeamId) - themBefore;
+  if (usDelta <= 0 && themDelta <= 0) {
+    return;
+  }
+  const sub = nextMatch.MatchFinished
+    ? ""
+    : t("banner_new_hand", cardLabel(nextMatch.CurrentHand.Vira), nextMatch.CurrentHand.Manilha || "-");
+  if (usDelta > 0) {
+    showAnnouncement(t("banner_hand_us", usDelta), sub, "hand-us", 2800);
+    triggerConfetti(1400, 1);
+  } else {
+    showAnnouncement(t("banner_hand_them", themDelta), sub, "hand-them", 2800);
   }
 }
 
@@ -1583,6 +1850,15 @@ function showTrucoCallFlash(callLabel: string): void {
   };
   triggerShake(460);
   triggerPulse(720);
+}
+
+function showAnnouncement(title: string, sub: string, kind: string, durationMs: number): void {
+  state.uiFx.announcement = {
+    title,
+    sub,
+    kind,
+    until: Date.now() + durationMs,
+  };
 }
 
 function numericLineHeight(style: CSSStyleDeclaration): number {
@@ -1640,15 +1916,50 @@ function persistInputs(payload: Record<string, unknown>): void {
 
 async function copyInvite(button: HTMLElement): Promise<void> {
   const value = button.dataset.copyText || "";
-  if (!value || !navigator.clipboard) {
+  if (!value) {
     return;
   }
-  await navigator.clipboard.writeText(value);
-  const label = button.textContent || t("invite_copy");
-  button.textContent = t("copy_done");
+  const copied = await writeClipboard(value);
+  if (!copied) {
+    return;
+  }
+  button.classList.add("copy-flash");
   window.setTimeout(() => {
-    button.textContent = label;
+    button.classList.remove("copy-flash");
   }, 1000);
+  if (button.tagName === "BUTTON") {
+    const label = button.textContent || t("invite_copy");
+    button.textContent = t("copy_done");
+    window.setTimeout(() => {
+      button.textContent = label;
+    }, 1000);
+  }
+}
+
+async function writeClipboard(value: string): Promise<boolean> {
+  if (navigator.clipboard) {
+    try {
+      await navigator.clipboard.writeText(value);
+      return true;
+    } catch {
+      // fall through to the legacy path
+    }
+  }
+  const helper = document.createElement("textarea");
+  helper.value = value;
+  helper.setAttribute("readonly", "");
+  helper.style.position = "fixed";
+  helper.style.opacity = "0";
+  document.body.appendChild(helper);
+  helper.select();
+  let ok = false;
+  try {
+    ok = document.execCommand("copy");
+  } catch {
+    ok = false;
+  }
+  helper.remove();
+  return ok;
 }
 
 function busyAttr(formId: string): string {
