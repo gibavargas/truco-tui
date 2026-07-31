@@ -1286,14 +1286,17 @@ function renderPlayers(match: MatchSnapshot): string {
     .filter((player) => player.ID !== match.CurrentPlayerIdx)
     .map((player) => {
       const position = positions.get(player.ID) || "top";
-      const relation = player.Team === localTeamId ? t("game_partner") : t("game_opponent");
+      const isAlly = player.Team === localTeamId;
+      const relation = isAlly ? t("game_partner") : t("game_opponent");
+      const teamClass = isAlly ? "team-ally" : "team-foe";
+      const teamBadge = isAlly ? "🛡" : "⚔";
       const isTurn = player.ID === match.TurnPlayer;
 
       return `
-        <div class="player-seat seat-${position}${isTurn ? " seat-turn" : ""}">
+        <div class="player-seat seat-${position} ${teamClass}${isTurn ? " seat-turn" : ""}">
           <div class="player-head">
-            <strong>${escapeHtml(player.Name)}</strong>
-            <span>${escapeHtml(relation)}${player.CPU ? ` · ${escapeHtml(t("game_cpu"))}` : ""}</span>
+            <strong><span class="team-badge team-badge-${isAlly ? "ally" : "foe"}" aria-hidden="true">${teamBadge}</span>${escapeHtml(player.Name)}</strong>
+            <span class="team-label team-label-${isAlly ? "ally" : "foe"}">${escapeHtml(relation)}${player.CPU ? ` · ${escapeHtml(t("game_cpu"))}` : ""}</span>
           </div>
           <div class="player-cards">
             ${player.Hand.map(() => `<span class="card-back tiny" aria-hidden="true"></span>`).join("")}
