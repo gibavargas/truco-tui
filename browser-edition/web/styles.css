@@ -658,7 +658,16 @@ input:focus {
 }
 
 .score-block-friendly {
-  border-color: rgba(214, 178, 99, 0.38);
+  border-color: rgba(59, 130, 246, 0.4);
+}
+.score-block[data-team="them"] {
+  border-color: rgba(220, 70, 70, 0.4);
+}
+.score-block-friendly strong {
+  color: #93c5fd;
+}
+.score-block[data-team="them"] strong {
+  color: #fca5a5;
 }
 
 .score-block-leading {
@@ -840,6 +849,41 @@ input:focus {
   background: rgba(8, 14, 18, 0.44);
   z-index: 1;
   box-shadow: var(--shadow-tight);
+  border: 2px solid transparent;
+  transition: border-color 300ms ease;
+}
+
+/* Team identification */
+.team-ally {
+  border-color: rgba(59, 130, 246, 0.35);
+  background: rgba(8, 14, 18, 0.44);
+}
+
+.team-foe {
+  border-color: rgba(220, 70, 70, 0.35);
+  background: rgba(14, 8, 8, 0.44);
+}
+
+.team-badge {
+  display: inline-block;
+  margin-right: 0.3rem;
+  font-size: 0.85em;
+}
+
+.team-badge-ally {
+  color: #60a5fa;
+}
+
+.team-badge-foe {
+  color: #f87171;
+}
+
+.team-label-ally {
+  color: #93c5fd;
+}
+
+.team-label-foe {
+  color: #fca5a5;
 }
 
 .seat-top {
@@ -2784,7 +2828,14 @@ input:focus {
   text-transform: uppercase;
 }
 .trick-pile-us .trick-pile-label {
-  color: var(--accent-strong);
+  color: #60a5fa;
+  background: rgba(59, 130, 246, 0.15);
+  border: 1px solid rgba(59, 130, 246, 0.3);
+}
+.trick-pile-them .trick-pile-label {
+  color: #f87171;
+  background: rgba(220, 70, 70, 0.15);
+  border: 1px solid rgba(220, 70, 70, 0.3);
 }
 .trick-pile-stack {
   display: grid;

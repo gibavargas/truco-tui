@@ -1063,6 +1063,8 @@ func applyCPUActionToGame(g *truco.Game, pid int, a truco.CPUAction) error {
 		return g.RespondTruco(pid, false)
 	case "play":
 		return g.PlayCard(pid, a.CardIndex)
+	case "play_facedown":
+		return g.PlayCardFaceDown(pid, a.CardIndex)
 	}
 	return nil
 }
