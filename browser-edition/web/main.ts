@@ -39,6 +39,7 @@ interface UIFxState {
   confettiStrength: number;
   trucoCall: { text: string; until: number } | null;
   lastRaiseSignal: string;
+  lastViraKey: string;
   announcement: { title: string; sub: string; kind: string; until: number } | null;
 }
 
@@ -78,6 +79,7 @@ const state: AppState = {
     confettiStrength: 1,
     trucoCall: null,
     lastRaiseSignal: "",
+    lastViraKey: "",
     announcement: null,
   },
 };
@@ -720,10 +722,24 @@ function isOnlineMode(): boolean {
   return mode.startsWith("host_") || mode.startsWith("client_");
 }
 
+function animateScoreChange(container: HTMLElement, team: string, prevScoreStr: string | undefined | null): void {
+  const el = container.querySelector<HTMLElement>(`[data-team="${team}"] [data-score]`);
+  if (!el) return;
+  const current = el.getAttribute("data-score");
+  if (!prevScoreStr || !current || prevScoreStr === current) return;
+  el.classList.add("score-updating");
+  el.addEventListener("animationend", () => el.classList.remove("score-updating"), { once: true });
+}
+
 function render(): void {
   const focusState = captureFocusState();
   const detailsState = captureDetailsState();
+  const prevUsScore = root.querySelector('[data-team="us"] [data-score]')?.getAttribute("data-score");
+  const prevThemScore = root.querySelector('[data-team="them"] [data-score]')?.getAttribute("data-score");
   root.innerHTML = renderApp();
+  // Animate score changes
+  animateScoreChange(root, "us", prevUsScore);
+  animateScoreChange(root, "them", prevThemScore);
   restoreFocusState(focusState);
   restoreDetailsState(detailsState);
   state.renderSig = computeRenderSignature();
@@ -1137,9 +1153,9 @@ function renderGame(): string {
   return `
     <section class="game-layout">
       <article class="surface-card score-card">
-        <div class="score-block score-block-friendly">
+        <div class="score-block score-block-friendly" data-team="us">
           <span>${escapeHtml(t("team_us"))}</span>
-          <strong>${usScore}</strong>
+          <strong data-score="${usScore}">${usScore}</strong>
         </div>
         <div class="score-center">
           <span>${escapeHtml(t("game_round"))} ${Math.min(match.CurrentHand.Round, 3)}/3</span>
@@ -1147,9 +1163,9 @@ function renderGame(): string {
           <div class="trick-dots" aria-label="${escapeHtml(t("game_trick_track"))}">${renderTrickDots(match)}</div>
           <span class="score-target">${escapeHtml(t("game_target"))}</span>
         </div>
-        <div class="score-block">
+        <div class="score-block" data-team="them">
           <span>${escapeHtml(t("team_them"))}</span>
-          <strong>${themScore}</strong>
+          <strong data-score="${themScore}">${themScore}</strong>
         </div>
         <div class="score-progress">
           <div class="score-progress-track">
@@ -1171,7 +1187,7 @@ function renderGame(): string {
             </div>
             <form data-api-action="closeSession" data-form-id="closeSession"><button class="ghost-button danger" type="submit"${busyAttr("closeSession")}>${buttonLabel("closeSession", isOnlineMode() ? t("lobby_leave") : t("game_leave"))}</button></form>
           </div>
-          <div class="board-stage board-stage-${match.NumPlayers}">
+          <div class="board-stage board-stage-${match.NumPlayers} board-fade-in">
             ${renderPlayers(match)}
             ${renderViraCorner(match)}
             <div class="center-table">
@@ -1352,10 +1368,15 @@ function renderViraCorner(match: MatchSnapshot): string {
     return "";
   }
   const manilha = match.CurrentHand.Manilha || "-";
+  const viraKey = `${vira.Rank}${vira.Suit || ""}`;
+  const isNewVira = state.uiFx.lastViraKey !== viraKey;
+  state.uiFx.lastViraKey = viraKey;
+  const revealClass = isNewVira ? " vira-card-reveal" : "";
+  const shimmerClass = isNewVira ? " vira-shimmer" : "";
   return `
-    <div class="table-vira-corner">
+    <div class="table-vira-corner${shimmerClass}">
       <span class="table-vira-label">${escapeHtml(t("game_vira"))}</span>
-      ${renderCard(vira, "small")}
+      <span class="vira-card-wrap${revealClass}">${renderCard(vira, "small")}</span>
       <span class="manilha-badge" title="${escapeHtml(t("game_manilha_hint"))}: ${escapeHtml(t("game_manilha_detail"))}">${escapeHtml(t("game_manilha"))} · ${escapeHtml(manilha)}</span>
     </div>
   `;
@@ -1805,14 +1826,14 @@ function announceTrickResult(previousMatch: MatchSnapshot, nextMatch: MatchSnaps
     return;
   }
   if (nextMatch.LastTrickTie) {
-    showAnnouncement(t("trick_tie", nextMatch.LastTrickRound), "", "tie", 2000);
+    showAnnouncement(t("trick_tie", nextMatch.LastTrickRound), "", "tie", 2500);
     return;
   }
   showAnnouncement(
     t("trick_win", playerName(nextMatch, nextMatch.LastTrickWinner), nextMatch.LastTrickRound),
     "",
     "trick",
-    2000,
+    2500,
   );
 }
 
@@ -1830,10 +1851,10 @@ function announceHandResult(previousMatch: MatchSnapshot, nextMatch: MatchSnapsh
     ? ""
     : t("banner_new_hand", cardLabel(nextMatch.CurrentHand.Vira), nextMatch.CurrentHand.Manilha || "-");
   if (usDelta > 0) {
-    showAnnouncement(t("banner_hand_us", usDelta), sub, "hand-us", 2800);
+    showAnnouncement(t("banner_hand_us", usDelta), sub, "hand-us", 3500);
     triggerConfetti(1400, 1);
   } else {
-    showAnnouncement(t("banner_hand_them", themDelta), sub, "hand-them", 2800);
+    showAnnouncement(t("banner_hand_them", themDelta), sub, "hand-them", 3500);
   }
 }
 
@@ -1867,10 +1888,10 @@ function triggerConfetti(durationMs: number, strength: number): void {
 function showTrucoCallFlash(callLabel: string): void {
   state.uiFx.trucoCall = {
     text: `${callLabel.toUpperCase()}!`,
-    until: Date.now() + 1200,
+    until: Date.now() + 1600,
   };
-  triggerShake(460);
-  triggerPulse(720);
+  triggerShake(380);
+  triggerPulse(600);
 }
 
 function showAnnouncement(title: string, sub: string, kind: string, durationMs: number): void {
