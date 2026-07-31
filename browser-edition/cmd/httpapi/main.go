@@ -19,7 +19,8 @@ import (
 )
 
 type browserSession struct {
-	rt *appcore.Runtime
+	rt       *appcore.Runtime
+	lastSeen time.Time
 }
 
 type sessionStore struct {
@@ -34,6 +35,9 @@ func newSessionStore() *sessionStore {
 func (s *sessionStore) get(id string) *browserSession {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if bs := s.sessions[id]; bs != nil {
+		bs.lastSeen = time.Now()
+	}
 	return s.sessions[id]
 }
 
@@ -41,8 +45,29 @@ func (s *sessionStore) create() string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	id := randomKey()
-	s.sessions[id] = &browserSession{rt: appcore.NewRuntime()}
+	s.sessions[id] = &browserSession{rt: appcore.NewRuntime(), lastSeen: time.Now()}
 	return id
+}
+
+// sweep removes sessions that have been idle for longer than maxIdle and
+// closes their runtimes so background tickers and network loops stop.
+func (s *sessionStore) sweep(maxIdle time.Duration) int {
+	s.mu.Lock()
+	var expired []*appcore.Runtime
+	for id, bs := range s.sessions {
+		if bs == nil || time.Since(bs.lastSeen) <= maxIdle {
+			continue
+		}
+		if bs.rt != nil {
+			expired = append(expired, bs.rt)
+		}
+		delete(s.sessions, id)
+	}
+	s.mu.Unlock()
+	for _, rt := range expired {
+		_ = rt.Close()
+	}
+	return len(expired)
 }
 
 func (s *sessionStore) delete(id string) bool {
@@ -525,6 +550,16 @@ func main() {
 
 	srv := newAPIServer()
 	staticRoot := resolveStaticRoot()
+
+	go func() {
+		sweeper := time.NewTicker(5 * time.Minute)
+		defer sweeper.Stop()
+		for range sweeper.C {
+			if n := srv.store.sweep(2 * time.Hour); n > 0 {
+				log.Printf("expired %d idle browser session(s)", n)
+			}
+		}
+	}()
 
 	mux := http.NewServeMux()
 	mux.Handle("/api/", srv)
