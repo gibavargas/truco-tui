@@ -1,5 +1,6 @@
 #include "Strategy.hpp"
 #include <algorithm>
+#include <memory>
 
 namespace truco {
 
@@ -270,6 +271,55 @@ bool BlufferStrategy::shouldAskTruco(const GameState& state, const HandQuality& 
     if (hq.manilhas >= 1) return true;
     if (hq.score >= 3.0 && state.stake <= 3) return true;
     if (random() < 0.20) return true; // pure bluff
+    return false;
+}
+
+// === Hybrid ===
+
+HybridStrategy::HybridStrategy(double wB, double wA, double wC, double wBl) {
+    // Normalize so weights sum to 1.0
+    double total = wB + wA + wC + wBl;
+    if (total <= 0.0) total = 4.0;
+    weights_[0] = wB / total;
+    weights_[1] = wA / total;
+    weights_[2] = wC / total;
+    weights_[3] = wBl / total;
+}
+
+int HybridStrategy::rollStrategy() {
+    double r = random();
+    double cumulative = 0.0;
+    for (int i = 0; i < 4; i++) {
+        cumulative += weights_[i];
+        if (r < cumulative) return i;
+    }
+    return 3; // fallback
+}
+
+std::unique_ptr<Strategy> HybridStrategy::getStrategy(int idx) {
+    switch (idx) {
+        case 0: return std::make_unique<BalancedStrategy>();
+        case 1: return std::make_unique<AggressiveStrategy>();
+        case 2: return std::make_unique<ConservativeStrategy>();
+        case 3: return std::make_unique<BlufferStrategy>();
+        default: return std::make_unique<BalancedStrategy>();
+    }
+}
+
+Decision HybridStrategy::decide(const GameState& state) {
+    // Roll once per turn — use the same strategy for the whole decision
+    int idx = rollStrategy();
+    auto strat = getStrategy(idx);
+    return strat->decide(state);
+}
+
+// respondToRaise and shouldAskTruco are never called directly on Hybrid —
+// decide() delegates everything to the rolled strategy.
+// Keep minimal stubs to satisfy the abstract base contract.
+Decision HybridStrategy::respondToRaise(const GameState&, const HandQuality&) {
+    return {Decision::REFUSE, -1};
+}
+bool HybridStrategy::shouldAskTruco(const GameState&, const HandQuality&) {
     return false;
 }
 

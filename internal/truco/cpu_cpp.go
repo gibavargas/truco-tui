@@ -93,10 +93,10 @@ func suitToC(s Suit) int {
 }
 
 // CPUPersonality determines which strategy the C++ AI uses for a given CPU player.
-// Uses player ID to assign consistent personalities within a match.
+// Personality 0 = Hybrid: each CPU gets unique random weights mixing all 4 strategies.
+// Personalities 1-3 can be used for testing specific behaviors.
 func cpuPersonality(playerID int) int {
-	// Cycle through personalities: Balanced, Aggressive, Conservative, Bluffer
-	return playerID % 4
+	return 0 // Hybrid for all — unique weights generated from playerID in C++
 }
 
 // DecideCPUActionCpp delegates the CPU decision to the C++ AI engine.

@@ -3,6 +3,7 @@
 
 #include "GameState.hpp"
 #include <random>
+#include <memory>
 
 namespace truco {
 
@@ -118,6 +119,32 @@ public:
 protected:
     Decision respondToRaise(const GameState& state, const HandQuality& hq) override;
     bool shouldAskTruco(const GameState& state, const HandQuality& hq) override;
+};
+
+// Hybrid: blends all 4 personalities with unique weights per CPU player.
+// Each decision rolls which strategy to consult based on the weights,
+// producing emergent, hard-to-predict behavior.
+class HybridStrategy : public Strategy {
+public:
+    // Weights for: [Balanced, Aggressive, Conservative, Bluffer]
+    // Must sum to ~1.0. Generated from a seed for uniqueness.
+    HybridStrategy(double wBalanced, double wAggressive, double wConservative, double wBluffer);
+
+    Decision decide(const GameState& state) override;
+    const char* name() const override { return "Hybrid"; }
+
+protected:
+    Decision respondToRaise(const GameState& state, const HandQuality& hq) override;
+    bool shouldAskTruco(const GameState& state, const HandQuality& hq) override;
+
+private:
+    double weights_[4]; // Balanced, Aggressive, Conservative, Bluffer
+
+    // Roll the weighted dice and return which strategy (0-3) to consult
+    int rollStrategy();
+
+    // Get a temporary strategy instance for the given index
+    std::unique_ptr<Strategy> getStrategy(int idx);
 };
 
 } // namespace truco
