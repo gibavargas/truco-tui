@@ -157,13 +157,13 @@ func DecideCPUActionCpp(g *Game, playerID int) CPUAction {
 		C.int(team),
 		C.int(snap.TurnPlayer),
 		C.int(0), // canAskTruco computed below
-		&handSuits[0],
-		&handRanks[0],
+		safePointer(handSuits),
+		safePointer(handRanks),
 		C.int(len(cards)),
-		&tblSuits[0],
-		&tblRanks[0],
-		&tblPids[0],
-		&tblTeams[0],
+		safePointer(tblSuits),
+		safePointer(tblRanks),
+		safePointer(tblPids),
+		safePointer(tblTeams),
 		C.int(len(tableCards)),
 	)
 	cs.can_ask_truco = 0
@@ -204,3 +204,12 @@ func CPUPersonalityName(playerID int) string {
 
 // Ensure we reference fmt to avoid unused import
 var _ = fmt.Sprintf
+
+// safePointer returns a pointer to the first element of a C.int slice,
+// or nil if the slice is empty, avoiding index out of bounds panics.
+func safePointer(s []C.int) *C.int {
+	if len(s) == 0 {
+		return nil
+	}
+	return &s[0]
+}
