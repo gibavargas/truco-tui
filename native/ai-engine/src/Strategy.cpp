@@ -100,12 +100,12 @@ Decision BalancedStrategy::decide(const GameState& state) {
     if (lead.hasCards && lead.leadingTeam == state.myTeam && state.myHand.size() > 1) {
         int weak = weakestCard(state.myHand, state.manilha);
         if (state.myHand[weak].power(state.manilha) < 5 && random() < 0.40) {
-            return {Decision::PLAY_FACEDOWN, weak};
+            return {state.round >= 2 ? Decision::PLAY_FACEDOWN : Decision::PLAY, weak};
         }
     }
     // Strong hand round 1 — bluff face-down 25%
     if (!lead.hasCards && state.round == 1 && hq.score >= 6.0 && random() < 0.25) {
-        return {Decision::PLAY_FACEDOWN, play.cardIndex};
+        return {state.round >= 2 ? Decision::PLAY_FACEDOWN : Decision::PLAY, play.cardIndex};
     }
 
     return play;
@@ -151,10 +151,10 @@ Decision AggressiveStrategy::decide(const GameState& state) {
 
     if (lead.hasCards && lead.leadingTeam == state.myTeam && state.myHand.size() > 1) {
         int weak = weakestCard(state.myHand, state.manilha);
-        if (random() < 0.60) return {Decision::PLAY_FACEDOWN, weak};
+        if (random() < 0.60) return {state.round >= 2 ? Decision::PLAY_FACEDOWN : Decision::PLAY, weak};
     }
     if (!lead.hasCards && state.round == 1 && random() < 0.35) {
-        return {Decision::PLAY_FACEDOWN, play.cardIndex};
+        return {state.round >= 2 ? Decision::PLAY_FACEDOWN : Decision::PLAY, play.cardIndex};
     }
 
     return play;
@@ -239,11 +239,11 @@ Decision BlufferStrategy::decide(const GameState& state) {
     if (lead.hasCards && lead.leadingTeam == state.myTeam && state.myHand.size() > 1) {
         if (random() < 0.50) {
             int weak = weakestCard(state.myHand, state.manilha);
-            return {Decision::PLAY_FACEDOWN, weak};
+            return {state.round >= 2 ? Decision::PLAY_FACEDOWN : Decision::PLAY, weak};
         }
     }
     if (!lead.hasCards && random() < 0.45) {
-        return {Decision::PLAY_FACEDOWN, play.cardIndex};
+        return {state.round >= 2 ? Decision::PLAY_FACEDOWN : Decision::PLAY, play.cardIndex};
     }
 
     return play;
