@@ -27,14 +27,11 @@ jobs:
       - name: Verify go.sum Integrity
         run: go mod verify
 
-      - name: Build AI Engine
-        run: cd native/ai-engine && make
-
       - name: Vet
         run: go vet ./cmd/... ./browser-edition/... ./internal/...
 
       - name: Test
-        run: go test -skip "TestPlayFaceDownMasksBrowserSnapshot|TestAutoCpuLoopTickReturnsBundle" ./cmd/... ./browser-edition/... ./internal/...
+        run: go test ./cmd/... ./browser-edition/... ./internal/...
 
       - name: Staticcheck
         run: |
@@ -71,9 +68,6 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libgtk-4-dev libadwaita-1-dev
-
-      - name: Build AI Engine
-        run: cd native/ai-engine && make
 
       - name: Build Linux core
         run: make ffi-linux

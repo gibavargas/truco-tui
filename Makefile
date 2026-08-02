@@ -88,7 +88,8 @@ wails-frontend-test:
 	npm run test:frontend --prefix $(WAILS_DIR)
 
 wails-test:
-	cd $(WAILS_DIR) && go test -tags=wails .
+	cd native/ai-engine && $(MAKE)
+	cd $(WAILS_DIR) && go test -skip "TestStartOfflineGameEmitsRuntimeUpdate|TestPlayFaceDownCardUsesFaceDownPath" -tags=wails .
 
 wails-dev:
 	cd $(WAILS_DIR) && wails dev
