@@ -138,6 +138,53 @@ func DecideCPUActionCpp(g *Game, playerID int) CPUAction {
 
 	// Fill the C struct
 	var cs C.TrucoAIState
+
+	var handSuitsPtr, handRanksPtr *C.int
+	if len(cards) > 0 {
+		cHandSuits := C.malloc(C.size_t(len(cards)) * C.sizeof_int)
+		defer C.free(cHandSuits)
+		cHandRanks := C.malloc(C.size_t(len(cards)) * C.sizeof_int)
+		defer C.free(cHandRanks)
+
+		for i := range cards {
+			sliceSuits := (*[1 << 30]C.int)(cHandSuits)[:len(cards):len(cards)]
+			sliceRanks := (*[1 << 30]C.int)(cHandRanks)[:len(cards):len(cards)]
+			sliceSuits[i] = handSuits[i]
+			sliceRanks[i] = handRanks[i]
+		}
+
+		handSuitsPtr = (*C.int)(cHandSuits)
+		handRanksPtr = (*C.int)(cHandRanks)
+	}
+
+	var tblSuitsPtr, tblRanksPtr, tblPidsPtr, tblTeamsPtr *C.int
+	if len(tableCards) > 0 {
+		cTblSuits := C.malloc(C.size_t(len(tableCards)) * C.sizeof_int)
+		defer C.free(cTblSuits)
+		cTblRanks := C.malloc(C.size_t(len(tableCards)) * C.sizeof_int)
+		defer C.free(cTblRanks)
+		cTblPids := C.malloc(C.size_t(len(tableCards)) * C.sizeof_int)
+		defer C.free(cTblPids)
+		cTblTeams := C.malloc(C.size_t(len(tableCards)) * C.sizeof_int)
+		defer C.free(cTblTeams)
+
+		for i := range tableCards {
+			sliceSuits := (*[1 << 30]C.int)(cTblSuits)[:len(tableCards):len(tableCards)]
+			sliceRanks := (*[1 << 30]C.int)(cTblRanks)[:len(tableCards):len(tableCards)]
+			slicePids := (*[1 << 30]C.int)(cTblPids)[:len(tableCards):len(tableCards)]
+			sliceTeams := (*[1 << 30]C.int)(cTblTeams)[:len(tableCards):len(tableCards)]
+			sliceSuits[i] = tblSuits[i]
+			sliceRanks[i] = tblRanks[i]
+			slicePids[i] = tblPids[i]
+			sliceTeams[i] = tblTeams[i]
+		}
+
+		tblSuitsPtr = (*C.int)(cTblSuits)
+		tblRanksPtr = (*C.int)(cTblRanks)
+		tblPidsPtr = (*C.int)(cTblPids)
+		tblTeamsPtr = (*C.int)(cTblTeams)
+	}
+
 	C.fill_ai_state(
 		&cs,
 		C.int(rankToC(snap.CurrentHand.Manilha)),
@@ -157,13 +204,13 @@ func DecideCPUActionCpp(g *Game, playerID int) CPUAction {
 		C.int(team),
 		C.int(snap.TurnPlayer),
 		C.int(0), // canAskTruco computed below
-		&handSuits[0],
-		&handRanks[0],
+		handSuitsPtr,
+		handRanksPtr,
 		C.int(len(cards)),
-		&tblSuits[0],
-		&tblRanks[0],
-		&tblPids[0],
-		&tblTeams[0],
+		tblSuitsPtr,
+		tblRanksPtr,
+		tblPidsPtr,
+		tblTeamsPtr,
 		C.int(len(tableCards)),
 	)
 	cs.can_ask_truco = 0

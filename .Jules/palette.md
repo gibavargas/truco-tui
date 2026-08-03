@@ -7,3 +7,7 @@
 ## 2023-10-27 - TestPlayFaceDownMasksBrowserSnapshot panic
 **Learning:** The test `TestPlayFaceDownMasksBrowserSnapshot` frequently panics locally due to a CGO logic binding error in the AI Engine when simulating CPU turns during test advancement. This does not block or invalidate frontend accessibility fixes and should be ignored for UI-only updates.
 **Action:** Ignore this panic when verifying frontend-only modifications to the browser app.
+
+## 2023-10-27 - CGO Unpinned Pointer Panic
+**Learning:** Passing Go slice pointers directly to C functions (e.g. `&slice[0]`) panics with `cgo argument has Go pointer to unpinned Go pointer` in Go 1.21+ if the Go garbage collector can move the underlying array.
+**Action:** When passing dynamically sized arrays to C, use `C.malloc` to allocate C memory, copy the data, pass the C pointer, and ensure it is freed with `C.free` using `defer`.
