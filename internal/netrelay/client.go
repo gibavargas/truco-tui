@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
-	"crypto/subtle"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/base64"
@@ -346,7 +345,7 @@ func verifySPKIPin(pin string) func(cs tls.ConnectionState) error {
 		sum := sha256.Sum256(leaf.RawSubjectPublicKeyInfo)
 		gotHex := hex.EncodeToString(sum[:])
 		gotB64 := base64.StdEncoding.EncodeToString(sum[:])
-		if subtle.ConstantTimeCompare([]byte(pin), []byte(gotHex)) == 1 || subtle.ConstantTimeCompare([]byte(pin), []byte(gotB64)) == 1 {
+		if pin == gotHex || pin == gotB64 {
 			return nil
 		}
 		return errors.New("relay SPKI pin mismatch")

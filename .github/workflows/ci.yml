@@ -27,9 +27,6 @@ jobs:
       - name: Verify go.sum Integrity
         run: go mod verify
 
-      - name: Build C++ AI Engine
-        run: cd native/ai-engine && make
-
       - name: Vet
         run: go vet ./cmd/... ./browser-edition/... ./internal/...
 
@@ -71,9 +68,6 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libgtk-4-dev libadwaita-1-dev
-
-      - name: Build C++ AI Engine
-        run: cd native/ai-engine && make
 
       - name: Build Linux core
         run: make ffi-linux
