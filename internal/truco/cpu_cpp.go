@@ -48,7 +48,10 @@ static void fill_ai_state(
 }
 */
 import "C"
-import "fmt"
+import (
+	"fmt"
+	"unsafe"
+)
 
 // rankToC converts a Go Rank to C enum value (0-9)
 func rankToC(r Rank) int {
@@ -110,8 +113,12 @@ func DecideCPUActionCpp(g *Game, playerID int) CPUAction {
 	}
 
 	// Build hand arrays
-	handSuits := make([]C.int, len(cards))
-	handRanks := make([]C.int, len(cards))
+	allocHandSize := len(cards)
+	if allocHandSize == 0 {
+		allocHandSize = 1 // Dummy element to pin
+	}
+	handSuits := make([]C.int, allocHandSize)
+	handRanks := make([]C.int, allocHandSize)
 	for i, c := range cards {
 		handSuits[i] = C.int(suitToC(c.Suit))
 		handRanks[i] = C.int(rankToC(c.Rank))
@@ -119,10 +126,14 @@ func DecideCPUActionCpp(g *Game, playerID int) CPUAction {
 
 	// Build table card arrays
 	tableCards := snap.CurrentHand.RoundCards
-	tblSuits := make([]C.int, len(tableCards))
-	tblRanks := make([]C.int, len(tableCards))
-	tblPids := make([]C.int, len(tableCards))
-	tblTeams := make([]C.int, len(tableCards))
+	allocTableSize := len(tableCards)
+	if allocTableSize == 0 {
+		allocTableSize = 1 // Dummy element to pin
+	}
+	tblSuits := make([]C.int, allocTableSize)
+	tblRanks := make([]C.int, allocTableSize)
+	tblPids := make([]C.int, allocTableSize)
+	tblTeams := make([]C.int, allocTableSize)
 	for i, pc := range tableCards {
 		tblSuits[i] = C.int(suitToC(pc.Card.Suit))
 		tblRanks[i] = C.int(rankToC(pc.Card.Rank))
@@ -137,9 +148,10 @@ func DecideCPUActionCpp(g *Game, playerID int) CPUAction {
 	}
 
 	// Fill the C struct
-	var cs C.TrucoAIState
+	cs := (*C.TrucoAIState)(C.malloc(C.sizeof_TrucoAIState))
+	defer C.free(unsafe.Pointer(cs))
 	C.fill_ai_state(
-		&cs,
+		cs,
 		C.int(rankToC(snap.CurrentHand.Manilha)),
 		C.int(suitToC(snap.CurrentHand.Vira.Suit)),
 		C.int(rankToC(snap.CurrentHand.Vira.Rank)),
@@ -173,7 +185,7 @@ func DecideCPUActionCpp(g *Game, playerID int) CPUAction {
 
 	// Call C++ engine
 	personality := cpuPersonality(playerID)
-	result := C.truco_ai_decide(C.int(personality), &cs)
+	result := C.truco_ai_decide(C.int(personality), cs)
 
 	// Convert result back
 	switch int(result.kind) {
