@@ -29,6 +29,8 @@ jobs:
 
       - name: Build AI Engine
         run: cd native/ai-engine && make
+        env:
+          CXX: g++
 
       - name: Vet
         run: go vet ./cmd/... ./browser-edition/... ./internal/...
@@ -74,6 +76,8 @@ jobs:
 
       - name: Build AI Engine
         run: cd native/ai-engine && make
+        env:
+          CXX: g++
 
       - name: Build Linux core
         run: make ffi-linux
