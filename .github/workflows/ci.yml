@@ -31,7 +31,7 @@ jobs:
         run: go vet ./cmd/... ./browser-edition/... ./internal/...
 
       - name: Test
-        run: go test ./cmd/... ./browser-edition/... ./internal/...
+        run: cd native/ai-engine && make && cd ../.. && go test ./cmd/... ./browser-edition/... ./internal/...
 
       - name: Staticcheck
         run: |
@@ -70,7 +70,7 @@ jobs:
           sudo apt-get install -y libgtk-4-dev libadwaita-1-dev
 
       - name: Build Linux core
-        run: make ffi-linux
+        run: cd native/ai-engine && make && cd ../.. && make ffi-linux
 
       - name: Run Linux GTK tests
         run: cargo test --manifest-path native/linux-gtk/Cargo.toml
