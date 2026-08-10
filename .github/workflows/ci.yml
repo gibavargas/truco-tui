@@ -27,16 +27,19 @@ jobs:
       - name: Verify go.sum Integrity
         run: go mod verify
 
+      - name: Build AI Engine
+        run: cd native/ai-engine && make
+
       - name: Vet
-        run: go vet ./cmd/... ./browser-edition/... ./internal/...
+        run: CGO_LDFLAGS="-L${GITHUB_WORKSPACE}/native/ai-engine -Wl,-rpath,${GITHUB_WORKSPACE}/native/ai-engine" go vet ./cmd/... ./browser-edition/... ./internal/...
 
       - name: Test
-        run: go test ./cmd/... ./browser-edition/... ./internal/...
+        run: CGO_LDFLAGS="-L${GITHUB_WORKSPACE}/native/ai-engine -Wl,-rpath,${GITHUB_WORKSPACE}/native/ai-engine" go test ./cmd/... ./browser-edition/... ./internal/...
 
       - name: Staticcheck
         run: |
           go install honnef.co/go/tools/cmd/staticcheck@latest
-          staticcheck ./cmd/... ./browser-edition/... ./internal/...
+          CGO_LDFLAGS="-L${GITHUB_WORKSPACE}/native/ai-engine -Wl,-rpath,${GITHUB_WORKSPACE}/native/ai-engine" staticcheck ./cmd/... ./browser-edition/... ./internal/...
 
       - name: Install Wails CLI
         run: |
@@ -69,8 +72,11 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libgtk-4-dev libadwaita-1-dev
 
+      - name: Build AI Engine
+        run: cd native/ai-engine && make
+
       - name: Build Linux core
-        run: make ffi-linux
+        run: CGO_LDFLAGS="-L${GITHUB_WORKSPACE}/native/ai-engine -Wl,-rpath,${GITHUB_WORKSPACE}/native/ai-engine" make ffi-linux
 
       - name: Run Linux GTK tests
         run: cargo test --manifest-path native/linux-gtk/Cargo.toml
