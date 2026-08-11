@@ -928,7 +928,7 @@ function renderSetup(): string {
             <div class="field-grid">
               <label>
                 <span>${escapeHtml(t("setup_name"))}</span>
-                <input name="name" type="text" value="${escapeHtml(state.playerName || t("name_placeholder"))}" autocomplete="off">
+                <input name="name" type="text" value="${escapeHtml(state.playerName || t("name_placeholder"))}" autocomplete="off" aria-label="${escapeHtml(t('setup_name'))}">
               </label>
               <label>
                 <span>${escapeHtml(t("setup_players"))}</span>
@@ -956,7 +956,7 @@ function renderSetup(): string {
               <div class="field-grid">
                 <label>
                   <span>${escapeHtml(t("setup_name"))}</span>
-                  <input name="name" type="text" value="${escapeHtml(state.playerName || t("name_placeholder"))}" autocomplete="off">
+                  <input name="name" type="text" value="${escapeHtml(state.playerName || t("name_placeholder"))}" autocomplete="off" aria-label="${escapeHtml(t('setup_name'))}">
                 </label>
                 <label>
                   <span>${escapeHtml(t("setup_players"))}</span>
@@ -971,7 +971,7 @@ function renderSetup(): string {
                 <div>
                   <label>
                     <span>${escapeHtml(t("setup_relay"))}</span>
-                    <input name="relay_url" type="text" value="${escapeHtml(state.relayURL)}" placeholder="${escapeHtml(t("relay_placeholder"))}" autocomplete="off" title="${escapeHtml(t("setup_relay_hint"))}">
+                    <input name="relay_url" type="text" value="${escapeHtml(state.relayURL)}" placeholder="${escapeHtml(t("relay_placeholder"))}" autocomplete="off" title="${escapeHtml(t("setup_relay_hint"))}" aria-label="${escapeHtml(t('setup_relay'))}">
                   </label>
                 </div>
               </details>
@@ -982,11 +982,11 @@ function renderSetup(): string {
               <div class="field-grid">
                 <label>
                   <span>${escapeHtml(t("setup_name"))}</span>
-                  <input name="name" type="text" value="${escapeHtml(state.playerName || t("name_placeholder"))}" autocomplete="off">
+                  <input name="name" type="text" value="${escapeHtml(state.playerName || t("name_placeholder"))}" autocomplete="off" aria-label="${escapeHtml(t('setup_name'))}">
                 </label>
                 <label>
                   <span>${escapeHtml(t("setup_invite"))}</span>
-                  <input name="key" type="text" autocomplete="off">
+                  <input name="key" type="text" autocomplete="off" aria-label="${escapeHtml(t('setup_invite'))}">
                 </label>
               </div>
               <label>
@@ -1081,7 +1081,7 @@ function renderLobby(): string {
             <h3>${escapeHtml(t("lobby_chat"))}</h3>
           </div>
           <form class="chat-form" data-api-action="sendChat" data-form-id="sendChat">
-            <input name="message" type="text" autocomplete="off" placeholder="${escapeHtml(t("chat_placeholder"))}">
+            <input name="message" type="text" autocomplete="off" placeholder="${escapeHtml(t("chat_placeholder"))}" aria-label="${escapeHtml(t('lobby_chat'))}">
             <button class="secondary-button" type="submit"${busyAttr("sendChat")}>${buttonLabel("sendChat", t("lobby_chat"))}</button>
           </form>
           <form data-api-action="closeSession" data-form-id="closeSession">
@@ -1270,7 +1270,7 @@ function renderMobileGamePanel(bundle: SnapshotBundle, match: MatchSnapshot): st
         <pre class="event-feed compact" role="log" aria-live="polite" data-pretext-block="lock-height" data-pretext-whitespace="pre-wrap">${escapeHtml(renderEventFeed(match.Logs.slice(-6)))}</pre>
         ${isOnlineMode() ? `
           <form class="chat-form" data-api-action="sendChat" data-form-id="sendChatMobile">
-            <input name="message" type="text" autocomplete="off" placeholder="${escapeHtml(t("chat_placeholder"))}">
+            <input name="message" type="text" autocomplete="off" placeholder="${escapeHtml(t("chat_placeholder"))}" aria-label="${escapeHtml(t('lobby_chat'))}">
             <button class="secondary-button" type="submit"${busyAttr("sendChatMobile")}>${buttonLabel("sendChatMobile", t("lobby_chat"))}</button>
           </form>
         ` : ""}
@@ -1474,7 +1474,7 @@ function renderNetworkPanel(bundle: SnapshotBundle): string {
         ${renderMetric(t("connection_mode"), bundle.connection.is_online ? t("connection_online") : t("connection_offline"))}
       </div>
       <form class="chat-form" data-api-action="sendChat" data-form-id="sendChat">
-        <input name="message" type="text" autocomplete="off" placeholder="${escapeHtml(t("chat_placeholder"))}">
+        <input name="message" type="text" autocomplete="off" placeholder="${escapeHtml(t("chat_placeholder"))}" aria-label="${escapeHtml(t('lobby_chat'))}">
         <button class="secondary-button" type="submit"${busyAttr("sendChat")}>${buttonLabel("sendChat", t("lobby_chat"))}</button>
       </form>
     </article>
