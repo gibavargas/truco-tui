@@ -3,6 +3,7 @@ package netp2p
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/tls"
 	"encoding/hex"
 	"errors"
@@ -102,6 +103,14 @@ type seatRateState struct {
 	actions     int
 	chat        int
 	control     int
+}
+
+func hashToken(token string) string {
+	if token == "" {
+		return ""
+	}
+	hash := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(hash[:])
 }
 
 func randomToken() (string, error) {
@@ -960,7 +969,7 @@ func (h *HostSession) createReplacementInviteLocked(requesterSeat, targetSeat in
 	if err != nil {
 		return "", err
 	}
-	h.replaceInvites[replaceToken] = targetSeat
+	h.replaceInvites[hashToken(replaceToken)] = targetSeat
 	inv := h.inviteBase
 	inv.ReplaceToken = replaceToken
 	if h.cfg.TransportMode == "relay_quic_v2" {
@@ -972,7 +981,7 @@ func (h *HostSession) createReplacementInviteLocked(requesterSeat, targetSeat in
 			TargetSeat:     targetSeat,
 		})
 		if err != nil {
-			delete(h.replaceInvites, replaceToken)
+			delete(h.replaceInvites, hashToken(replaceToken))
 			return "", err
 		}
 		inv.RelayJoinTicket = ticketResp.JoinTicket
@@ -1210,7 +1219,7 @@ func (h *HostSession) handleConn(conn net.Conn) {
 			}
 			reconnect = true
 		} else if joinMsg.ReplaceToken != "" {
-			target, ok := h.replaceInvites[joinMsg.ReplaceToken]
+			target, ok := h.replaceInvites[hashToken(joinMsg.ReplaceToken)]
 			if !ok {
 				h.mu.Unlock()
 				_ = writeMessage(conn, Message{Type: "error", Error: "convite de reposição inválido"})
@@ -1291,7 +1300,7 @@ func (h *HostSession) handleConn(conn net.Conn) {
 				delete(h.seatID, slot)
 			}
 			if replacementToken != "" {
-				h.replaceInvites[replacementToken] = slot
+				h.replaceInvites[hashToken(replacementToken)] = slot
 			}
 		}
 		h.dropClientLocked(slot, "falha no handshake")
@@ -1300,7 +1309,7 @@ func (h *HostSession) handleConn(conn net.Conn) {
 		return
 	}
 	if replacementToken != "" {
-		delete(h.replaceInvites, replacementToken)
+		delete(h.replaceInvites, hashToken(replacementToken))
 	}
 	if reconnect && hasCachedState {
 		snap := cloneSnapshot(cachedState)
