@@ -3,6 +3,7 @@ package netp2p
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/tls"
 	"encoding/hex"
 	"errors"
@@ -960,7 +961,8 @@ func (h *HostSession) createReplacementInviteLocked(requesterSeat, targetSeat in
 	if err != nil {
 		return "", err
 	}
-	h.replaceInvites[replaceToken] = targetSeat
+	hashedToken := hex.EncodeToString(func() []byte { sum := sha256.Sum256([]byte(replaceToken)); return sum[:] }())
+	h.replaceInvites[hashedToken] = targetSeat
 	inv := h.inviteBase
 	inv.ReplaceToken = replaceToken
 	if h.cfg.TransportMode == "relay_quic_v2" {
@@ -972,7 +974,7 @@ func (h *HostSession) createReplacementInviteLocked(requesterSeat, targetSeat in
 			TargetSeat:     targetSeat,
 		})
 		if err != nil {
-			delete(h.replaceInvites, replaceToken)
+			delete(h.replaceInvites, hashedToken)
 			return "", err
 		}
 		inv.RelayJoinTicket = ticketResp.JoinTicket
@@ -1210,7 +1212,8 @@ func (h *HostSession) handleConn(conn net.Conn) {
 			}
 			reconnect = true
 		} else if joinMsg.ReplaceToken != "" {
-			target, ok := h.replaceInvites[joinMsg.ReplaceToken]
+			hashedToken := hex.EncodeToString(func() []byte { sum := sha256.Sum256([]byte(joinMsg.ReplaceToken)); return sum[:] }())
+			target, ok := h.replaceInvites[hashedToken]
 			if !ok {
 				h.mu.Unlock()
 				_ = writeMessage(conn, Message{Type: "error", Error: "convite de reposição inválido"})
@@ -1291,7 +1294,8 @@ func (h *HostSession) handleConn(conn net.Conn) {
 				delete(h.seatID, slot)
 			}
 			if replacementToken != "" {
-				h.replaceInvites[replacementToken] = slot
+				hashedToken := hex.EncodeToString(func() []byte { sum := sha256.Sum256([]byte(replacementToken)); return sum[:] }())
+				h.replaceInvites[hashedToken] = slot
 			}
 		}
 		h.dropClientLocked(slot, "falha no handshake")
@@ -1300,7 +1304,8 @@ func (h *HostSession) handleConn(conn net.Conn) {
 		return
 	}
 	if replacementToken != "" {
-		delete(h.replaceInvites, replacementToken)
+		hashedToken := hex.EncodeToString(func() []byte { sum := sha256.Sum256([]byte(replacementToken)); return sum[:] }())
+		delete(h.replaceInvites, hashedToken)
 	}
 	if reconnect && hasCachedState {
 		snap := cloneSnapshot(cachedState)
