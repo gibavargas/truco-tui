@@ -45,3 +45,4 @@ scripts/polymarket/.env
 scripts/polymarket/state.json
 kika-daemon-go*.bak*
 src/kika-daemon-go
+src/*.bak*
