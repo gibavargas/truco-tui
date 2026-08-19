@@ -64,6 +64,8 @@ pub struct GameActionPayload {
     pub action: &'static str,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub card_index: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub face_down: Option<bool>,
 }
 
 #[derive(Serialize)]

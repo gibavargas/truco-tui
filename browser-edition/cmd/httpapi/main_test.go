@@ -5,7 +5,11 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	"truco-tui/internal/appcore"
 )
@@ -91,6 +95,19 @@ func eventKinds(t *testing.T, res map[string]interface{}) []string {
 	return out
 }
 
+func requireSessionNetwork(t *testing.T, res map[string]interface{}) map[string]interface{} {
+	t.Helper()
+	session, ok := res["session"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected session in response")
+	}
+	network, ok := session["network"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected session.network in response, got %v", session["network"])
+	}
+	return network
+}
+
 func containsKind(kinds []string, target string) bool {
 	for _, kind := range kinds {
 		if kind == target {
@@ -98,6 +115,53 @@ func containsKind(kinds []string, target string) bool {
 		}
 	}
 	return false
+}
+
+func createAndStart(t *testing.T, srv http.Handler) string {
+	t.Helper()
+	sid := createSession(t, srv)
+	res := postAction(t, srv, "startGame", sid, map[string]interface{}{
+		"numPlayers": 2,
+		"name":       "Tester",
+	})
+	if !res["ok"].(bool) {
+		t.Fatalf("startGame failed: %v", res["error"])
+	}
+	return sid
+}
+
+func advanceBrowserSessionUntilPlayableRound(t *testing.T, srv http.Handler, sid string, minRound int) {
+	t.Helper()
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		res := postAction(t, srv, "snapshot", sid, nil)
+		snap := parseSnapshot(t, res)
+		hand := snap["CurrentHand"].(map[string]interface{})
+		round := int(hand["Round"].(float64))
+		pending, _ := snap["PendingRaiseFor"].(float64)
+		turn := int(snap["TurnPlayer"].(float64))
+		roundCards, _ := hand["RoundCards"].([]interface{})
+
+		if round >= minRound && turn == 0 && int(pending) == -1 && len(roundCards) == 0 {
+			return
+		}
+		if int(pending) == 0 {
+			res = postAction(t, srv, "accept", sid, nil)
+			if !res["ok"].(bool) {
+				t.Fatalf("accept pending truco failed while advancing browser round: %v", res["error"])
+			}
+			continue
+		}
+		if turn == 0 {
+			res = postAction(t, srv, "play", sid, map[string]interface{}{"cardIndex": 0})
+			if !res["ok"].(bool) {
+				t.Fatalf("play while advancing browser round failed: %v", res["error"])
+			}
+			continue
+		}
+		_ = postAction(t, srv, "autoCpuLoopTick", sid, nil)
+	}
+	t.Fatalf("timeout advancing browser session to playable round %d", minRound)
 }
 
 func TestCreateSession(t *testing.T) {
@@ -132,6 +196,49 @@ func TestStartGameReturnsBundleSnapshotAndContractVersions(t *testing.T) {
 	snap := parseSnapshot(t, res)
 	if int(snap["NumPlayers"].(float64)) != 2 {
 		t.Fatalf("NumPlayers = %v, want 2", snap["NumPlayers"])
+	}
+}
+
+func TestStartGameNormalizesEmptyMatchSlicesForBrowser(t *testing.T) {
+	srv := newAPIServer()
+	sid := createSession(t, srv)
+
+	res := postAction(t, srv, "startGame", sid, map[string]interface{}{
+		"numPlayers": 2,
+		"name":       "Tester",
+	})
+	if !res["ok"].(bool) {
+		t.Fatalf("startGame failed: %v", res["error"])
+	}
+
+	bundle := parseBundle(t, res)
+	match, ok := bundle["match"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected bundle.match, got %T", bundle["match"])
+	}
+	hand, ok := match["CurrentHand"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected match.CurrentHand, got %T", match["CurrentHand"])
+	}
+	if roundCards, ok := hand["RoundCards"].([]interface{}); !ok || len(roundCards) != 0 {
+		t.Fatalf("RoundCards = %v, want empty array", hand["RoundCards"])
+	}
+	if trickResults, ok := hand["TrickResults"].([]interface{}); !ok || len(trickResults) != 0 {
+		t.Fatalf("TrickResults = %v, want empty array", hand["TrickResults"])
+	}
+	if logs, ok := match["Logs"].([]interface{}); !ok {
+		t.Fatalf("Logs = %v, want array", match["Logs"])
+	} else if len(logs) == 0 {
+		t.Fatalf("Logs should contain at least the initial match events")
+	}
+
+	snap := parseSnapshot(t, res)
+	snapHand := snap["CurrentHand"].(map[string]interface{})
+	if roundCards, ok := snapHand["RoundCards"].([]interface{}); !ok || len(roundCards) != 0 {
+		t.Fatalf("snapshot RoundCards = %v, want empty array", snapHand["RoundCards"])
+	}
+	if trickResults, ok := snapHand["TrickResults"].([]interface{}); !ok || len(trickResults) != 0 {
+		t.Fatalf("snapshot TrickResults = %v, want empty array", snapHand["TrickResults"])
 	}
 }
 
@@ -177,6 +284,35 @@ func TestPlayRequiresCardIndexErrorCode(t *testing.T) {
 	}
 }
 
+func TestPlayFaceDownMasksBrowserSnapshot(t *testing.T) {
+	srv := newAPIServer()
+	sid := createAndStart(t, srv)
+	advanceBrowserSessionUntilPlayableRound(t, srv, sid, 2)
+
+	res := postAction(t, srv, "play", sid, map[string]interface{}{
+		"cardIndex": 0,
+		"faceDown":  true,
+	})
+	if !res["ok"].(bool) {
+		t.Fatalf("play face-down failed: %v", res["error"])
+	}
+
+	snap := parseSnapshot(t, res)
+	roundCardsRaw := snap["CurrentHand"].(map[string]interface{})["RoundCards"]
+	roundCards, ok := roundCardsRaw.([]interface{})
+	if !ok || len(roundCards) != 1 {
+		t.Fatalf("round cards = %v, want one played card", roundCardsRaw)
+	}
+	played := roundCards[0].(map[string]interface{})
+	if played["FaceDown"] != true {
+		t.Fatalf("expected FaceDown=true, got %v", played["FaceDown"])
+	}
+	card := played["Card"].(map[string]interface{})
+	if rank, _ := card["Rank"].(string); rank != "" {
+		t.Fatalf("masked browser snapshot leaked rank %q", rank)
+	}
+}
+
 func TestRuntimeErrorsExposeNormalizedErrorCodeAndBundle(t *testing.T) {
 	srv := newAPIServer()
 	sid := createSession(t, srv)
@@ -200,6 +336,67 @@ func TestRuntimeErrorsExposeNormalizedErrorCodeAndBundle(t *testing.T) {
 	lastError := connection["last_error"].(map[string]interface{})
 	if lastError["code"] != "create_host_failed" {
 		t.Fatalf("last_error.code = %v, want create_host_failed", lastError["code"])
+	}
+}
+
+func TestStartOnlineHostIncludesNetworkSnapshot(t *testing.T) {
+	srv := newAPIServer()
+	sid := createSession(t, srv)
+
+	res := postAction(t, srv, "startOnlineHost", sid, map[string]interface{}{
+		"name":       "Host",
+		"numPlayers": 2,
+	})
+	if !res["ok"].(bool) {
+		t.Fatalf("startOnlineHost failed: %v", res["error"])
+	}
+
+	network := requireSessionNetwork(t, res)
+	if network["transport"] != "tcp_tls" {
+		t.Fatalf("transport = %v, want tcp_tls", network["transport"])
+	}
+	if mixed, _ := network["mixed_protocol_session"].(bool); mixed {
+		t.Fatalf("mixed_protocol_session = %v, want false", mixed)
+	}
+	seatVersions, ok := network["seat_protocol_versions"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected seat_protocol_versions, got %v", network["seat_protocol_versions"])
+	}
+	if seatVersions["0"] != float64(2) {
+		t.Fatalf("seat 0 protocol = %v, want 2", seatVersions["0"])
+	}
+}
+
+func TestJoinOnlineIncludesNegotiatedProtocolVersion(t *testing.T) {
+	srv := newAPIServer()
+	hostSID := createSession(t, srv)
+	clientSID := createSession(t, srv)
+
+	hostRes := postAction(t, srv, "startOnlineHost", hostSID, map[string]interface{}{
+		"name":       "Host",
+		"numPlayers": 2,
+	})
+	if !hostRes["ok"].(bool) {
+		t.Fatalf("startOnlineHost failed: %v", hostRes["error"])
+	}
+	session := hostRes["session"].(map[string]interface{})
+	key := session["inviteKey"].(string)
+
+	res := postAction(t, srv, "joinOnline", clientSID, map[string]interface{}{
+		"name": "Guest",
+		"key":  key,
+		"role": "auto",
+	})
+	if !res["ok"].(bool) {
+		t.Fatalf("joinOnline failed: %v", res["error"])
+	}
+
+	network := requireSessionNetwork(t, res)
+	if network["transport"] != "tcp_tls" {
+		t.Fatalf("transport = %v, want tcp_tls", network["transport"])
+	}
+	if network["negotiated_protocol_version"] != float64(2) {
+		t.Fatalf("negotiated_protocol_version = %v, want 2", network["negotiated_protocol_version"])
 	}
 }
 
@@ -228,6 +425,56 @@ func TestResetReturnsRuntimeToIdleAndEmitsSessionClosed(t *testing.T) {
 	kinds := eventKinds(t, res)
 	if !containsKind(kinds, appcore.EventSessionClosed) {
 		t.Fatalf("expected %q in events, got %v", appcore.EventSessionClosed, kinds)
+	}
+}
+
+func TestNewHandStartsAnotherHandInSameMatch(t *testing.T) {
+	srv := newAPIServer()
+	sid := createAndStart(t, srv)
+
+	res := postAction(t, srv, "newHand", sid, nil)
+	if !res["ok"].(bool) {
+		t.Fatalf("newHand failed: %v", res["error"])
+	}
+	if res["mode"] != appcore.ModeOfflineMatch {
+		t.Fatalf("mode = %v, want %q", res["mode"], appcore.ModeOfflineMatch)
+	}
+}
+
+func TestAutoCpuLoopTickReturnsBundle(t *testing.T) {
+	srv := newAPIServer()
+	sid := createAndStart(t, srv)
+
+	res := postAction(t, srv, "autoCpuLoopTick", sid, nil)
+	if !res["ok"].(bool) {
+		t.Fatalf("autoCpuLoopTick failed: %v", res["error"])
+	}
+	if res["bundle"] == nil {
+		t.Fatalf("expected bundle field in response")
+	}
+}
+
+func TestCloseSessionDeletesBrowserSession(t *testing.T) {
+	srv := newAPIServer()
+	sid := createSession(t, srv)
+
+	code, res := postActionHTTP(t, srv, "closeSession", sid, nil)
+	if code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", code, http.StatusOK)
+	}
+	if !res["ok"].(bool) {
+		t.Fatalf("closeSession failed: %v", res["error"])
+	}
+	if closed, _ := res["sessionClosed"].(bool); !closed {
+		t.Fatalf("sessionClosed = %v, want true", res["sessionClosed"])
+	}
+
+	code, res = postActionHTTP(t, srv, "snapshot", sid, nil)
+	if code != http.StatusNotFound {
+		t.Fatalf("status after close = %d, want %d", code, http.StatusNotFound)
+	}
+	if res["error_code"] != "session_not_found" {
+		t.Fatalf("error_code after close = %v, want session_not_found", res["error_code"])
 	}
 }
 
@@ -272,5 +519,83 @@ func TestOnlyPostAllowed(t *testing.T) {
 	}
 	if res["error_code"] != "method_not_allowed" {
 		t.Fatalf("error_code = %v, want method_not_allowed", res["error_code"])
+	}
+}
+
+func TestResolveStaticRootUsesEnvOverride(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "index.html"), []byte("<!doctype html>"), 0o644); err != nil {
+		t.Fatalf("write index: %v", err)
+	}
+
+	t.Setenv("TRUCO_WEB_ROOT", dir)
+	if got := resolveStaticRoot(); got != dir {
+		t.Fatalf("resolveStaticRoot() = %q, want %q", got, dir)
+	}
+}
+
+func TestStaticHandlerServesIndexAndAssets(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "index.html"), []byte("<!doctype html><title>browser</title>"), 0o644); err != nil {
+		t.Fatalf("write index: %v", err)
+	}
+	if err := os.Mkdir(filepath.Join(dir, "assets"), 0o755); err != nil {
+		t.Fatalf("mkdir assets: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "assets", "app.js"), []byte("console.log('ok')"), 0o644); err != nil {
+		t.Fatalf("write asset: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "favicon.ico"), []byte("ico"), 0o644); err != nil {
+		t.Fatalf("write favicon: %v", err)
+	}
+
+	handler := newStaticHandler(dir)
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET / = %d, want 200", w.Code)
+	}
+	if !strings.Contains(w.Body.String(), "<title>browser</title>") {
+		t.Fatalf("GET / returned unexpected body: %s", w.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/assets/app.js", nil)
+	w = httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET /assets/app.js = %d, want 200", w.Code)
+	}
+
+	req = httptest.NewRequest(http.MethodHead, "/favicon.ico", nil)
+	w = httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("HEAD /favicon.ico = %d, want 200", w.Code)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/round/truco", nil)
+	w = httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET /round/truco = %d, want 200", w.Code)
+	}
+	if !strings.Contains(w.Body.String(), "<title>browser</title>") {
+		t.Fatalf("client route fallback returned unexpected body: %s", w.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/assets/missing.js", nil)
+	w = httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("GET /assets/missing.js = %d, want 404", w.Code)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/favicon-missing.ico", nil)
+	w = httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("GET /favicon-missing.ico = %d, want 404", w.Code)
 	}
 }

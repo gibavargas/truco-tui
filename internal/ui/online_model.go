@@ -209,6 +209,9 @@ func (m onlineMatchModel) handleHostAction(msg hostActionMsg) (tea.Model, tea.Cm
 		pushSnapshotsToClients(m.host, m.game)
 	}
 	m.snapshot = m.game.Snapshot(m.localPlayerIdx)
+	if !m.canFaceDownNow() {
+		m.faceDownMode = false
+	}
 	m.visualState.applySnapshotVisualTransitions(prev, m.snapshot)
 	return m, tea.Batch(
 		waitHostActionCmd(m.host),
@@ -234,6 +237,9 @@ func (m onlineMatchModel) handleHostCPUStep(msg hostCPUStepMsg) (tea.Model, tea.
 	if msg.changed {
 		prev := m.snapshot
 		m.snapshot = msg.snapshot
+		if !m.canFaceDownNow() {
+			m.faceDownMode = false
+		}
 		m.visualState.applySnapshotVisualTransitions(prev, m.snapshot)
 		return m, tea.Batch(
 			hostCPUStepCmd(m.game, m.host, m.localPlayerIdx),
@@ -252,6 +258,9 @@ func (m onlineMatchModel) handleClientState(msg clientStateMsg) (tea.Model, tea.
 	m.snapshot = msg.snapshot
 	if msg.snapshot.CurrentPlayerIdx >= 0 {
 		m.localPlayerIdx = msg.snapshot.CurrentPlayerIdx
+	}
+	if !m.canFaceDownNow() {
+		m.faceDownMode = false
 	}
 	m.visualState.applySnapshotVisualTransitions(prev, m.snapshot)
 	return m, tea.Batch(
@@ -299,6 +308,9 @@ func (m onlineMatchModel) handleClientFailover(msg clientFailoverMsg) (tea.Model
 		m.localPlayerIdx = 0
 		m.isOnline = true
 		m.isHost = true
+		if !m.canFaceDownNow() {
+			m.faceDownMode = false
+		}
 		m.visualState.applySnapshotVisualTransitions(prev, m.snapshot)
 		return m, tea.Batch(
 			waitHostActionCmd(m.host),
@@ -504,9 +516,22 @@ func (m *onlineMatchModel) applyKeyAction(key string) error {
 
 	if m.mode == onlineModeHost {
 		switch key {
+		case "v":
+			if !m.canFaceDownNow() {
+				return errors.New("carta virada indisponível agora")
+			}
+			m.faceDownMode = !m.faceDownMode
+			return nil
 		case "1", "2", "3":
 			idx := int(key[0] - '1')
-			if err := m.game.PlayCard(m.localPlayerIdx, idx); err != nil {
+			var err error
+			if m.faceDownMode {
+				err = m.game.PlayCardFaceDown(m.localPlayerIdx, idx)
+				m.faceDownMode = false
+			} else {
+				err = m.game.PlayCard(m.localPlayerIdx, idx)
+			}
+			if err != nil {
 				return err
 			}
 		case "t":
@@ -529,9 +554,17 @@ func (m *onlineMatchModel) applyKeyAction(key string) error {
 
 	if m.mode == onlineModeClient {
 		switch key {
+		case "v":
+			if !m.canFaceDownNow() {
+				return errors.New("carta virada indisponível agora")
+			}
+			m.faceDownMode = !m.faceDownMode
+			return nil
 		case "1", "2", "3":
 			idx := int(key[0] - '1')
-			return m.cli.SendGameAction("play", idx)
+			faceDown := m.faceDownMode
+			m.faceDownMode = false
+			return m.cli.SendGameActionWithOptions("play", idx, faceDown)
 		case "t":
 			return m.cli.SendGameAction("truco", 0)
 		case "a":

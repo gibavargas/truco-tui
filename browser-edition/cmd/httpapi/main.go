@@ -8,6 +8,8 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -17,7 +19,8 @@ import (
 )
 
 type browserSession struct {
-	rt *appcore.Runtime
+	rt       *appcore.Runtime
+	lastSeen time.Time
 }
 
 type sessionStore struct {
@@ -32,6 +35,9 @@ func newSessionStore() *sessionStore {
 func (s *sessionStore) get(id string) *browserSession {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if bs := s.sessions[id]; bs != nil {
+		bs.lastSeen = time.Now()
+	}
 	return s.sessions[id]
 }
 
@@ -39,8 +45,42 @@ func (s *sessionStore) create() string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	id := randomKey()
-	s.sessions[id] = &browserSession{rt: appcore.NewRuntime()}
+	s.sessions[id] = &browserSession{rt: appcore.NewRuntime(), lastSeen: time.Now()}
 	return id
+}
+
+// sweep removes sessions that have been idle for longer than maxIdle and
+// closes their runtimes so background tickers and network loops stop.
+func (s *sessionStore) sweep(maxIdle time.Duration) int {
+	s.mu.Lock()
+	var expired []*appcore.Runtime
+	for id, bs := range s.sessions {
+		if bs == nil || time.Since(bs.lastSeen) <= maxIdle {
+			continue
+		}
+		if bs.rt != nil {
+			expired = append(expired, bs.rt)
+		}
+		delete(s.sessions, id)
+	}
+	s.mu.Unlock()
+	for _, rt := range expired {
+		_ = rt.Close()
+	}
+	return len(expired)
+}
+
+func (s *sessionStore) delete(id string) bool {
+	s.mu.Lock()
+	bs, ok := s.sessions[id]
+	if ok {
+		delete(s.sessions, id)
+	}
+	s.mu.Unlock()
+	if ok && bs != nil && bs.rt != nil {
+		_ = bs.rt.Close()
+	}
+	return ok
 }
 
 type apiServer struct {
@@ -52,9 +92,11 @@ func newAPIServer() *apiServer {
 }
 
 func (srv *apiServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// Security headers
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("X-Frame-Options", "DENY")
+	w.Header().Set("X-XSS-Protection", "1; mode=block")
 	w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
 
 	if r.Method != http.MethodPost {
@@ -130,6 +172,18 @@ func (srv *apiServer) dispatch(action, sessionID string, body map[string]interfa
 	case "snapshot":
 		return http.StatusOK, runtimeResult(bs.rt, false)
 
+	case "autoCpuLoopTick":
+		if err := dispatchIntent(bs.rt, appcore.IntentTick, appcore.TickPayload{MaxSteps: 12}); err != nil {
+			return http.StatusUnprocessableEntity, runtimeErrResult(bs.rt, "tick_failed", err)
+		}
+		return http.StatusOK, runtimeResult(bs.rt, false)
+
+	case "newHand":
+		if err := dispatchIntent(bs.rt, appcore.IntentNewHand, nil); err != nil {
+			return http.StatusUnprocessableEntity, runtimeErrResult(bs.rt, "new_hand_failed", err)
+		}
+		return http.StatusOK, runtimeResult(bs.rt, false)
+
 	case "play":
 		idx := intVal(body, "cardIndex", -1)
 		if idx < 0 {
@@ -138,6 +192,7 @@ func (srv *apiServer) dispatch(action, sessionID string, body map[string]interfa
 		if err := dispatchIntent(bs.rt, appcore.IntentGameAction, appcore.GameActionPayload{
 			Action:    "play",
 			CardIndex: idx,
+			FaceDown:  boolVal(body, "faceDown", false),
 		}); err != nil {
 			return http.StatusUnprocessableEntity, runtimeErrResult(bs.rt, "game_action_failed", err)
 		}
@@ -151,11 +206,17 @@ func (srv *apiServer) dispatch(action, sessionID string, body map[string]interfa
 		}
 		return http.StatusOK, runtimeResult(bs.rt, false)
 
-	case "reset", "leaveSession":
+	case "reset":
 		if err := dispatchIntent(bs.rt, appcore.IntentCloseSession, nil); err != nil {
 			return http.StatusUnprocessableEntity, runtimeErrResult(bs.rt, "close_session_failed", err)
 		}
 		return http.StatusOK, runtimeResult(bs.rt, true)
+
+	case "leaveSession", "closeSession":
+		if !srv.store.delete(sessionID) {
+			return http.StatusNotFound, errResult("session_not_found", "session not found")
+		}
+		return http.StatusOK, map[string]interface{}{"ok": true, "sessionClosed": true}
 
 	case "startOnlineHost":
 		if err := dispatchIntent(bs.rt, appcore.IntentCreateHostSession, appcore.CreateHostPayload{
@@ -248,14 +309,15 @@ func dispatchIntent(rt *appcore.Runtime, kind string, payload interface{}) error
 
 func runtimeResult(rt *appcore.Runtime, includeEvents bool) map[string]interface{} {
 	bundle := rt.SnapshotBundle()
+	normalizedBundle := normalizeBundleJSON(bundle)
 	out := map[string]interface{}{
 		"ok":      true,
-		"bundle":  bundle,
+		"bundle":  normalizedBundle,
 		"mode":    bundle.Mode,
 		"session": sessionFromBundle(bundle),
 	}
-	if bundle.Match != nil {
-		out["snapshot"] = mustJSON(bundle.Match)
+	if matchSnapshot, ok := normalizedBundle["match"]; ok && matchSnapshot != nil {
+		out["snapshot"] = mustJSON(matchSnapshot)
 	}
 	if includeEvents {
 		out["events"] = drainEvents(rt)
@@ -287,6 +349,7 @@ func sessionFromBundle(bundle appcore.SnapshotBundle) map[string]interface{} {
 		"connected":    connected,
 		"started":      bundle.Lobby.Started,
 		"role":         bundle.Lobby.Role,
+		"network":      bundle.Connection.Network,
 	}
 }
 
@@ -333,6 +396,7 @@ func sanitizeNumPlayers(v int) int {
 
 func runtimeErrResult(rt *appcore.Runtime, fallbackCode string, err error) map[string]interface{} {
 	bundle := rt.SnapshotBundle()
+	normalizedBundle := normalizeBundleJSON(bundle)
 	code := fallbackCode
 	message := err.Error()
 	if bundle.Connection.LastError != nil {
@@ -344,7 +408,7 @@ func runtimeErrResult(rt *appcore.Runtime, fallbackCode string, err error) map[s
 		}
 	}
 	out := errResult(code, message)
-	out["bundle"] = bundle
+	out["bundle"] = normalizedBundle
 	out["mode"] = bundle.Mode
 	out["session"] = sessionFromBundle(bundle)
 	return out
@@ -364,6 +428,56 @@ func mustJSON(v interface{}) string {
 		return "{}"
 	}
 	return string(b)
+}
+
+func normalizeBundleJSON(bundle appcore.SnapshotBundle) map[string]interface{} {
+	out := mustJSONObject(bundle)
+	ensureArrayPath(out, "ui", "lobby_slots")
+	ensureArrayPath(out, "diagnostics", "event_log")
+	if _, ok := out["lobby"]; ok {
+		ensureArrayPath(out, "lobby", "slots")
+	}
+	if _, ok := out["match"]; ok {
+		ensureArrayPath(out, "match", "Players")
+		ensureArrayPath(out, "match", "LastTrickCards")
+		ensureArrayPath(out, "match", "TrickPiles")
+		ensureArrayPath(out, "match", "Logs")
+		ensureArrayPath(out, "match", "CurrentHand", "RoundCards")
+		ensureArrayPath(out, "match", "CurrentHand", "TrickResults")
+	}
+	return out
+}
+
+func mustJSONObject(v interface{}) map[string]interface{} {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return map[string]interface{}{}
+	}
+	var out map[string]interface{}
+	if err := json.Unmarshal(b, &out); err != nil {
+		return map[string]interface{}{}
+	}
+	return out
+}
+
+func ensureArrayPath(root map[string]interface{}, path ...string) {
+	if len(path) == 0 {
+		return
+	}
+	current := root
+	for i, key := range path {
+		if i == len(path)-1 {
+			if raw, ok := current[key]; !ok || raw == nil {
+				current[key] = []interface{}{}
+			}
+			return
+		}
+		next, ok := current[key].(map[string]interface{})
+		if !ok {
+			return
+		}
+		current = next
+	}
 }
 
 func writeJSON(w http.ResponseWriter, status int, v interface{}) {
@@ -397,10 +511,29 @@ func intVal(body map[string]interface{}, key string, fallback int) int {
 	return fallback
 }
 
+func boolVal(body map[string]interface{}, key string, fallback bool) bool {
+	if v, ok := body[key]; ok {
+		switch b := v.(type) {
+		case bool:
+			return b
+		case string:
+			switch strings.ToLower(strings.TrimSpace(b)) {
+			case "1", "true", "yes", "on":
+				return true
+			case "0", "false", "no", "off":
+				return false
+			}
+		case float64:
+			return b != 0
+		}
+	}
+	return fallback
+}
+
 func randomKey() string {
 	var b [6]byte
 	if _, err := rand.Read(b[:]); err != nil {
-		return strconv.FormatInt(time.Now().UnixNano(), 16)
+		panic("entropy source failed")
 	}
 	return strings.ToUpper(hex.EncodeToString(b[:]))
 }
@@ -416,12 +549,27 @@ func main() {
 	}
 
 	srv := newAPIServer()
+	staticRoot := resolveStaticRoot()
+
+	go func() {
+		sweeper := time.NewTicker(5 * time.Minute)
+		defer sweeper.Stop()
+		for range sweeper.C {
+			if n := srv.store.sweep(2 * time.Hour); n > 0 {
+				log.Printf("expired %d idle browser session(s)", n)
+			}
+		}
+	}()
 
 	mux := http.NewServeMux()
 	mux.Handle("/api/", srv)
+	mux.Handle("/", newStaticHandler(staticRoot))
 
 	addr := net.JoinHostPort(host, port)
 	log.Printf("Truco HTTP API listening on %s", addr)
+	if staticRoot != "" {
+		log.Printf("Serving browser assets from %s", staticRoot)
+	}
 	httpSrv := &http.Server{
 		Addr:              addr,
 		Handler:           mux,
@@ -433,4 +581,72 @@ func main() {
 	if err := httpSrv.ListenAndServe(); err != nil {
 		log.Fatalf("server error: %v", err)
 	}
+}
+
+func resolveStaticRoot() string {
+	if envRoot := strings.TrimSpace(os.Getenv("TRUCO_WEB_ROOT")); envRoot != "" {
+		if info, err := os.Stat(envRoot); err == nil && info.IsDir() {
+			return envRoot
+		}
+	}
+
+	exePath, err := os.Executable()
+	if err == nil {
+		exeDir := filepath.Dir(exePath)
+		if hasIndexHTML(exeDir) {
+			return exeDir
+		}
+	}
+
+	for _, candidate := range []string{
+		filepath.Join("browser-edition", "dist"),
+		"dist",
+	} {
+		if hasIndexHTML(candidate) {
+			return candidate
+		}
+	}
+
+	return ""
+}
+
+func hasIndexHTML(root string) bool {
+	info, err := os.Stat(filepath.Join(root, "index.html"))
+	return err == nil && !info.IsDir()
+}
+
+func newStaticHandler(root string) http.Handler {
+	if root == "" {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			http.NotFound(w, r)
+		})
+	}
+
+	fileServer := http.FileServer(http.Dir(root))
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if strings.HasPrefix(r.URL.Path, "/api/") {
+			http.NotFound(w, r)
+			return
+		}
+		if r.URL.Path == "/" {
+			http.ServeFile(w, r, filepath.Join(root, "index.html"))
+			return
+		}
+
+		assetPath := filepath.Join(root, filepath.FromSlash(strings.TrimPrefix(filepath.Clean(r.URL.Path), "/")))
+		if info, err := os.Stat(assetPath); err == nil && !info.IsDir() {
+			fileServer.ServeHTTP(w, r)
+			return
+		}
+		if strings.HasPrefix(r.URL.Path, "/assets/") || path.Ext(r.URL.Path) != "" {
+			http.NotFound(w, r)
+			return
+		}
+
+		http.ServeFile(w, r, filepath.Join(root, "index.html"))
+	})
 }

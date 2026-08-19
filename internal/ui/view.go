@@ -42,51 +42,51 @@ type uiPalette struct {
 var (
 	darkPalette = uiPalette{
 		FeltEdge:       lipgloss.Color("22"),
-		FeltMiddle:     lipgloss.Color("28"),
-		FeltCenter:     lipgloss.Color("29"),
-		TextPrimary:    lipgloss.Color("255"),
-		TextMuted:      lipgloss.Color("240"),
-		TextDim:        lipgloss.Color("245"),
-		TextDanger:     lipgloss.Color("196"),
+		FeltMiddle:     lipgloss.Color("29"),
+		FeltCenter:     lipgloss.Color("30"),
+		TextPrimary:    lipgloss.Color("230"),
+		TextMuted:      lipgloss.Color("109"),
+		TextDim:        lipgloss.Color("244"),
+		TextDanger:     lipgloss.Color("203"),
 		TextWarning:    lipgloss.Color("220"),
-		TextAccent:     lipgloss.Color("51"),
-		TextCardDark:   lipgloss.Color("232"),
-		CardBackground: lipgloss.Color("255"),
-		FrameBorder:    lipgloss.Color("57"),
+		TextAccent:     lipgloss.Color("221"),
+		TextCardDark:   lipgloss.Color("236"),
+		CardBackground: lipgloss.Color("230"),
+		FrameBorder:    lipgloss.Color("94"),
 		ScoreBarBG:     lipgloss.Color("235"),
-		ScoreChipBG:    lipgloss.Color("238"),
-		AccentChipBG:   lipgloss.Color("17"),
+		ScoreChipBG:    lipgloss.Color("23"),
+		AccentChipBG:   lipgloss.Color("58"),
 		HelpBarBG:      lipgloss.Color("236"),
 		TabBarBG:       lipgloss.Color("237"),
-		TabActiveBG:    lipgloss.Color("19"),
-		TurnBadgeBG:    lipgloss.Color("33"),
-		TeamOne:        lipgloss.Color("45"),
-		TeamTwo:        lipgloss.Color("214"),
-		GridBorder:     lipgloss.Color("60"),
+		TabActiveBG:    lipgloss.Color("58"),
+		TurnBadgeBG:    lipgloss.Color("136"),
+		TeamOne:        lipgloss.Color("81"),
+		TeamTwo:        lipgloss.Color("215"),
+		GridBorder:     lipgloss.Color("94"),
 	}
 	lightPalette = uiPalette{
-		FeltEdge:       lipgloss.Color("120"),
-		FeltMiddle:     lipgloss.Color("114"),
-		FeltCenter:     lipgloss.Color("108"),
-		TextPrimary:    lipgloss.Color("16"),
-		TextMuted:      lipgloss.Color("240"),
-		TextDim:        lipgloss.Color("242"),
+		FeltEdge:       lipgloss.Color("115"),
+		FeltMiddle:     lipgloss.Color("108"),
+		FeltCenter:     lipgloss.Color("107"),
+		TextPrimary:    lipgloss.Color("236"),
+		TextMuted:      lipgloss.Color("59"),
+		TextDim:        lipgloss.Color("95"),
 		TextDanger:     lipgloss.Color("124"),
-		TextWarning:    lipgloss.Color("130"),
-		TextAccent:     lipgloss.Color("24"),
-		TextCardDark:   lipgloss.Color("16"),
-		CardBackground: lipgloss.Color("255"),
-		FrameBorder:    lipgloss.Color("24"),
-		ScoreBarBG:     lipgloss.Color("188"),
-		ScoreChipBG:    lipgloss.Color("153"),
-		AccentChipBG:   lipgloss.Color("117"),
-		HelpBarBG:      lipgloss.Color("187"),
-		TabBarBG:       lipgloss.Color("188"),
-		TabActiveBG:    lipgloss.Color("68"),
-		TurnBadgeBG:    lipgloss.Color("68"),
-		TeamOne:        lipgloss.Color("25"),
-		TeamTwo:        lipgloss.Color("160"),
-		GridBorder:     lipgloss.Color("24"),
+		TextWarning:    lipgloss.Color("136"),
+		TextAccent:     lipgloss.Color("94"),
+		TextCardDark:   lipgloss.Color("236"),
+		CardBackground: lipgloss.Color("230"),
+		FrameBorder:    lipgloss.Color("95"),
+		ScoreBarBG:     lipgloss.Color("187"),
+		ScoreChipBG:    lipgloss.Color("151"),
+		AccentChipBG:   lipgloss.Color("229"),
+		HelpBarBG:      lipgloss.Color("188"),
+		TabBarBG:       lipgloss.Color("187"),
+		TabActiveBG:    lipgloss.Color("229"),
+		TurnBadgeBG:    lipgloss.Color("222"),
+		TeamOne:        lipgloss.Color("31"),
+		TeamTwo:        lipgloss.Color("166"),
+		GridBorder:     lipgloss.Color("101"),
 	}
 )
 
@@ -179,8 +179,8 @@ func applyThemeStyles(p uiPalette) {
 	ansiFeltBG = colorTo256BG(p.FeltEdge)
 
 	frameBorderStyle = lipgloss.NewStyle().Border(lipgloss.DoubleBorder()).BorderForeground(p.FrameBorder)
-	bigCardBlack = lipgloss.NewStyle().Background(p.CardBackground).Foreground(p.TextCardDark)
-	bigCardCompact = lipgloss.NewStyle().Background(p.CardBackground).Foreground(p.TextCardDark)
+	bigCardBlack = lipgloss.NewStyle().Background(p.CardBackground).Foreground(p.TextCardDark).Bold(true)
+	bigCardCompact = lipgloss.NewStyle().Background(p.CardBackground).Foreground(p.TextCardDark).Bold(true)
 	miniBack = lipgloss.NewStyle().
 		Background(p.FeltMiddle).
 		Foreground(p.TextAccent).
@@ -210,8 +210,8 @@ func applyThemeStyles(p uiPalette) {
 	roundLabelStyle = lipgloss.NewStyle().Foreground(p.TextWarning).Bold(true)
 	alertStyle = lipgloss.NewStyle().Foreground(p.TextDanger).Bold(true)
 	winnerStyle = lipgloss.NewStyle().Foreground(p.TextWarning).Bold(true)
-	playerBoxStyle = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(p.TextMuted).Background(p.FeltMiddle).Padding(0, 1)
-	activePlayerBoxStyle = playerBoxStyle.BorderForeground(p.TextWarning)
+	playerBoxStyle = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(p.GridBorder).Background(p.FeltMiddle).Padding(0, 1)
+	activePlayerBoxStyle = playerBoxStyle.BorderForeground(p.TextWarning).Bold(true)
 	activeNameStyle = lipgloss.NewStyle().Foreground(p.TextWarning).Bold(true)
 	centerPanelStyle = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(p.TextMuted).Background(p.FeltCenter).Padding(0, 1)
 	centerPanelCompactStyle = lipgloss.NewStyle().Background(p.FeltCenter)
@@ -250,29 +250,61 @@ func (m UIModel) View() string {
 	return m.renderTable()
 }
 
-// ── Main renderer ───────────────────────────────────────────────────────────
+func (m UIModel) renderHeader(w int) string {
+	headerTitle := tr("header_title")
+	return headerStyle.Width(w).Align(lipgloss.Center).Render(fitSingleLine(headerTitle, maxInt(1, w-headerHorizontalPadding)))
+}
 
-func (m UIModel) renderTable() string {
-	lp := computeLayout(m.width, m.height)
-	w := lp.w
-
-	localIdx := 0
-	if m.snapshot.CurrentPlayerIdx >= 0 {
-		localIdx = m.snapshot.CurrentPlayerIdx
+func (m UIModel) renderTableArea(w int, lp layoutProfile, playersMap map[string]*truco.Player, turnID int, turnName string, localIdx int) string {
+	innerW := w - 2
+	if innerW < 1 {
+		innerW = 1
 	}
-	playersMap := getRelativePlayers(m.snapshot.Players, localIdx)
-	turnID := m.snapshot.TurnPlayer
-	turnName := safePlayerName(m.snapshot.Players, turnID)
+	// Opponent at the top
+	topSection := m.renderTopPlayer(playersMap["top"], turnID, lp.compact)
+
+	// Center section (left player | table center | right player)
+	centerSection := m.renderMiddle(playersMap["left"], playersMap["right"], turnID, turnName, innerW, lp)
+
+	// Local player at the bottom
+	botSection := m.renderBottomPlayer(localIdx, turnID, lp.compact)
+
+	topBlock := fitBlock(topSection, innerW, lp.topH, lipgloss.Center, lipgloss.Center, feltEdgeColor)
+	midBlock := fitBlock(centerSection, innerW, lp.midH, lipgloss.Center, lipgloss.Center, feltMiddleColor)
+	botBlock := fitBlock(botSection, innerW, lp.botH, lipgloss.Center, lipgloss.Bottom, feltEdgeColor)
+
+	tableBody := lipgloss.JoinVertical(lipgloss.Center, topBlock, midBlock, botBlock)
+	// Keep the felt background active after nested style resets so the
+	// "table" area never falls back to terminal default black.
+	tableBody = enforceBackground(tableBody, ansiFeltBG)
+
+	framedTable := frameBorderStyle.Render(tableBody)
+	if m.trucoFlashFrames > 0 {
+		framedTable = m.renderTrucoOverlay(innerW, lp.tableBodyH)
+	} else if m.tableSweepFrames > 0 {
+		framedTable = m.renderTrickSweepOverlay(innerW, lp.tableBodyH)
+	} else if m.trickOverlayMsg != "" {
+		framedTable = m.renderTrickOverlay(innerW, lp.tableBodyH, m.trickOverlayMsg)
+	}
+	return framedTable
+}
+
+func (m UIModel) renderFooter(w int, lp layoutProfile) (string, string, string) {
+	tabBar := tabBarStyle.Width(w).Render(fitSingleLine(m.renderTabs(), maxInt(1, w-tabHorizontalPadding)))
+	tabPanel := m.renderTabPanel(w, lp.panelLines)
+
+	// ─── 4. Status / Help bar ───────────────────────────────────────────
+	statusLine := fitSingleLine(m.buildStatusLine(), maxInt(1, w-statusHorizontalPadding))
+	helpBar := helpStyle.Width(w).Render(statusLine)
+	return tabBar, tabPanel, helpBar
+}
+
+func (m UIModel) renderScoreAndRoleBars(w int, lp layoutProfile, turnName string) (string, string) {
 	scoreTurnName := clip(turnName, defaultTurnNameMax)
 	if lp.compact {
 		scoreTurnName = clip(turnName, compactTurnNameMax)
 	}
 
-	// ─── 1. Header ──────────────────────────────────────────────────────
-	headerTitle := tr("header_title")
-	header := headerStyle.Width(w).Align(lipgloss.Center).Render(fitSingleLine(headerTitle, maxInt(1, w-headerHorizontalPadding)))
-
-	// ─── 2. Score bar ───────────────────────────────────────────────────
 	t1Score := fmt.Sprintf("T1 %d", m.snapshot.MatchPoints[0])
 	t2Score := fmt.Sprintf("T2 %d", m.snapshot.MatchPoints[1])
 	stake := fmt.Sprintf("%s %d", tr("score_stake"), m.snapshot.CurrentHand.Stake)
@@ -311,45 +343,33 @@ func (m UIModel) renderTable() string {
 	roleBar := helpStyle.Width(w).Render(
 		fitSingleLine(m.renderRoleLane(maxInt(1, w-statusHorizontalPadding)), maxInt(1, w-statusHorizontalPadding)),
 	)
+	return scoreBar, roleBar
+}
+
+// ── Main renderer ───────────────────────────────────────────────────────────
+
+func (m UIModel) renderTable() string {
+	lp := computeLayout(m.width, m.height)
+	w := lp.w
+
+	localIdx := 0
+	if m.snapshot.CurrentPlayerIdx >= 0 {
+		localIdx = m.snapshot.CurrentPlayerIdx
+	}
+	playersMap := getRelativePlayers(m.snapshot.Players, localIdx)
+	turnID := m.snapshot.TurnPlayer
+	turnName := safePlayerName(m.snapshot.Players, turnID)
+
+	// ─── 1. Header ──────────────────────────────────────────────────────
+	header := m.renderHeader(w)
+
+	// ─── 2. Score bar ───────────────────────────────────────────────────
+	scoreBar, roleBar := m.renderScoreAndRoleBars(w, lp, turnName)
 
 	// ─── 3. Table area ──────────────────────────────────────────────────
-	innerW := w - 2
-	if innerW < 1 {
-		innerW = 1
-	}
-	// Opponent at the top
-	topSection := m.renderTopPlayer(playersMap["top"], turnID, lp.compact)
+	framedTable := m.renderTableArea(w, lp, playersMap, turnID, turnName, localIdx)
 
-	// Center section (left player | table center | right player)
-	centerSection := m.renderMiddle(playersMap["left"], playersMap["right"], turnID, turnName, innerW, lp)
-
-	// Local player at the bottom
-	botSection := m.renderBottomPlayer(localIdx, turnID, lp.compact)
-
-	topBlock := fitBlock(topSection, innerW, lp.topH, lipgloss.Center, lipgloss.Center, feltEdgeColor)
-	midBlock := fitBlock(centerSection, innerW, lp.midH, lipgloss.Center, lipgloss.Center, feltMiddleColor)
-	botBlock := fitBlock(botSection, innerW, lp.botH, lipgloss.Center, lipgloss.Bottom, feltEdgeColor)
-
-	tableBody := lipgloss.JoinVertical(lipgloss.Center, topBlock, midBlock, botBlock)
-	// Keep the felt background active after nested style resets so the
-	// "table" area never falls back to terminal default black.
-	tableBody = enforceBackground(tableBody, ansiFeltBG)
-
-	framedTable := frameBorderStyle.Render(tableBody)
-	if m.trucoFlashFrames > 0 {
-		framedTable = m.renderTrucoOverlay(innerW, lp.tableBodyH)
-	} else if m.tableSweepFrames > 0 {
-		framedTable = m.renderTrickSweepOverlay(innerW, lp.tableBodyH)
-	} else if m.trickOverlayMsg != "" {
-		framedTable = m.renderTrickOverlay(innerW, lp.tableBodyH, m.trickOverlayMsg)
-	}
-
-	tabBar := tabBarStyle.Width(w).Render(fitSingleLine(m.renderTabs(), maxInt(1, w-tabHorizontalPadding)))
-	tabPanel := m.renderTabPanel(w, lp.panelLines)
-
-	// ─── 4. Status / Help bar ───────────────────────────────────────────
-	statusLine := fitSingleLine(m.buildStatusLine(), maxInt(1, w-statusHorizontalPadding))
-	helpBar := helpStyle.Width(w).Render(statusLine)
+	tabBar, tabPanel, helpBar := m.renderFooter(w, lp)
 
 	// ─── Assemble ───────────────────────────────────────────────────────
 	return lipgloss.JoinVertical(lipgloss.Left,
@@ -480,7 +500,11 @@ func (m UIModel) renderTabPanel(w int, linesLimit int) string {
 	lines := make([]string, 0, 3)
 	switch m.activeTab {
 	case "chat":
-		lines = append(lines, tr("panel_chat_desc")+" "+tr("panel_chat_message_prefix")+m.renderChatInputWithCursor())
+		chatDesc := tr("panel_chat_desc_offline")
+		if m.isOnline {
+			chatDesc = tr("panel_chat_desc_online")
+		}
+		lines = append(lines, chatDesc+" "+tr("panel_chat_message_prefix")+m.renderChatInputWithCursor())
 		if strings.TrimSpace(m.chatInput) == "" {
 			lines = append(lines, tr("panel_chat_hint"))
 		}
@@ -691,6 +715,9 @@ func (m UIModel) renderCenter(w int, turnName string, compact bool) string {
 		pName := clip(safePlayerName(s.Players, pc.PlayerID), nameMax)
 		label := lipgloss.NewStyle().Foreground(lgDim).Render(pName)
 		card := renderBigCard(pc.Card, leading[i], compact)
+		if pc.FaceDown {
+			card = renderBigCardBack(compact)
+		}
 		if leading[i] {
 			label = leadingCardLabelStyle.Render("★ " + pName)
 		}
@@ -861,7 +888,7 @@ func renderBigCard(c truco.Card, leading bool, compact bool) string {
 		fg = lgRed
 	}
 	if compact {
-		face := fmt.Sprintf("┌%s%s┐\n└───┘", rank, sym)
+		face := fmt.Sprintf("╭%s%s╮\n╰──╯", rank, sym)
 		style := bigCardCompact.Foreground(fg)
 		if leading {
 			style = style.Bold(true)
@@ -872,11 +899,11 @@ func renderBigCard(c truco.Card, leading bool, compact bool) string {
 	topLeft := rank + sym
 	botRight := sym + rank
 	lines := []string{
-		"┌─────┐",
+		"╭─────╮",
 		fmt.Sprintf("│%-2s   │", topLeft),
 		fmt.Sprintf("│  %s  │", sym),
 		fmt.Sprintf("│   %-2s│", botRight),
-		"└─────┘",
+		"╰─────╯",
 	}
 	cardFace := strings.Join(lines, "\n")
 	style := bigCardBlack.Foreground(fg)
@@ -893,6 +920,27 @@ func renderBigCard(c truco.Card, leading bool, compact bool) string {
 	return rendered
 }
 
+func renderBigCardBack(compact bool) string {
+	if compact {
+		return bigCardCompact.
+			Foreground(lgGray).
+			Background(lgPurple).
+			Render("╭◇◇╮\n╰──╯")
+	}
+
+	lines := []string{
+		"╭─────╮",
+		"│◇╲╱◇│",
+		"│ ╳╳ │",
+		"│◇╱╲◇│",
+		"╰─────╯",
+	}
+	return bigCardBlack.
+		Foreground(lgGray).
+		Background(lgPurple).
+		Render(strings.Join(lines, "\n"))
+}
+
 // renderMiniHand renders N compact card‑backs horizontally (for top opponent).
 func renderMiniHand(n int, compact bool) string {
 	if n == 0 {
@@ -904,7 +952,7 @@ func renderMiniHand(n int, compact bool) string {
 	}
 	var cards []string
 	for i := 0; i < n; i++ {
-		cards = append(cards, cardStyle.Render("▒▒"))
+		cards = append(cards, cardStyle.Render("◇◇"))
 	}
 	return lipgloss.JoinHorizontal(lipgloss.Center, cards...)
 }
@@ -920,7 +968,7 @@ func renderMiniHandVertical(n int, compact bool) string {
 	}
 	var cards []string
 	for i := 0; i < n; i++ {
-		cards = append(cards, cardStyle.Render("▒▒"))
+		cards = append(cards, cardStyle.Render("◇◇"))
 	}
 	return lipgloss.JoinVertical(lipgloss.Center, cards...)
 }
@@ -981,6 +1029,11 @@ func leadingCardIndexes(played []truco.PlayedCard, manilha truco.Rank) map[int]b
 	out := make(map[int]bool, len(played))
 	if len(played) == 0 {
 		return out
+	}
+	for _, pc := range played {
+		if pc.FaceDown {
+			return out
+		}
 	}
 	best := truco.CardPower(played[0].Card, manilha)
 	for i := 1; i < len(played); i++ {

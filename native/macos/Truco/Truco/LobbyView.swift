@@ -12,24 +12,17 @@ struct LobbyView: View {
         ZStack {
             // Background
             LinearGradient(
-                colors: [Color(red: 0.06, green: 0.08, blue: 0.12), Color(red: 0.10, green: 0.14, blue: 0.20)],
+                colors: [
+                    Color(red: 0.055, green: 0.075, blue: 0.09),
+                    Color(red: 0.10, green: 0.14, blue: 0.13),
+                    Color(red: 0.12, green: 0.08, blue: 0.045)
+                ],
                 startPoint: .top,
                 endPoint: .bottom
             )
             .ignoresSafeArea()
             
-            // Subtle card suit pattern
-            GeometryReader { geo in
-                ForEach(0..<12, id: \.self) { i in
-                    Text(["♠", "♥", "♦", "♣"][i % 4])
-                        .font(.system(size: 60))
-                        .foregroundColor(.white.opacity(0.03))
-                        .position(
-                            x: CGFloat.random(in: 0...geo.size.width),
-                            y: CGFloat.random(in: 0...geo.size.height)
-                        )
-                }
-            }
+            LobbySuitPattern()
             
             VStack(spacing: 0) {
                 Spacer()
@@ -51,7 +44,7 @@ struct LobbyView: View {
                         .tracking(8)
                     
                     Rectangle()
-                        .fill(LinearGradient(colors: [.clear, .yellow.opacity(0.4), .clear], startPoint: .leading, endPoint: .trailing))
+                        .fill(LinearGradient(colors: [.clear, .yellow.opacity(0.46), .clear], startPoint: .leading, endPoint: .trailing))
                         .frame(width: 200, height: 2)
                         .padding(.top, 8)
                 }
@@ -111,6 +104,28 @@ struct LobbyView: View {
     }
 }
 
+private struct LobbySuitPattern: View {
+    private let suits = ["♠", "♥", "♦", "♣"]
+
+    var body: some View {
+        GeometryReader { geo in
+            ForEach(0..<16, id: \.self) { index in
+                let column = CGFloat(index % 4)
+                let row = CGFloat(index / 4)
+                Text(suits[index % suits.count])
+                    .font(.system(size: 46 + CGFloat((index % 3) * 10), weight: .bold, design: .serif))
+                    .foregroundColor(.white.opacity(index % 2 == 0 ? 0.035 : 0.022))
+                    .rotationEffect(.degrees(Double(index % 2 == 0 ? 8 : -11)))
+                    .position(
+                        x: geo.size.width * (0.12 + column * 0.25),
+                        y: geo.size.height * (0.12 + row * 0.24)
+                    )
+            }
+        }
+        .allowsHitTesting(false)
+    }
+}
+
 // MARK: - Lobby Button
 
 private struct LobbyButton: View {
@@ -143,12 +158,23 @@ private struct LobbyButton: View {
             .padding(.vertical, 16)
             .background(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(Color.white.opacity(isHovered ? 0.12 : 0.06))
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                color.opacity(isHovered ? 0.22 : 0.12),
+                                Color.white.opacity(isHovered ? 0.10 : 0.055)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .stroke(color.opacity(isHovered ? 0.5 : 0.2), lineWidth: 1)
             )
+            .shadow(color: color.opacity(isHovered ? 0.22 : 0.08), radius: isHovered ? 16 : 8, x: 0, y: 8)
+            .scaleEffect(isHovered ? 1.018 : 1)
         }
         .buttonStyle(.plain)
         .onHover { h in
@@ -174,7 +200,7 @@ struct OfflineSetupSheet: View {
     
     var body: some View {
         VStack(spacing: 20) {
-            Text("Partida Offline")
+            Text("Mesa offline")
                 .font(.title2.bold())
             
             Form {
@@ -215,7 +241,7 @@ struct OfflineSetupSheet: View {
                 Button("Cancelar") { dismiss() }
                     .buttonStyle(.bordered)
                 
-                Button("Iniciar Partida") {
+                Button("Começar partida") {
                     startGame()
                     dismiss()
                 }
@@ -265,7 +291,7 @@ struct OnlineMenuSheet: View {
                 } label: {
                     HStack {
                         Image(systemName: "antenna.radiowaves.left.and.right")
-                        Text("Criar Sala (Host)")
+                        Text("Criar mesa")
                     }
                     .frame(maxWidth: .infinity)
                 }
@@ -278,7 +304,7 @@ struct OnlineMenuSheet: View {
                 } label: {
                     HStack {
                         Image(systemName: "arrow.right.circle")
-                        Text("Entrar em Sala (Join)")
+                        Text("Entrar com convite")
                     }
                     .frame(maxWidth: .infinity)
                 }
@@ -313,10 +339,11 @@ struct HostSetupSheet: View {
     @State private var hostName = ""
     @State private var numPlayers = 2
     @State private var relayURL = ""
+    @State private var transportMode = "tcp_tls"
     
     var body: some View {
         VStack(spacing: 20) {
-            Text("Criar Sala")
+            Text("Criar mesa")
                 .font(.title2.bold())
             
             Form {
@@ -327,8 +354,15 @@ struct HostSetupSheet: View {
                     Text("4").tag(4)
                 }
                 .pickerStyle(.segmented)
+
+                Picker("Transporte", selection: $transportMode) {
+                    Text("Direto").tag("tcp_tls")
+                    Text("Relay").tag("relay_quic_v2")
+                    Text("Auto").tag("auto")
+                }
+                .pickerStyle(.segmented)
                 
-                TextField("Relay URL (opcional)", text: $relayURL, prompt: Text("Deixe vazio para P2P direto"))
+                TextField("Relay URL (opcional)", text: $relayURL, prompt: Text("Deixe em branco para conexão direta"))
             }
             .formStyle(.grouped)
             
@@ -340,7 +374,8 @@ struct HostSetupSheet: View {
                     store.createHost(
                         name: hostName.isEmpty ? "Host" : hostName,
                         numPlayers: numPlayers,
-                        relayURL: relayURL.isEmpty ? nil : relayURL
+                        relayURL: relayURL.isEmpty ? nil : relayURL,
+                        transportMode: transportMode
                     )
                     dismiss()
                     // Dismiss parent sheets too
@@ -366,7 +401,7 @@ struct JoinSetupSheet: View {
     
     var body: some View {
         VStack(spacing: 20) {
-            Text("Entrar na Sala")
+            Text("Entrar com convite")
                 .font(.title2.bold())
             
             Form {
@@ -460,7 +495,7 @@ struct OnlineLobbyView: View {
                 let isCompact = geometry.size.width < 980 || geometry.size.height < 760
                 ScrollView {
                     VStack(spacing: isCompact ? 18 : 24) {
-                        Text(store.mode.contains("host") ? "🏠 Sala Criada" : "🔗 Conectado")
+                        Text(store.mode.contains("host") ? "🏠 Mesa criada" : "🔗 Conectado por convite")
                             .font(.system(size: isCompact ? 30 : 34, weight: .black, design: .rounded))
                             .foregroundColor(.white)
 
@@ -485,7 +520,7 @@ struct OnlineLobbyView: View {
                         if isCompact {
                             HStack(spacing: 12) {
                                 if store.mode == "host_lobby" {
-                                    Button("Iniciar Partida") {
+                                    Button("Começar partida") {
                                         store.startHostedMatch()
                                     }
                                     .buttonStyle(.borderedProminent)
@@ -493,7 +528,7 @@ struct OnlineLobbyView: View {
                                     .controlSize(.regular)
                                 }
 
-                                Button("Sair da sala") {
+                                Button("Sair da mesa") {
                                     store.closeSession()
                                 }
                                 .disabled(!store.canCloseSession)
@@ -502,7 +537,7 @@ struct OnlineLobbyView: View {
                                 .controlSize(.regular)
                             }
                         } else {
-                            Button("Sair da sala") {
+                            Button("Sair da mesa") {
                                 store.closeSession()
                             }
                             .disabled(!store.canCloseSession)
@@ -532,7 +567,7 @@ struct OnlineLobbyView: View {
             if let lobby {
                 if let key = lobby.invite_key, !key.isEmpty {
                     VStack(spacing: 8) {
-                        Text("Chave de convite:")
+                        Text("Chave de convite")
                             .font(.footnote.weight(.semibold))
                             .foregroundColor(.white.opacity(0.7))
 
@@ -560,7 +595,7 @@ struct OnlineLobbyView: View {
 
                 if !slotStates.isEmpty {
                     VStack(spacing: 10) {
-                        Text("Jogadores (\(slotStates.filter { !$0.is_empty }.count)/\(lobby.num_players ?? slotStates.count)):")
+                        Text("Assentos (\(slotStates.filter { !$0.is_empty }.count)/\(lobby.num_players ?? slotStates.count)):")
                             .font(.footnote.weight(.bold))
                             .foregroundColor(.white.opacity(0.7))
 
@@ -593,14 +628,14 @@ struct OnlineLobbyView: View {
 
                                 HStack(spacing: 8) {
                                     if slot.can_vote_host {
-                                        Button("Votar Host") {
+                                        Button("Votar host") {
                                             store.voteHost(candidateSeat: slot.seat)
                                         }
                                         .font(.caption)
                                         .buttonStyle(.bordered)
                                     }
                                     if slot.can_request_replacement {
-                                        Button("Convite de Substituição") {
+                                        Button("Chamar substituto") {
                                             store.requestReplacementInvite(targetSeat: slot.seat)
                                         }
                                         .font(.caption)
@@ -622,15 +657,20 @@ struct OnlineLobbyView: View {
             }
 
             VStack(alignment: .leading, spacing: 12) {
-                Text("Conexão")
+                let network = connection?.network
+                Text("Detalhes da mesa")
                     .font(.footnote.bold())
                     .foregroundColor(.white.opacity(0.7))
-                connectionLine("Status", connection?.status ?? store.mode)
+                connectionLine("Estado", connection?.status ?? store.mode)
                 connectionLine("Modo", connection?.is_online == true ? "online" : "offline")
                 if let role = lobby?.role, !role.isEmpty {
                     connectionLine("Papel", role)
                 }
-                connectionLine("Fila", "\(diagnostics?.event_backlog ?? 0)")
+                if let network {
+                    connectionLine("Rede", network.transportLabel)
+                    connectionLine("Compatibilidade", network.compatibilitySummary(isHost: connection?.is_host == true))
+                }
+                connectionLine("Eventos", "\(diagnostics?.event_backlog ?? 0)")
                 if let message = connection?.last_error?.message, !message.isEmpty {
                     connectionLine("Erro", message, tint: .red.opacity(0.95))
                 }
@@ -641,7 +681,7 @@ struct OnlineLobbyView: View {
             .cornerRadius(12)
 
             if !compact && store.mode == "host_lobby" {
-                Button("Iniciar Partida") {
+                Button("Começar partida") {
                     store.startHostedMatch()
                 }
                 .buttonStyle(.borderedProminent)
@@ -659,7 +699,7 @@ struct OnlineLobbyView: View {
     @ViewBuilder
     private func lobbyEventsColumn(compact: Bool) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Chat e Eventos")
+            Text("Atualizações")
                 .font(.headline)
                 .foregroundColor(.white)
 
@@ -768,7 +808,7 @@ struct OnlineLobbyView: View {
                 .font(.footnote.italic())
                 .foregroundColor(.gray)
         case "replacement_invite":
-            Text("Link de Substituição (\(ev.payload?.target_seat ?? 0)): \(ev.payload?.invite_key ?? "")")
+            Text("Convite de substituição (\(ev.payload?.target_seat ?? 0)): \(ev.payload?.invite_key ?? "")")
                 .font(.footnote.italic())
                 .foregroundColor(.yellow)
         case "error":

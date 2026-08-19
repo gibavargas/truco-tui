@@ -4,7 +4,7 @@
 - Primary app: Go terminal client in `cmd/truco`.
 - Relay service: `cmd/truco-relay`.
 - Shared native runtime: `cmd/truco-core-ffi`.
-- Browser edition: Go HTTP API in `browser-edition/cmd/httpapi` plus PHP assets in `browser-edition/php`.
+- Browser edition: Go HTTP API in `browser-edition/cmd/httpapi` plus the TypeScript static client in `browser-edition/web`.
 
 ## Preferred Commands
 - Run TUI: `make run` or `go run ./cmd/truco`
@@ -15,10 +15,10 @@
 
 ## Browser Edition
 - Build distributable browser bundle: `make browser`
-- Browser build script writes `browser-edition/dist`, compiles the Go API to `browser-edition/dist/truco-api`, and copies PHP files there.
+- Browser build script writes `browser-edition/dist`, compiles the Go API to `browser-edition/dist/truco-api`, and bundles the static browser assets there.
 - After `make browser`, run locally with:
   - `browser-edition/dist/truco-api`
-  - `php -S localhost:8080 -t browser-edition/dist`
+  - open `http://127.0.0.1:9090/`
 
 ## FFI / Native Clients
 - Build macOS FFI library: `make ffi` or `make ffi-macos`

@@ -17,7 +17,7 @@ use intents::{
     to_json, AppIntent, CreateHostPayload, GameActionPayload, HostVotePayload, JoinSessionPayload,
     NewOfflineGamePayload, ReplacementInvitePayload, SendChatPayload, SetLocalePayload,
 };
-use models::{AppEvent, GameSnapshot, SnapshotBundle};
+use models::{ActionSnapshot, AppEvent, GameSnapshot, SnapshotBundle};
 use truco_core::TrucoCore;
 
 struct AppState {
@@ -507,9 +507,29 @@ fn parse_runtime_error(response: &str) -> Option<String> {
 }
 
 fn dispatch_game_action(core: &TrucoCore, action: &'static str, card_index: Option<usize>) {
-    let intent = AppIntent::with_payload("game_action", GameActionPayload { action, card_index });
+    dispatch_game_action_with_options(core, action, card_index, false);
+}
+
+fn dispatch_game_action_with_options(
+    core: &TrucoCore,
+    action: &'static str,
+    card_index: Option<usize>,
+    face_down: bool,
+) {
+    let intent = AppIntent::with_payload(
+        "game_action",
+        GameActionPayload {
+            action,
+            card_index,
+            face_down: face_down.then_some(true),
+        },
+    );
     if let Some(json) = to_json(&intent) {
-        let _ = core.dispatch(&json);
+        match core.dispatch(&json) {
+            Ok(Some(err_json)) => eprintln!("game action failed: {err_json}"),
+            Ok(None) => {}
+            Err(err) => eprintln!("game action failed: {err}"),
+        }
     }
 }
 
@@ -561,7 +581,8 @@ fn update_ui(
     {
         window.main_stack().set_visible_child_name("game");
         if let Some(ref snap) = bundle.game {
-            update_game_ui(window, snap, core, locale);
+            let actions = bundle.ui.as_ref().and_then(|ui| ui.actions.as_ref());
+            update_game_ui(window, snap, actions, core, locale);
         }
     } else if mode == "host_lobby" || mode == "client_lobby" {
         window.main_stack().set_visible_child_name("online_lobby");
@@ -721,16 +742,22 @@ fn update_lobby_ui(
 fn update_game_ui(
     window: &window::TrucoWindow,
     snapshot: &GameSnapshot,
+    actions: Option<&ActionSnapshot>,
     core: &TrucoCore,
     locale: Locale,
 ) {
-    let local_idx = snapshot.current_player_idx.unwrap_or(0);
-    let my_team = snapshot
-        .players
-        .as_ref()
-        .and_then(|p| p.iter().find(|pl| pl.id == local_idx))
-        .map(|pl| pl.team)
+    let local_idx = actions
+        .map(|a| a.local_player_id)
+        .or(snapshot.current_player_idx)
         .unwrap_or(0);
+    let my_team = actions.map(|a| a.local_team).unwrap_or_else(|| {
+        snapshot
+            .players
+            .as_ref()
+            .and_then(|p| p.iter().find(|pl| pl.id == local_idx))
+            .map(|pl| pl.team)
+            .unwrap_or(0)
+    });
     let n = snapshot.num_players.unwrap_or(2) as usize;
 
     if snapshot.match_finished == Some(true) {
@@ -976,32 +1003,40 @@ fn update_game_ui(
     let bottom_box = window.bottom_box();
     clear_box(&bottom_box);
 
-    let pending_for = snapshot.pending_raise_for.unwrap_or(-1);
-    let can_ask = snapshot.can_ask_truco.unwrap_or(false);
-    let is_my_turn = snapshot.turn_player == Some(local_idx);
     let match_over = snapshot.match_finished.unwrap_or(false);
+    let can_play = actions
+        .map(|a| a.can_play_card)
+        .unwrap_or(snapshot.turn_player == Some(local_idx) && snapshot.pending_raise_for.unwrap_or(-1) == -1);
+    let can_raise = actions.map(|a| a.can_ask_or_raise).unwrap_or(false);
+    let must_respond = actions
+        .map(|a| a.must_respond)
+        .unwrap_or(snapshot.pending_raise_for.unwrap_or(-1) == my_team);
+    let can_accept = actions.map(|a| a.can_accept).unwrap_or(must_respond);
+    let can_refuse = actions.map(|a| a.can_refuse).unwrap_or(must_respond);
 
     if !match_over {
         let action_box = gtk::Box::new(gtk::Orientation::Horizontal, 16);
         action_box.set_halign(gtk::Align::Center);
 
-        if pending_for == my_team {
-            let btn_accept = gtk::Button::with_label(if locale == Locale::EnUs {
-                "ACCEPT"
-            } else {
-                "ACEITAR"
-            });
-            btn_accept.add_css_class("btn-accept");
-            let core_a = core.clone();
-            btn_accept.connect_clicked(move |_| dispatch_game_action(&core_a, "accept", None));
-            action_box.append(&btn_accept);
+        if must_respond {
+            if can_accept {
+                let btn_accept = gtk::Button::with_label(if locale == Locale::EnUs {
+                    "ACCEPT"
+                } else {
+                    "ACEITAR"
+                });
+                btn_accept.add_css_class("btn-accept");
+                let core_a = core.clone();
+                btn_accept.connect_clicked(move |_| dispatch_game_action(&core_a, "accept", None));
+                action_box.append(&btn_accept);
+            }
 
             let current_stake = snapshot
                 .current_hand
                 .as_ref()
                 .and_then(|h| h.stake)
                 .unwrap_or(1);
-            if current_stake < 9 {
+            if can_raise && current_stake < 9 {
                 let btn_raise =
                     gtk::Button::with_label(&raise_label_for(next_stake(current_stake)));
                 btn_raise.add_css_class("btn-truco");
@@ -1010,16 +1045,18 @@ fn update_game_ui(
                 action_box.append(&btn_raise);
             }
 
-            let btn_refuse = gtk::Button::with_label(if locale == Locale::EnUs {
-                "FOLD"
-            } else {
-                "CORRER"
-            });
-            btn_refuse.add_css_class("btn-refuse");
-            let core_f = core.clone();
-            btn_refuse.connect_clicked(move |_| dispatch_game_action(&core_f, "refuse", None));
-            action_box.append(&btn_refuse);
-        } else if is_my_turn && can_ask {
+            if can_refuse {
+                let btn_refuse = gtk::Button::with_label(if locale == Locale::EnUs {
+                    "FOLD"
+                } else {
+                    "CORRER"
+                });
+                btn_refuse.add_css_class("btn-refuse");
+                let core_f = core.clone();
+                btn_refuse.connect_clicked(move |_| dispatch_game_action(&core_f, "refuse", None));
+                action_box.append(&btn_refuse);
+            }
+        } else if can_raise {
             let current_stake = snapshot
                 .current_hand
                 .as_ref()
@@ -1035,7 +1072,7 @@ fn update_game_ui(
         bottom_box.append(&action_box);
     }
 
-    if is_my_turn && !match_over {
+    if can_play && !match_over {
         let lbl = gtk::Label::new(Some(if locale == Locale::EnUs {
             "YOUR TURN"
         } else {
@@ -1043,6 +1080,25 @@ fn update_game_ui(
         }));
         lbl.add_css_class("turn-pill");
         bottom_box.append(&lbl);
+    }
+
+    if let Some(logs) = &snapshot.logs {
+        let updates = gtk::Box::new(gtk::Orientation::Vertical, 4);
+        updates.set_halign(gtk::Align::Center);
+        let title = gtk::Label::new(Some(if locale == Locale::EnUs {
+            "Updates"
+        } else {
+            "Atualizações"
+        }));
+        title.add_css_class("section-title");
+        updates.append(&title);
+        for line in logs.iter().rev().take(3).rev() {
+            let lbl = gtk::Label::new(Some(line));
+            lbl.set_wrap(true);
+            lbl.add_css_class("muted");
+            updates.append(&lbl);
+        }
+        bottom_box.append(&updates);
     }
 
     if let Some(players) = &snapshot.players {
@@ -1068,13 +1124,40 @@ fn update_game_ui(
             if let Some(cards) = &me.hand {
                 for (idx, c) in cards.iter().enumerate() {
                     let card_widget = create_card_widget(Some(c));
-                    card_widget.add_css_class("card-clickable");
-                    let gesture = gtk::GestureClick::new();
-                    let core_clone = core.clone();
-                    gesture.connect_pressed(move |_, _, _, _| {
-                        dispatch_game_action(&core_clone, "play", Some(idx));
-                    });
-                    card_widget.add_controller(gesture);
+                    if can_play {
+                        card_widget.add_css_class("card-clickable");
+                        let gesture = gtk::GestureClick::new();
+                        let core_clone = core.clone();
+                        gesture.connect_pressed(move |_, _, _, _| {
+                            dispatch_game_action(&core_clone, "play", Some(idx));
+                        });
+                        card_widget.add_controller(gesture);
+                        if snapshot
+                            .current_hand
+                            .as_ref()
+                            .and_then(|h| h.round)
+                            .unwrap_or(1)
+                            >= 2
+                        {
+                            let core_down = core.clone();
+                            let face_down = gtk::Button::with_label(if locale == Locale::EnUs {
+                                "Face down"
+                            } else {
+                                "Virada"
+                            });
+                            face_down.add_css_class("pill-button");
+                            face_down.connect_clicked(move |_| {
+                                dispatch_game_action_with_options(&core_down, "play", Some(idx), true)
+                            });
+                            let card_stack = gtk::Box::new(gtk::Orientation::Vertical, 4);
+                            card_stack.append(&card_widget);
+                            card_stack.append(&face_down);
+                            my_hand.append(&card_stack);
+                            continue;
+                        }
+                    } else {
+                        card_widget.set_sensitive(false);
+                    }
                     my_hand.append(&card_widget);
                 }
             }

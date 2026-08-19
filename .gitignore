@@ -1,30 +1,13 @@
-# Binaries
-bin/
-*.exe
-*.exe~
-*.dll
-*.so
-*.dylib
+# C++ AI Engine build artifacts
+native/ai-engine/src/*.o
+native/ai-engine/libtruco_ai.so
 
-# Native build output (per client)
-native/**/bin/
-native/**/obj/
-native/**/target/
+# Go build artifacts
+httpapi
+truco-api
 
-# Test binary
-*.test
-
-# Output of go coverage
-*.out
-
-# Go workspace file
-go.work
-
-# IDE
-.vscode/
-.idea/
-
-# Browser edition build output
+# Node
+browser-edition/node_modules/
 browser-edition/dist/
 
 # OS
@@ -46,3 +29,6 @@ scripts/polymarket/state.json
 kika-daemon-go*.bak*
 src/kika-daemon-go
 src/*.bak*
+# Build artifacts
+bin/
+*.exe

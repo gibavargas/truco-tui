@@ -1,5 +1,9 @@
 # Truco Paulista
 
+**Truco Paulista online grátis** — jogue no navegador ou no terminal. Multiplayer P2P, partida contra CPU, chat em tempo real e animações. Construído em Go com Bubble Tea.
+
+> 🎮 **Jogue agora:** [truco.jvguidi.com.br](https://truco.jvguidi.com.br) — sem cadastro, direto no navegador
+
 Monorepo for a Truco Paulista implementation centered on a shared Go runtime.
 
 The repository contains:
@@ -29,7 +33,7 @@ The shared runtime in `internal/appcore` owns game rules, online session orchest
 ## Requirements
 
 - Go 1.24+
-- PHP 8.1+ for the browser edition frontend
+- Node.js 20+ for the browser edition build
 - Platform-specific toolchains only when building native clients
 
 ## Main Commands
@@ -69,6 +73,14 @@ Package the browser edition:
 ```bash
 make browser
 ```
+
+Run the packaged browser edition:
+
+```bash
+browser-edition/dist/truco-api
+```
+
+Then open `http://127.0.0.1:9090/`.
 
 Validate generated artifacts and browser packaging:
 
@@ -178,3 +190,25 @@ Online chat commands:
 - `docs/RELEASE_CHECKLIST.md`: pre-release validation and smoke checks
 - `browser-edition/README.md`: browser client workflow
 - `native/README.md`: native client overview
+
+## FAQ
+
+### Como jogar Truco Paulista online?
+
+Acesse [truco.jvguidi.com.br](https://truco.jvguidi.com.br) no navegador. Escolha jogar contra a CPU ou crie uma sala multiplayer e compartilhe o link com amigos. Não precisa de cadastro.
+
+### Preciso instalar algo para jogar?
+
+Não. O jogo roda direto no navegador. Para a versão terminal, instale Go 1.24+ e execute `go run ./cmd/truco`.
+
+### O Truco Paulista tem multiplayer?
+
+Sim. O jogo suporta multiplayer P2P (ponto a ponto) direto entre jogadores, e também oferece um relay service para contornar NAT restritivo ou firewalls.
+
+### Quais as regras do Truco Paulista implementadas?
+
+Baralho de 40 cartas (sem 8, 9 e 10), manilha dinâmica do vira, ranking Paulista, escala de apostas 1→3→6→9→12, e meta de 12 pontos para vencer a partida.
+
+### Tem versão para desktop?
+
+Sim. Há clientes nativos para macOS, Linux GTK e Windows. Veja a seção [Main Commands](#main-commands) para instruções de build de cada plataforma.
