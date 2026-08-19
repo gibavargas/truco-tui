@@ -32,3 +32,4 @@ src/*.bak*
 # Build artifacts
 bin/
 *.exe
+scripts/kika-daemon-go/config.yaml
