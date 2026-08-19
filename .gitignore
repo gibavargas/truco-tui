@@ -41,3 +41,7 @@ scripts/__pycache__/
 # Xcode user-specific state
 **/xcuserdata/
 *.xcuserstate
+scripts/polymarket/.env
+scripts/polymarket/state.json
+kika-daemon-go*.bak*
+src/kika-daemon-go

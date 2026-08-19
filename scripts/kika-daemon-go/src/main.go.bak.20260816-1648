@@ -1,0 +1,1320 @@
+package main
+
+import (
+	"bytes"
+	"context"
+	"encoding/base64"
+	"encoding/json"
+	"errors"
+	"flag"
+	"fmt"
+	"image"
+	"io"
+	"log"
+	"math"
+	"mime/multipart"
+	"net/http"
+	"net/url"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"time"
+
+	ort "github.com/yalue/onnxruntime_go"
+	"gocv.io/x/gocv"
+	"gopkg.in/yaml.v3"
+)
+
+type Config struct {
+	CameraURL            string  `yaml:"camera_url"`
+	YOLOModel            string  `yaml:"yolo_model"`
+	YOLOConf             float32 `yaml:"yolo_conf"`
+	YOLOImgsz            int     `yaml:"yolo_imgsz"`
+	MotionThreshold      float64 `yaml:"motion_threshold"`
+	FrameInterval        float64 `yaml:"frame_interval"`
+	CooldownSec          int     `yaml:"cooldown_sec"`
+	VideoDuration        int     `yaml:"video_duration"`
+	VideoMaxDuration     int     `yaml:"video_max_duration"`
+	GeminiAPIKey         string  `yaml:"gemini_api_key"`
+	GeminiNightMinMotion float64 `yaml:"gemini_night_min_motion"`
+	GLMAPIKey            string  `yaml:"glm_api_key"`
+	TelegramBotToken     string  `yaml:"telegram_bot_token"`
+	TelegramChatIDs      []int64 `yaml:"telegram_chat_ids"`
+	SnapshotDir          string  `yaml:"snapshot_dir"`
+	DatasetV3Dir         string  `yaml:"dataset_v3_dir"`
+	DatasetV3Max         int     `yaml:"dataset_v3_max"`
+	DatasetV3Interval    int     `yaml:"dataset_v3_interval"`
+	DatasetV3DaytimeOnly bool    `yaml:"dataset_v3_daytime_only"`
+	PresenceInterval     int     `yaml:"presence_interval"`  // seconds between presence checks; 0=off
+	PresenceDiffThresh   float64 `yaml:"presence_diff_thresh"` // fraction of pixels changed vs empty ref
+	PresenceAdaptRate    float64 `yaml:"presence_adapt_rate"`  // slow background adaptation when no dog
+	ONNXRuntimeLibPath   string  `yaml:"onnxruntime_lib_path"`
+	GrassMinGreenFrac    float64 `yaml:"grass_min_green_frac"`
+	NotifyOnlyGrass      bool    `yaml:"notify_only_grass"`
+	GeminiOnNegative     bool    `yaml:"gemini_on_negative"`
+	GeminiMinMotion      float64 `yaml:"gemini_min_motion"`
+	VLMMode              string  `yaml:"vlm_mode"` // on | shadow | off — VLM bootstrap lifecycle
+}
+
+type Stats struct {
+	frames   int64
+	analyzed int64
+	dogs     int64
+	yoloDogs int64
+	gemDogs  int64
+	grassDogs int64
+	presenceChecks int64
+	presenceDogs   int64
+	vlmAuditRuns   int64 // shadow-mode: VLM audits run
+	vlmAuditMisses int64 // shadow-mode: dogs the VLM saw that YOLO missed
+}
+
+type DetectorResult struct {
+	Detected bool
+	Source   string
+	Err      error
+	Latency  time.Duration
+	OnGrass   bool
+	GrassFrac float64
+}
+
+type YoloDetector struct {
+	session     *ort.DynamicAdvancedSession
+	modelInput  int
+	confidence  float32
+	inputNames  []string
+	outputNames []string
+}
+
+type Daemon struct {
+	cfg          Config
+	loc          *time.Location
+	httpClient   *http.Client
+	yolo         *YoloDetector
+	cooldownTill time.Time
+	stats        Stats
+	lastDataset  time.Time
+	// presence: background-subtraction vs empty-yard references
+	bgRefDay     gocv.Mat // empty-yard reference, daytime colors
+	bgRefNight   gocv.Mat // empty-yard reference, IR mode
+	bgRefInitDay bool
+	bgRefInitNight bool
+	lastPresenceCheck time.Time
+	lastPresenceDog   bool
+}
+
+func main() {
+	configPath := flag.String("config", "config.yaml", "Path to config file")
+	testFrame := flag.String("test-frame", "", "Run YOLO+grass analysis on a single JPEG and exit")
+	flag.Parse()
+
+	cfg, err := readConfig(*configPath)
+	if err != nil {
+		log.Fatalf("read config: %v", err)
+	}
+	applyDefaults(&cfg)
+
+	loc := mustBrazilLocation()
+	if err := os.MkdirAll(cfg.SnapshotDir, 0o755); err != nil {
+		log.Fatalf("mkdir snapshot dir: %v", err)
+	}
+	if cfg.DatasetV3Dir != "" {
+		if err := os.MkdirAll(cfg.DatasetV3Dir, 0o755); err != nil {
+			log.Fatalf("mkdir dataset dir: %v", err)
+		}
+	}
+
+	ort.SetSharedLibraryPath(cfg.ONNXRuntimeLibPath)
+	if err := ort.InitializeEnvironment(); err != nil {
+		log.Fatalf("onnx init: %v", err)
+	}
+	defer func() {
+		if err := ort.DestroyEnvironment(); err != nil {
+			log.Printf("onnx destroy: %v", err)
+		}
+	}()
+
+	yolo, err := NewYoloDetector(cfg)
+	if err != nil {
+		log.Fatalf("yolo init: %v", err)
+	}
+	if *testFrame != "" {
+		runFrameTest(cfg, yolo, *testFrame)
+		return
+	}
+	defer func() {
+		if err := yolo.Close(); err != nil {
+			log.Printf("yolo close: %v", err)
+		}
+	}()
+
+	d := &Daemon{
+		cfg: cfg,
+		loc: loc,
+		httpClient: &http.Client{
+			Timeout: 30 * time.Second,
+		},
+		yolo: yolo,
+	}
+
+	log.Printf("daemon started: interval=%.1fs motion=%.4f cooldown=%ds", cfg.FrameInterval, cfg.MotionThreshold, cfg.CooldownSec)
+	if err := d.Run(context.Background()); err != nil {
+		log.Fatalf("daemon error: %v", err)
+	}
+}
+
+func readConfig(path string) (Config, error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return Config{}, fmt.Errorf("open %s: %w", path, err)
+	}
+	var cfg Config
+	if err := yaml.Unmarshal(b, &cfg); err != nil {
+		return Config{}, fmt.Errorf("parse config yaml: %w", err)
+	}
+	return cfg, nil
+}
+
+func applyDefaults(cfg *Config) {
+	if cfg.YOLOImgsz <= 0 {
+		cfg.YOLOImgsz = 640
+	}
+	if cfg.FrameInterval <= 0 {
+		cfg.FrameInterval = 2.0
+	}
+	if cfg.CooldownSec < 0 {
+		cfg.CooldownSec = 0
+	}
+	if cfg.VideoDuration <= 0 {
+		cfg.VideoDuration = 15
+	}
+	if cfg.VideoMaxDuration <= 0 {
+		cfg.VideoMaxDuration = 90
+	}
+	if cfg.VideoDuration > cfg.VideoMaxDuration {
+		cfg.VideoDuration = cfg.VideoMaxDuration
+	}
+	if cfg.DatasetV3Interval <= 0 {
+		cfg.DatasetV3Interval = 30
+	}
+	if cfg.DatasetV3Max <= 0 {
+		cfg.DatasetV3Max = 200
+	}
+	if cfg.PresenceInterval <= 0 {
+		cfg.PresenceInterval = 0 // off by default; set in config.yaml
+	}
+	if cfg.VLMMode == "" {
+		cfg.VLMMode = "on"
+	}
+	cfg.VLMMode = strings.ToLower(strings.TrimSpace(cfg.VLMMode))
+	if cfg.VLMMode != "on" && cfg.VLMMode != "shadow" && cfg.VLMMode != "off" {
+		log.Printf("vlm_mode %q invalid; defaulting to on", cfg.VLMMode)
+		cfg.VLMMode = "on"
+	}
+	log.Printf("vlm_mode=%s (on=VLM rescues YOLO misses | shadow=YOLO decides, VLM audits silently | off=no VLM API calls)", cfg.VLMMode)
+	if cfg.PresenceDiffThresh <= 0 {
+		cfg.PresenceDiffThresh = 0.02 // 2% of pixels differing = presence candidate
+	}
+	if cfg.PresenceAdaptRate <= 0 {
+		cfg.PresenceAdaptRate = 0.05 // slow: ~20 checks to absorb an object
+	}
+	if cfg.YOLOConf <= 0 {
+		cfg.YOLOConf = 0.45
+	}
+	if cfg.GrassMinGreenFrac <= 0 {
+		cfg.GrassMinGreenFrac = 0.22
+	}
+	if cfg.GeminiMinMotion <= 0 {
+		cfg.GeminiMinMotion = 0.015
+	}
+}
+
+func runFrameTest(cfg Config, yolo *YoloDetector, path string) {
+	img := gocv.IMRead(path, gocv.IMReadColor)
+	if img.Empty() {
+		log.Fatalf("test-frame: cannot read %s", path)
+	}
+	defer img.Close()
+	d := &Daemon{cfg: cfg, loc: mustBrazilLocation(), httpClient: &http.Client{Timeout: 30 * time.Second}, yolo: yolo}
+	res := d.runYolo(img)
+	log.Printf("test-frame %s: detected=%v onGrass=%v grassFrac=%.3f source=%s err=%v latency=%s",
+		path, res.Detected, res.OnGrass, res.GrassFrac, res.Source, res.Err, res.Latency)
+	if !res.Detected && cfg.GeminiOnNegative && cfg.VLMMode != "off" {
+		jpegBytes, err := encodeJPEG(img)
+		if err == nil {
+			gem := d.runVisionLLM([][]byte{jpegBytes})
+			log.Printf("test-frame visionllm: detected=%v onGrass=%v err=%v latency=%s", gem.Detected, gem.OnGrass, gem.Err, gem.Latency)
+		}
+	}
+}
+
+func mustBrazilLocation() *time.Location {
+	loc, err := time.LoadLocation("America/Sao_Paulo")
+	if err != nil {
+		log.Printf("time zone fallback: %v", err)
+		return time.FixedZone("Brasilia", -3*3600)
+	}
+	return loc
+}
+
+func NewYoloDetector(cfg Config) (*YoloDetector, error) {
+	inputNames := []string{"images"}
+	outputNames := []string{"output0"}
+	session, err := ort.NewDynamicAdvancedSession(cfg.YOLOModel, inputNames, outputNames, nil)
+	if err != nil {
+		return nil, err
+	}
+	return &YoloDetector{
+		session:     session,
+		modelInput:  cfg.YOLOImgsz,
+		confidence:  cfg.YOLOConf,
+		inputNames:  inputNames,
+		outputNames: outputNames,
+	}, nil
+}
+
+func (y *YoloDetector) Close() error {
+	if y == nil || y.session == nil {
+		return nil
+	}
+	return y.session.Destroy()
+}
+
+func (d *Daemon) Run(ctx context.Context) error {
+	statsTicker := time.NewTicker(1 * time.Minute)
+	defer statsTicker.Stop()
+
+	// presence references must be allocated gocv Mats before use
+	d.bgRefDay = gocv.NewMat()
+	defer d.bgRefDay.Close()
+	d.bgRefNight = gocv.NewMat()
+	defer d.bgRefNight.Close()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
+		if err := d.runCameraLoop(ctx, statsTicker); err != nil {
+			log.Printf("camera loop ended: %v", err)
+		}
+
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(5 * time.Second):
+		}
+	}
+}
+
+func (d *Daemon) runCameraLoop(ctx context.Context, statsTicker *time.Ticker) error {
+	if err := os.Setenv("OPENCV_FFMPEG_CAPTURE_OPTIONS", "rtsp_transport;tcp"); err != nil {
+		log.Printf("set ffmpeg capture opts: %v", err)
+	}
+
+	cap, err := gocv.VideoCaptureFile(d.cfg.CameraURL)
+	if err != nil {
+		return fmt.Errorf("open camera: %w", err)
+	}
+	defer cap.Close()
+	if !cap.IsOpened() {
+		return errors.New("camera not opened")
+	}
+
+	frame := gocv.NewMat()
+	defer frame.Close()
+	currSmall := gocv.NewMat()
+	defer currSmall.Close()
+	prevSmall := gocv.NewMat()
+	defer prevSmall.Close()
+	diff := gocv.NewMat()
+	defer diff.Close()
+	gray := gocv.NewMat()
+	defer gray.Close()
+	thresh := gocv.NewMat()
+	defer thresh.Close()
+
+	interval := time.Duration(d.cfg.FrameInterval * float64(time.Second))
+	if interval < 100*time.Millisecond {
+		interval = 100 * time.Millisecond
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-statsTicker.C:
+			d.logStats()
+		case <-ticker.C:
+		}
+
+		if ok := cap.Read(&frame); !ok {
+			return errors.New("read failed")
+		}
+		if frame.Empty() {
+			log.Printf("empty frame")
+			continue
+		}
+
+		d.stats.frames++
+		gocv.Resize(frame, &currSmall, image.Pt(320, 240), 0, 0, gocv.InterpolationLinear)
+		if prevSmall.Empty() {
+			currSmall.CopyTo(&prevSmall)
+			d.tryDatasetCapture(frame)
+			continue
+		}
+
+		motion := motionPercent(prevSmall, currSmall, &diff, &gray, &thresh)
+		currSmall.CopyTo(&prevSmall)
+		d.tryDatasetCapture(frame)
+		d.maybePresenceCheck(frame, currSmall)
+
+		if motion < d.cfg.MotionThreshold {
+			continue
+		}
+		if time.Now().Before(d.cooldownTill) {
+			continue
+		}
+
+		d.stats.analyzed++
+		jpegBytes, err := encodeJPEG(frame)
+		if err != nil {
+			log.Printf("encode jpeg: %v", err)
+			continue
+		}
+
+		yoloRes := d.runYolo(frame)
+		d.logMotion(motion, yoloRes)
+
+		result := yoloRes
+		geminiTrigger := (result.Err != nil && motion >= d.cfg.GeminiNightMinMotion) ||
+			(d.cfg.GeminiOnNegative && !result.Detected && result.Err == nil && motion >= d.cfg.GeminiMinMotion)
+		switch {
+		case d.vlmShadow() && result.Err == nil && !result.Detected && motion >= d.cfg.GeminiMinMotion:
+			// SHADOW audit: YOLO said no — VLM checks silently. A miss = free training sample.
+			gemRes := d.runVisionLLM([][]byte{jpegBytes})
+			d.stats.vlmAuditRuns++
+			if gemRes.Detected {
+				d.stats.vlmAuditMisses++
+				log.Printf("shadow: VLM saw a dog YOLO missed (motion=%.1f%%); sample harvested, not notifying", motion*100)
+				d.saveShadowSample(frame, motion)
+			}
+		case d.vlmShadow() && result.Err != nil && motion >= d.cfg.GeminiNightMinMotion:
+			// SHADOW + YOLO error: no local decision exists — VLM rescues this one frame.
+			gemRes := d.runVisionLLM([][]byte{jpegBytes})
+			if gemRes.Detected {
+				result = gemRes
+				d.stats.gemDogs++
+			}
+		case geminiTrigger && d.vlmEnabled():
+			gemRes := d.runVisionLLM([][]byte{jpegBytes})
+			if gemRes.Detected {
+				result = gemRes
+				d.stats.gemDogs++
+			}
+		}
+
+		if !result.Detected {
+			continue
+		}
+		if d.cfg.NotifyOnlyGrass && !result.OnGrass {
+			log.Printf("kika detected off-grass (grass=%.1f%%); notify_only_grass=true, skipping notify", result.GrassFrac*100)
+			continue
+		}
+
+		d.stats.dogs++
+		if result.Source == "yolo" {
+			d.stats.yoloDogs++
+		}
+		if result.OnGrass {
+			d.stats.grassDogs++
+		}
+		now := time.Now().In(d.loc)
+		snapshotPath, err := d.saveSnapshot(jpegBytes, now, motion)
+		if err != nil {
+			log.Printf("save snapshot: %v", err)
+			continue
+		}
+
+		detectorLabel := "YOLO"
+		if result.Source == "gemini" {
+			detectorLabel = "Gemini"
+		}
+		place := "na área interna 🏠"
+		if result.OnGrass {
+			place = "NA GRAMA 🌱"
+		}
+		photoCaption := fmt.Sprintf("🐕 *Kika %s*\nHorário: *%s (Brasília)*\nMovimento: *%.1f%%*\nGrama: *%.0f%%*\nDetector: %s",
+			place, now.Format("15:04:05"), motion*100, result.GrassFrac*100, detectorLabel)
+
+		if err := d.sendPhoto(snapshotPath, photoCaption); err != nil {
+			log.Printf("notify error: %v", err)
+		}
+
+		videoPath, err := d.captureVideo(now)
+		if err != nil {
+			log.Printf("ffmpeg: %v", err)
+		} else {
+			videoCaption := fmt.Sprintf("📹 Vídeo — %s (Brasília)", now.Format("15:04:05"))
+			if err := d.sendVideo(videoPath, videoCaption); err != nil {
+				log.Printf("notify error: %v", err)
+			}
+		}
+
+		d.cooldownTill = time.Now().Add(time.Duration(d.cfg.CooldownSec) * time.Second)
+	}
+}
+
+// VLM bootstrap lifecycle (vlm_mode). The VLM is scaffolding: it labels and
+// verifies while the local YOLO learns, then is retired.
+//   on     — VLM rescues YOLO misses (training phase, current default)
+//   shadow — local YOLO is the decisor; VLM runs silently to audit and harvest
+//            miss samples as training data. No VLM-driven notifications.
+//   off    — zero VLM API calls; fully local detector (post-graduation).
+func (d *Daemon) vlmEnabled() bool { return d.cfg.VLMMode != "off" }
+func (d *Daemon) vlmShadow() bool  { return d.cfg.VLMMode == "shadow" }
+
+// saveShadowSample: motion-path frame the VLM confirmed as a dog but YOLO
+// missed (no bbox on this path) — saved unlabeled for a later labeling pass.
+func (d *Daemon) saveShadowSample(frame gocv.Mat, motion float64) {
+	dir := d.cfg.DatasetV3Dir
+	if dir == "" {
+		return
+	}
+	shDir := filepath.Join(dir, "shadow_pos")
+	if err := os.MkdirAll(shDir, 0o755); err != nil {
+		return
+	}
+	entries, err := os.ReadDir(shDir)
+	if err == nil && len(entries) >= d.cfg.DatasetV3Max {
+		return
+	}
+	buf, err := gocv.IMEncode(gocv.JPEGFileExt, frame)
+	if err != nil {
+		return
+	}
+	defer buf.Close()
+	ts := time.Now().In(d.loc)
+	stem := fmt.Sprintf("shadow_%s_%d", ts.Format("20060102_150405"), ts.UnixNano())
+	if err := os.WriteFile(filepath.Join(shDir, stem+".jpg"), append([]byte(nil), buf.GetBytes()...), 0o644); err != nil {
+		return
+	}
+	meta := fmt.Sprintf("{\"motion\": %.4f, \"vlm_confirmed\": true, \"ts\": \"%s\"}\n", motion, ts.Format(time.RFC3339))
+	_ = os.WriteFile(filepath.Join(shDir, stem+".json"), []byte(meta), 0o644)
+	log.Printf("shadow: training sample saved %s.jpg (motion=%.1f%%)", stem, motion*100)
+}
+
+func (d *Daemon) logStats() {
+	log.Printf("stats: vlm_mode=%s frames=%d analyzed=%d dogs=%d (yolo=%d gemini=%d) grass=%d presence[checks=%d dogs=%d cur=%v] shadow[audits=%d misses=%d]",
+		d.cfg.VLMMode, d.stats.frames, d.stats.analyzed, d.stats.dogs, d.stats.yoloDogs, d.stats.gemDogs, d.stats.grassDogs,
+		d.stats.presenceChecks, d.stats.presenceDogs, d.lastPresenceDog, d.stats.vlmAuditRuns, d.stats.vlmAuditMisses)
+}
+
+func motionPercent(prev, curr gocv.Mat, diff, gray, thresh *gocv.Mat) float64 {
+	gocv.AbsDiff(prev, curr, diff)
+	gocv.CvtColor(*diff, gray, gocv.ColorBGRToGray)
+	gocv.Threshold(*gray, thresh, 25, 255, gocv.ThresholdBinary)
+
+	nonZero := gocv.CountNonZero(*thresh)
+	total := thresh.Rows() * thresh.Cols()
+	if total <= 0 {
+		return 0
+	}
+	return float64(nonZero) / float64(total)
+}
+
+// presenceDiffPercent: fraction of pixels differing from the empty-yard
+// reference. A dog lying still shows up as a persistent blob of difference.
+func presenceDiffPercent(ref, curr gocv.Mat, diff, gray, thresh *gocv.Mat) float64 {
+	gocv.AbsDiff(ref, curr, diff)
+	gocv.CvtColor(*diff, gray, gocv.ColorBGRToGray)
+	gocv.Threshold(*gray, thresh, 30, 255, gocv.ThresholdBinary)
+	gocv.MedianBlur(*thresh, thresh, 5)
+	nonZero := gocv.CountNonZero(*thresh)
+	total := thresh.Rows() * thresh.Cols()
+	if total <= 0 {
+		return 0
+	}
+	return float64(nonZero) / float64(total)
+}
+
+// adaptBackground: slowly blend current frame into the reference when the
+// yard is empty, so gradual lighting/scene changes don't trigger presence.
+func adaptBackground(ref *gocv.Mat, curr gocv.Mat, rate float64) {
+	if ref.Empty() || rate <= 0 {
+		return
+	}
+	alpha := 1.0 - rate
+	gocv.AddWeighted(curr, rate, *ref, alpha, 0, ref)
+}
+
+// maybePresenceCheck: periodic check for a STILL dog (motionless presence).
+// Uses background subtraction against the empty-yard reference; on trigger,
+// confirms with YOLO then the vision LLM (GLM first, Gemini fallback).
+// presenceBlobBBox: largest contour of the presence diff (>= 60 px² at
+// 320x240) → normalized [0,1] bbox in the ORIGINAL frame coordinates.
+func presenceBlobBBox(ref, curr gocv.Mat, diff, gray, thresh *gocv.Mat) (x, y, w, h float64, ok bool) {
+	gocv.AbsDiff(ref, curr, diff)
+	gocv.CvtColor(*diff, gray, gocv.ColorBGRToGray)
+	gocv.Threshold(*gray, thresh, 25, 255, gocv.ThresholdBinary)
+	kernel := gocv.GetStructuringElement(gocv.MorphRect, image.Pt(3, 3))
+	defer kernel.Close()
+	gocv.Erode(*thresh, thresh, kernel)
+	gocv.Dilate(*thresh, thresh, kernel)
+	gocv.Dilate(*thresh, thresh, kernel)
+	gocv.Erode(*thresh, thresh, kernel)
+	contours := gocv.FindContours(*thresh, gocv.RetrievalExternal, gocv.ChainApproxSimple)
+	defer contours.Close()
+	var best image.Rectangle
+	bestArea := 0.0
+	for i := 0; i < contours.Size(); i++ {
+		c := contours.At(i)
+		area := gocv.ContourArea(c)
+		if area > bestArea && area >= 60 {
+			bestArea = area
+			best = gocv.BoundingRect(c)
+		}
+	}
+	if bestArea <= 0 {
+		return 0, 0,  0, 0, false
+	}
+	sw := float64(curr.Cols()); sh := float64(curr.Rows())
+	return float64(best.Min.X) / sw, float64(best.Min.Y) / sh,
+		float64(best.Dx()) / sw, float64(best.Dy()) / sh, true
+}
+
+// cropPresenceRegion: cut a zoomed crop from the original frame around the
+// normalized presence bbox, expanded by margin (fraction of frame size),
+// clamped to frame bounds. Caller must Close() the returned Mat.
+func cropPresenceRegion(frame gocv.Mat, bx, by, bw, bh, margin float64) (gocv.Mat, error) {
+	fw, fh := float64(frame.Cols()), float64(frame.Rows())
+	mx := margin * fw
+	my := margin * fh
+	x1 := int(math.Max(0, bx*fw-mx))
+	y1 := int(math.Max(0, by*fh-my))
+	x2 := int(math.Min(fw, (bx+bw)*fw+mx))
+	y2 := int(math.Min(fh, (by+bh)*fh+my))
+	if x2-x1 < 8 || y2-y1 < 8 {
+		return gocv.Mat{}, errors.New("presence crop too small")
+	}
+	return frame.Region(image.Rect(x1, y1, x2, y2)), nil
+}
+
+func (d *Daemon) maybePresenceCheck(frame gocv.Mat, currSmall gocv.Mat) {
+	if d.cfg.PresenceInterval <= 0 {
+		return
+	}
+	now := time.Now()
+	if now.Sub(d.lastPresenceCheck) < time.Duration(d.cfg.PresenceInterval)*time.Second {
+		return
+	}
+	d.lastPresenceCheck = now
+
+	day := isDaytime(now.In(d.loc))
+	ref := &d.bgRefDay
+	if !day {
+		ref = &d.bgRefNight
+	}
+	if ref.Empty() {
+		currSmall.CopyTo(ref)
+		if day {
+			d.bgRefInitDay = true
+		} else {
+			d.bgRefInitNight = true
+		}
+		log.Printf("presence: %s reference captured", map[bool]string{true: "day", false: "night"}[day])
+		return
+	}
+
+	diff := gocv.NewMat()
+	gray := gocv.NewMat()
+	thresh := gocv.NewMat()
+	pdiff, pgray, pthresh := gocv.NewMat(), gocv.NewMat(), gocv.NewMat()
+	defer func() { diff.Close(); gray.Close(); thresh.Close(); pdiff.Close(); pgray.Close(); pthresh.Close() }()
+	pct := presenceDiffPercent(*ref, currSmall, &diff, &gray, &thresh)
+	d.stats.presenceChecks++
+
+	// Same dog still present (confirmed recently) -> adapt reference to her
+	// position so lighting drift doesn't accumulate, but don't spam-notify.
+	if pct < d.cfg.PresenceDiffThresh {
+		adaptBackground(ref, currSmall, d.cfg.PresenceAdaptRate)
+		if d.lastPresenceDog {
+			log.Printf("presence: dog left (diff=%.2f%%)", pct*100)
+			d.lastPresenceDog = false
+		}
+		return
+	}
+
+	// Something persistently different from the empty yard.
+	jpegBytes, err := encodeJPEG(frame)
+	if err != nil {
+		log.Printf("presence: encode jpeg: %v", err)
+		return
+	}
+
+	// Blob of persistent difference (largest contour vs empty reference).
+	// Computed BEFORE the VLM call so the same bbox feeds the zoomed crop
+	// (second VLM image) and the training sample below.
+	bx, by, bw, bh, bok := presenceBlobBBox(*ref, currSmall, &pdiff, &pgray, &pthresh)
+
+	res := d.runYolo(frame)
+	source := "yolo"
+	if !res.Detected && d.vlmEnabled() {
+		images := [][]byte{jpegBytes}
+		if bok {
+			if crop, cerr := cropPresenceRegion(frame, bx, by, bw, bh, 0.15); cerr == nil {
+				cb, eerr := encodeJPEG(crop)
+				crop.Close()
+				if eerr == nil && len(cb) > 0 {
+					images = append(images, cb)
+				}
+			}
+		}
+		vres := d.runVisionLLM(images)
+		if vres.Err != nil {
+			log.Printf("presence: vision err: %v", vres.Err)
+		}
+		if d.vlmShadow() {
+			// SHADOW: YOLO is the decisor. Harvest the miss, do not adopt VLM verdict.
+			d.stats.vlmAuditRuns++
+			if vres.Err == nil && vres.Detected {
+				d.stats.vlmAuditMisses++
+				log.Printf("shadow: presence VLM saw a dog YOLO missed; sample harvested, not notifying")
+				d.savePresenceSample(frame, bx, by, bw, bh, "shadow_vlm")
+			}
+		} else if vres.Detected {
+			res = vres
+			source = "visionllm"
+		}
+	}
+
+	if !res.Detected {
+		// Unknown persistent object (chair moved, etc.) — adopt it into the
+		// reference slowly so it stops triggering.
+		log.Printf("presence: %.2f%% diff, no dog -> adapting (source=%s)", pct*100, source)
+		adaptBackground(ref, currSmall, d.cfg.PresenceAdaptRate*4)
+		return
+	}
+
+	d.stats.presenceDogs++
+	wasDog := d.lastPresenceDog
+	d.lastPresenceDog = true
+	log.Printf("presence: DOG still present (diff=%.2f%%, source=%s, onGrass=%v)", pct*100, source, res.OnGrass)
+
+	// auto-capture training sample: full-res frame + YOLO label from diff blob
+	if bok {
+		d.savePresenceSample(frame, bx, by, bw, bh, source)
+	}
+
+	nowBr := now.In(d.loc)
+	if !wasDog {
+		// first confirmation of this presence session
+		snapshotPath, err := d.saveSnapshot(jpegBytes, nowBr, pct)
+		if err != nil {
+			log.Printf("presence: save snapshot: %v", err)
+			return
+		}
+		place := "na área interna 🏠"
+		if res.OnGrass {
+			place = "NA GRAMA 🌱"
+		}
+		caption := fmt.Sprintf("🐕 *Kika parada no quintal* (presença)\nHorário: *%s (Brasília)*\nLocal: *%s*\nDiff: *%.1f%%*\nGrama: *%.0f%%*\nDetector: %s",
+			nowBr.Format("15:04:05"), place, pct*100, res.GrassFrac*100, source)
+		if err := d.sendPhoto(snapshotPath, caption); err != nil {
+			log.Printf("presence: notify error: %v", err)
+		}
+	}
+	// While she stays: keep reference as-is (don't adapt her blob away) but
+	// still blend lightly to survive slow light drift around her.
+	adaptBackground(ref, currSmall, d.cfg.PresenceAdaptRate*0.25)
+}
+
+func encodeJPEG(frame gocv.Mat) ([]byte, error) {
+	buf, err := gocv.IMEncode(gocv.JPEGFileExt, frame)
+	if err != nil {
+		return nil, err
+	}
+	defer buf.Close()
+	out := make([]byte, buf.Len())
+	copy(out, buf.GetBytes())
+	return out, nil
+}
+
+func (d *Daemon) runYolo(frame gocv.Mat) DetectorResult {
+	start := time.Now()
+	tensorData, err := preprocessYOLO(frame, d.cfg.YOLOImgsz)
+	if err != nil {
+		return DetectorResult{Err: err, Latency: time.Since(start)}
+	}
+
+	inputTensor, err := ort.NewTensor(ort.NewShape(1, 3, int64(d.cfg.YOLOImgsz), int64(d.cfg.YOLOImgsz)), tensorData)
+	if err != nil {
+		return DetectorResult{Err: err, Latency: time.Since(start)}
+	}
+	defer inputTensor.Destroy()
+
+	inputs := []ort.Value{inputTensor}
+	outputs := []ort.Value{nil}
+	if err := d.yolo.session.Run(inputs, outputs); err != nil {
+		return DetectorResult{Err: fmt.Errorf("onnx run: %w", err), Latency: time.Since(start)}
+	}
+	if len(outputs) == 0 || outputs[0] == nil {
+		return DetectorResult{Err: errors.New("empty yolo output"), Latency: time.Since(start)}
+	}
+	defer outputs[0].Destroy()
+
+	t, ok := outputs[0].(*ort.Tensor[float32])
+	if !ok {
+		return DetectorResult{Err: fmt.Errorf("unexpected output type %T", outputs[0]), Latency: time.Since(start)}
+	}
+
+	dets, err := parseYoloDetections(t.GetData(), t.GetShape(), d.cfg.YOLOConf)
+	if err != nil {
+		return DetectorResult{Err: err, Latency: time.Since(start)}
+	}
+	if len(dets) == 0 {
+		return DetectorResult{Detected: false, Source: "yolo", Latency: time.Since(start)}
+	}
+
+	// Map best detection from letterboxed input space to frame space.
+	size := d.cfg.YOLOImgsz
+	fw, fh := frame.Cols(), frame.Rows()
+	r := math.Min(float64(size)/float64(fw), float64(size)/float64(fh))
+	padX := (float64(size) - math.Round(float64(fw)*r)) / 2
+	padY := (float64(size) - math.Round(float64(fh)*r)) / 2
+
+	best := dets[0]
+	for _, dt := range dets[1:] {
+		if dt.Conf > best.Conf {
+			best = dt
+		}
+	}
+	toFrame := func(v, pad float64, max int) int {
+		out := (v - pad) / r
+		if out < 0 {
+			out = 0
+		}
+		if out > float64(max-1) {
+			out = float64(max - 1)
+		}
+		return int(out)
+	}
+	x1 := toFrame(float64(best.X1), padX, fw)
+	x2 := toFrame(float64(best.X2), padX, fw)
+	y1 := toFrame(float64(best.Y1), padY, fh)
+	y2 := toFrame(float64(best.Y2), padY, fh)
+	if x2 <= x1 {
+		x2 = x1 + 1
+	}
+	if y2 <= y1 {
+		y2 = y1 + 1
+	}
+
+	// Grass check: region around the dog's lower body (where she stands/lies).
+	gy1 := y1 + (y2-y1)/2
+	gy2 := y2 + (y2-y1)/4
+	if gy2 > fh {
+		gy2 = fh
+	}
+	frac := grassGreenFraction(frame, x1, gy1, x2, gy2)
+
+	return DetectorResult{
+		Detected:  true,
+		OnGrass:   frac >= d.cfg.GrassMinGreenFrac,
+		GrassFrac: frac,
+		Source:    "yolo",
+		Latency:   time.Since(start),
+	}
+}
+
+type yoloDetection struct {
+	Conf           float32
+	X1, Y1, X2, Y2 float32
+}
+
+func parseYoloDetections(data []float32, shape ort.Shape, conf float32) ([]yoloDetection, error) {
+	if len(shape) < 3 {
+		return nil, fmt.Errorf("unexpected yolo shape: %v", shape)
+	}
+
+	// YOLOv8 output shape: [1, 4+C, N] where C=num_classes, N=num_detections
+	// Data layout: data[channel * N + detection_idx]
+	numClasses := shape[1] - 4 // e.g. 1 for fine-tuned kika, 80 for COCO
+	numDets := shape[2]
+	if numClasses < 1 || numDets < 1 {
+		return nil, fmt.Errorf("unexpected yolo shape: %v", shape)
+	}
+	totalElements := int64(len(data))
+	var out []yoloDetection
+	for j := int64(0); j < numDets; j++ {
+		var bestConf float32
+		bestClass := int64(-1)
+		for c := int64(0); c < numClasses; c++ {
+			idx := (4 + c) * numDets + j
+			if idx >= 0 && idx < totalElements && data[idx] >= conf && data[idx] > bestConf {
+				bestConf = data[idx]
+				bestClass = c
+			}
+		}
+		if bestClass < 0 {
+			continue
+		}
+		cx := data[0*numDets+j]
+		cy := data[1*numDets+j]
+		w := data[2*numDets+j]
+		h := data[3*numDets+j]
+		out = append(out, yoloDetection{
+			Conf: bestConf,
+			X1:   cx - w/2,
+			Y1:   cy - h/2,
+			X2:   cx + w/2,
+			Y2:   cy + h/2,
+		})
+	}
+	return out, nil
+}
+
+// grassGreenFraction returns the fraction of green "grass-like" pixels (HSV)
+// inside the given pixel region of a BGR frame.
+func grassGreenFraction(frame gocv.Mat, x1, y1, x2, y2 int) float64 {
+	fw, fh := frame.Cols(), frame.Rows()
+	if x1 < 0 {
+		x1 = 0
+	}
+	if y1 < 0 {
+		y1 = 0
+	}
+	if x2 > fw {
+		x2 = fw
+	}
+	if y2 > fh {
+		y2 = fh
+	}
+	if x2 <= x1 || y2 <= y1 {
+		return 0
+	}
+	roi := frame.Region(image.Rect(x1, y1, x2, y2))
+	defer roi.Close()
+
+	hsv := gocv.NewMat()
+	defer hsv.Close()
+	gocv.CvtColor(roi, &hsv, gocv.ColorBGRToHSV)
+
+	mask := gocv.NewMat()
+	defer mask.Close()
+	gocv.InRangeWithScalar(hsv, gocv.NewScalar(35, 40, 30, 0), gocv.NewScalar(85, 255, 255, 0), &mask)
+
+	total := (x2 - x1) * (y2 - y1)
+	if total <= 0 {
+		return 0
+	}
+	return float64(gocv.CountNonZero(mask)) / float64(total)
+}
+
+func preprocessYOLO(frame gocv.Mat, size int) ([]float32, error) {
+	if frame.Empty() {
+		return nil, errors.New("empty frame")
+	}
+	w := frame.Cols()
+	h := frame.Rows()
+	if w <= 0 || h <= 0 {
+		return nil, errors.New("invalid frame size")
+	}
+
+	r := math.Min(float64(size)/float64(w), float64(size)/float64(h))
+	newW := int(math.Round(float64(w) * r))
+	newH := int(math.Round(float64(h) * r))
+	if newW <= 0 {
+		newW = 1
+	}
+	if newH <= 0 {
+		newH = 1
+	}
+
+	resized := gocv.NewMat()
+	defer resized.Close()
+	gocv.Resize(frame, &resized, image.Pt(newW, newH), 0, 0, gocv.InterpolationLinear)
+
+	canvas := gocv.NewMatWithSizeFromScalar(gocv.NewScalar(128, 128, 128, 0), size, size, gocv.MatTypeCV8UC3)
+	defer canvas.Close()
+
+	x := (size - newW) / 2
+	y := (size - newH) / 2
+	roi := canvas.Region(image.Rect(x, y, x+newW, y+newH))
+	resized.CopyTo(&roi)
+	roi.Close()
+
+	pix, err := canvas.DataPtrUint8()
+	if err != nil {
+		return nil, err
+	}
+
+	plane := size * size
+	out := make([]float32, 3*plane)
+	for i := 0; i < plane; i++ {
+		b := pix[i*3+0]
+		g := pix[i*3+1]
+		rv := pix[i*3+2]
+		out[0*plane+i] = float32(rv) / 255.0
+		out[1*plane+i] = float32(g) / 255.0
+		out[2*plane+i] = float32(b) / 255.0
+	}
+	return out, nil
+}
+
+func (d *Daemon) runGemini(images [][]byte) DetectorResult {
+	start := time.Now()
+	if strings.TrimSpace(d.cfg.GeminiAPIKey) == "" {
+		return DetectorResult{Err: errors.New("empty gemini api key"), Latency: time.Since(start)}
+	}
+
+	parts := make([]any, 0, len(images)+1)
+	parts = append(parts, map[string]any{"text": "You are detecting a small dog in a surveillance frame. Reply with strict JSON: {\"detected\":bool,\"grass\":bool} where grass=true means the dog is on or over living grass (lawn)."})
+	for _, img := range images {
+		parts = append(parts, map[string]any{"inline_data": map[string]any{"mime_type": "image/jpeg", "data": base64.StdEncoding.EncodeToString(img)}})
+	}
+	payload := map[string]any{
+		"contents": []any{
+			map[string]any{
+				"parts": parts,
+			},
+		},
+	}
+	body, _ := json.Marshal(payload)
+	endpoint := "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=" + url.QueryEscape(d.cfg.GeminiAPIKey)
+	req, _ := http.NewRequest(http.MethodPost, endpoint, bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := d.httpClient.Do(req)
+	if err != nil {
+		return DetectorResult{Err: err, Latency: time.Since(start)}
+	}
+	defer resp.Body.Close()
+	respBody, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return DetectorResult{Err: fmt.Errorf("gemini status: %s", resp.Status), Latency: time.Since(start)}
+	}
+
+	txt := extractGeminiText(respBody)
+	if strings.TrimSpace(txt) == "" {
+		return DetectorResult{Err: errors.New("empty gemini response"), Latency: time.Since(start)}
+	}
+	jsonText := extractJSON(txt)
+	var parsed struct {
+		Detected bool `json:"detected"`
+		Grass    bool `json:"grass"`
+	}
+	if err := json.Unmarshal([]byte(jsonText), &parsed); err != nil {
+		return DetectorResult{Err: err, Latency: time.Since(start)}
+	}
+	grassFrac := 0.0
+	if parsed.Grass {
+		grassFrac = 1.0
+	}
+	return DetectorResult{Detected: parsed.Detected, OnGrass: parsed.Grass, GrassFrac: grassFrac, Source: "gemini", Latency: time.Since(start)}
+}
+
+// runGLM queries Z.AI glm-4.5v (coding plan) — no 15 RPM cap like Gemini.
+func (d *Daemon) runGLM(images [][]byte) DetectorResult {
+	start := time.Now()
+	if strings.TrimSpace(d.cfg.GLMAPIKey) == "" {
+		return DetectorResult{Err: errors.New("empty glm api key"), Latency: time.Since(start)}
+	}
+	content := make([]any, 0, len(images)+1)
+	for _, img := range images {
+		content = append(content, map[string]any{"type": "image_url", "image_url": map[string]any{
+			"url": "data:image/jpeg;base64," + base64.StdEncoding.EncodeToString(img)}})
+	}
+	if len(images) > 1 {
+		content = append(content, map[string]any{"type": "text", "text": `You are detecting a specific small dog named Kika in surveillance images. Kika is a small black-and-white dog (mostly black body, white chest/paws, reddish collar), much smaller than a person. If more than one image is given, later images are zoomed crops of the region that changed. Reply with strict JSON only: {"detected":bool,"grass":bool} where detected=true only if THIS dog (or any dog) is visible in any image, and grass=true means the dog is on or over living grass (lawn). Not a cat.`})
+	} else {
+		content = append(content, map[string]any{"type": "text", "text": `You are detecting a specific small dog named Kika in a surveillance frame. Kika is a small black-and-white dog (mostly black body, white chest/paws, reddish collar), much smaller than a person. Reply with strict JSON only: {"detected":bool,"grass":bool} where detected=true only if THIS dog (or any dog) is visible, and grass=true means the dog is on or over living grass (lawn). Not a cat.`})
+	}
+	payload := map[string]any{
+		"model":      "glm-4.5v",
+		"messages":   []any{map[string]any{"role": "user", "content": content}},
+		"max_tokens": 300,
+		"thinking":   map[string]any{"type": "disabled"},
+	}
+	body, _ := json.Marshal(payload)
+	req, _ := http.NewRequest(http.MethodPost, "https://api.z.ai/api/coding/paas/v4/chat/completions", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+d.cfg.GLMAPIKey)
+	resp, err := d.httpClient.Do(req)
+	if err != nil {
+		return DetectorResult{Err: err, Latency: time.Since(start)}
+	}
+	defer resp.Body.Close()
+	respBody, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return DetectorResult{Err: fmt.Errorf("glm status: %s body: %.200s", resp.Status, string(respBody)), Latency: time.Since(start)}
+	}
+	var cr struct {
+		Choices []struct {
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
+	}
+	if err := json.Unmarshal(respBody, &cr); err != nil || len(cr.Choices) == 0 {
+		return DetectorResult{Err: fmt.Errorf("glm parse: %v", err), Latency: time.Since(start)}
+	}
+	jsonText := extractJSON(cr.Choices[0].Message.Content)
+	var parsed struct {
+		Detected bool `json:"detected"`
+		Grass    bool `json:"grass"`
+	}
+	if err := json.Unmarshal([]byte(jsonText), &parsed); err != nil {
+		return DetectorResult{Err: err, Latency: time.Since(start)}
+	}
+	grassFrac := 0.0
+	if parsed.Grass {
+		grassFrac = 1.0
+	}
+	return DetectorResult{Detected: parsed.Detected, OnGrass: parsed.Grass, GrassFrac: grassFrac, Source: "glm", Latency: time.Since(start)}
+}
+
+// runVisionLLM: GLM first (higher quota), Gemini fallback.
+// Accepts one or more images (full frame + zoomed presence crop).
+func (d *Daemon) runVisionLLM(images [][]byte) DetectorResult {
+	if len(images) == 0 {
+		return DetectorResult{Err: errors.New("no images"), Latency: 0}
+	}
+	if strings.TrimSpace(d.cfg.GLMAPIKey) != "" {
+		res := d.runGLM(images)
+		if res.Err == nil {
+			return res
+		}
+		log.Printf("vision glm failed (%v), falling back to gemini", res.Err)
+	}
+	return d.runGemini(images)
+}
+
+func extractGeminiText(raw []byte) string {
+	var r map[string]any
+	if err := json.Unmarshal(raw, &r); err != nil {
+		return ""
+	}
+	cands, ok := r["candidates"].([]any)
+	if !ok || len(cands) == 0 {
+		return ""
+	}
+	cand, ok := cands[0].(map[string]any)
+	if !ok {
+		return ""
+	}
+	content, ok := cand["content"].(map[string]any)
+	if !ok {
+		return ""
+	}
+	parts, ok := content["parts"].([]any)
+	if !ok {
+		return ""
+	}
+	var out strings.Builder
+	for _, p := range parts {
+		m, ok := p.(map[string]any)
+		if !ok {
+			continue
+		}
+		t, _ := m["text"].(string)
+		out.WriteString(t)
+	}
+	return out.String()
+}
+
+func extractJSON(s string) string {
+	start := strings.Index(s, "{")
+	end := strings.LastIndex(s, "}")
+	if start >= 0 && end > start {
+		return s[start : end+1]
+	}
+	return s
+}
+
+func (d *Daemon) logMotion(motion float64, r DetectorResult) {
+	ms := r.Latency.Seconds() * 1000
+	if r.Err != nil {
+		if motion >= d.cfg.GeminiNightMinMotion {
+			log.Printf("motion %.1f%% without dog (YOLO(night,fallback))", motion*100)
+		} else {
+			log.Printf("motion %.1f%% without dog (YOLO(error))", motion*100)
+		}
+		return
+	}
+	if r.Detected {
+		log.Printf("motion %.1f%% with dog (%s pos,%.0fms, grass=%.0f%%, onGrass=%v)", motion*100, r.Source, ms, r.GrassFrac*100, r.OnGrass)
+		return
+	}
+	log.Printf("motion %.1f%% without dog (YOLO(neg,%.0fms))", motion*100, ms)
+}
+
+func (d *Daemon) saveSnapshot(jpeg []byte, now time.Time, motion float64) (string, error) {
+	name := fmt.Sprintf("%s_%d_%.0fpct.jpg", now.Format("20060102_150405"), time.Now().UnixNano(), motion*100)
+	path := filepath.Join(d.cfg.SnapshotDir, name)
+	if err := os.WriteFile(path, jpeg, 0o644); err != nil {
+		return "", err
+	}
+	return path, nil
+}
+
+func (d *Daemon) captureVideo(now time.Time) (string, error) {
+	dur := d.cfg.VideoDuration
+	if dur > d.cfg.VideoMaxDuration {
+		dur = d.cfg.VideoMaxDuration
+	}
+	if dur <= 0 {
+		dur = 1
+	}
+	path := filepath.Join(d.cfg.SnapshotDir, fmt.Sprintf("clip_%d.mp4", now.Unix()))
+	cmd := exec.Command(
+		"ffmpeg",
+		"-rtsp_transport", "tcp",
+		"-i", d.cfg.CameraURL,
+		"-t", strconv.Itoa(dur),
+		"-c:v", "libx264",
+		"-preset", "ultrafast",
+		"-movflags", "+faststart",
+		"-an",
+		"-y",
+		path,
+	)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("%w (%s)", err, strings.TrimSpace(string(out)))
+	}
+	return path, nil
+}
+
+func (d *Daemon) sendPhoto(path, caption string) error {
+	for _, chatID := range d.cfg.TelegramChatIDs {
+		if err := d.sendTelegramFile("sendPhoto", "photo", path, chatID, caption); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (d *Daemon) sendVideo(path, caption string) error {
+	for _, chatID := range d.cfg.TelegramChatIDs {
+		if err := d.sendTelegramFile("sendVideo", "video", path, chatID, caption); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (d *Daemon) sendTelegramFile(method, fieldName, path string, chatID int64, caption string) error {
+	fileData, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+
+	var body bytes.Buffer
+	mw := multipart.NewWriter(&body)
+	_ = mw.WriteField("chat_id", strconv.FormatInt(chatID, 10))
+	_ = mw.WriteField("caption", caption)
+	_ = mw.WriteField("parse_mode", "Markdown")
+	fw, err := mw.CreateFormFile(fieldName, filepath.Base(path))
+	if err != nil {
+		return err
+	}
+	if _, err := fw.Write(fileData); err != nil {
+		return err
+	}
+	if err := mw.Close(); err != nil {
+		return err
+	}
+
+	endpoint := fmt.Sprintf("https://api.telegram.org/bot%s/%s", d.cfg.TelegramBotToken, method)
+	req, _ := http.NewRequest(http.MethodPost, endpoint, &body)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	resp, err := d.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		b, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("telegram %s: %s %s", method, resp.Status, strings.TrimSpace(string(b)))
+	}
+	return nil
+}
+
+func (d *Daemon) tryDatasetCapture(frame gocv.Mat) {
+	if d.cfg.DatasetV3Dir == "" || d.cfg.DatasetV3Max <= 0 {
+		return
+	}
+	now := time.Now().In(d.loc)
+	if d.cfg.DatasetV3DaytimeOnly && !isDaytime(now) {
+		return
+	}
+	if !d.lastDataset.IsZero() && now.Sub(d.lastDataset) < time.Duration(d.cfg.DatasetV3Interval)*time.Second {
+		return
+	}
+
+	files, err := os.ReadDir(d.cfg.DatasetV3Dir)
+	if err == nil && len(files) >= d.cfg.DatasetV3Max {
+		return
+	}
+	buf, err := gocv.IMEncode(gocv.JPEGFileExt, frame)
+	if err != nil {
+		return
+	}
+	defer buf.Close()
+
+	name := fmt.Sprintf("motion_%d.jpg", now.Unix())
+	path := filepath.Join(d.cfg.DatasetV3Dir, name)
+	if err := os.WriteFile(path, append([]byte(nil), buf.GetBytes()...), 0o644); err != nil {
+		return
+	}
+	d.lastDataset = now
+}
+
+// savePresenceSample: saves full-res frame + normalized YOLO label derived
+// from the presence diff blob — labeled training data for free, any position.
+func (d *Daemon) savePresenceSample(frame gocv.Mat, bx, by, bw, bh float64, source string) {
+	dir := d.cfg.DatasetV3Dir
+	if dir == "" {
+		return
+	}
+	posDir := filepath.Join(dir, "presence_pos")
+	if err := os.MkdirAll(posDir, 0o755); err != nil {
+		return
+	}
+	entries, err := os.ReadDir(posDir)
+	if err == nil && len(entries) >= d.cfg.DatasetV3Max {
+		return // cap reached
+	}
+	buf, err := gocv.IMEncode(gocv.JPEGFileExt, frame)
+	if err != nil {
+		return
+	}
+	defer buf.Close()
+	ts := time.Now().In(d.loc)
+	stem := fmt.Sprintf("pres_%s_%d", ts.Format("20060102_150405"), ts.UnixNano())
+	imgPath := filepath.Join(posDir, stem+".jpg")
+	if err := os.WriteFile(imgPath, append([]byte(nil), buf.GetBytes()...), 0o644); err != nil {
+		return
+	}
+	// YOLO label: class 0 (kika), center + size normalized
+	cx := bx + bw/2
+	cy := by + bh/2
+	label := fmt.Sprintf("0 %.4f %.4f %.4f %.4f\n", cx, cy, bw, bh)
+	lblPath := filepath.Join(posDir, stem+".txt")
+	if err := os.WriteFile(lblPath, []byte(label), 0o644); err != nil {
+		return
+	}
+	log.Printf("presence: training sample saved %s (%s, bbox=%.2f,%.2f %.2fx%.2f)", stem+".jpg", source, bx, by, bw, bh)
+}
+
+func isDaytime(t time.Time) bool {
+	h := t.Hour()
+	return h >= 6 && h < 18
+}
