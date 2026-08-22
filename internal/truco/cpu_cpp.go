@@ -48,7 +48,10 @@ static void fill_ai_state(
 }
 */
 import "C"
-import "fmt"
+import (
+	"fmt"
+	"runtime"
+)
 
 // rankToC converts a Go Rank to C enum value (0-9)
 func rankToC(r Rank) int {
@@ -99,6 +102,13 @@ func cpuPersonality(playerID int) int {
 	return 0 // Hybrid for all — unique weights generated from playerID in C++
 }
 
+func slicePtrOrNil(s []C.int) *C.int {
+	if len(s) == 0 {
+		return nil
+	}
+	return &s[0]
+}
+
 // DecideCPUActionCpp delegates the CPU decision to the C++ AI engine.
 // Falls back to the pure-Go heuristic if the native library fails.
 func DecideCPUActionCpp(g *Game, playerID int) CPUAction {
@@ -136,6 +146,27 @@ func DecideCPUActionCpp(g *Game, playerID int) CPUAction {
 		trucoByTeam = snap.CurrentHand.TrucoByTeam
 	}
 
+	var p runtime.Pinner
+	defer p.Unpin()
+	if len(handSuits) > 0 {
+		p.Pin(&handSuits[0])
+	}
+	if len(handRanks) > 0 {
+		p.Pin(&handRanks[0])
+	}
+	if len(tblSuits) > 0 {
+		p.Pin(&tblSuits[0])
+	}
+	if len(tblRanks) > 0 {
+		p.Pin(&tblRanks[0])
+	}
+	if len(tblPids) > 0 {
+		p.Pin(&tblPids[0])
+	}
+	if len(tblTeams) > 0 {
+		p.Pin(&tblTeams[0])
+	}
+
 	// Fill the C struct
 	var cs C.TrucoAIState
 	C.fill_ai_state(
@@ -157,13 +188,13 @@ func DecideCPUActionCpp(g *Game, playerID int) CPUAction {
 		C.int(team),
 		C.int(snap.TurnPlayer),
 		C.int(0), // canAskTruco computed below
-		&handSuits[0],
-		&handRanks[0],
+		slicePtrOrNil(handSuits),
+		slicePtrOrNil(handRanks),
 		C.int(len(cards)),
-		&tblSuits[0],
-		&tblRanks[0],
-		&tblPids[0],
-		&tblTeams[0],
+		slicePtrOrNil(tblSuits),
+		slicePtrOrNil(tblRanks),
+		slicePtrOrNil(tblPids),
+		slicePtrOrNil(tblTeams),
 		C.int(len(tableCards)),
 	)
 	cs.can_ask_truco = 0
