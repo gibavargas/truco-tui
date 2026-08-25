@@ -2,3 +2,6 @@
 ## 2025-03-12 - Chat Input Accessibility
 **Learning:** When text inputs omit an explicit `<label>` (like compact chat inputs that rely solely on placeholders), they violate WCAG accessibility guidelines because screen readers lack a reliable identifier when the input is focused or the placeholder is cleared.
 **Action:** Always ensure compact inputs like chat or search bars have an explicit `aria-label` attribute (often reusing the placeholder's localized string) if a visible `<label>` is omitted.
+## 2025-03-12 - CI Boundary Constraint Reminder
+**Learning:** The Palette persona is strictly forbidden from modifying CI/build infrastructure or backend logic. Even if CI fails (like the `ffi-linux` build failure seen here), addressing it is outside the scope of this UX-focused agent and breaks boundaries.
+**Action:** Do not attempt to fix CI failures when operating as Palette. Rely on `bolt` or `sentinel` for non-UX concerns.
