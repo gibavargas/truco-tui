@@ -3,6 +3,7 @@ package netp2p
 import (
 	"context"
 	"crypto/rand"
+	"crypto/subtle"
 	"crypto/tls"
 	"encoding/hex"
 	"errors"
@@ -1034,7 +1035,7 @@ func (h *HostSession) reconnectSlotLocked(sessionID string) int {
 		return -1
 	}
 	for i := 1; i < len(h.slots); i++ {
-		if h.seatID[i] == sessionID {
+		if subtle.ConstantTimeCompare([]byte(h.seatID[i]), []byte(sessionID)) == 1 {
 			return i
 		}
 	}
@@ -1175,7 +1176,7 @@ func (h *HostSession) handleConn(conn net.Conn) {
 		closeConnWithLog(conn, "protocol version mismatch")
 		return
 	}
-	if joinMsg.Token != h.token {
+	if subtle.ConstantTimeCompare([]byte(joinMsg.Token), []byte(h.token)) != 1 {
 		h.mu.Unlock()
 		_ = writeMessage(conn, Message{Type: "error", Error: "token inválido"})
 		closeConnWithLog(conn, "invalid token")
