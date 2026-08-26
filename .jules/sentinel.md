@@ -6,3 +6,7 @@
 **Vulnerability:** Authentication tokens and credentials were compared using standard string equality operators (`==` and `!=`) across relay logic and network peer connections.
 **Learning:** Standard string equality comparisons return early upon finding the first non-matching byte. This exposes the application to timing attacks where an attacker can incrementally guess the token by measuring the time it takes for the application to reject it.
 **Prevention:** Always use `crypto/subtle.ConstantTimeCompare` when comparing secrets, passwords, or tokens in Go to ensure constant time execution regardless of the input data.
+## 2024-08-26 - CI Linker Errors from CGO Dependencies
+**Vulnerability:** CI pipelines failed to link Go binaries that depended on a C++ shared library (`truco_ai`) because the compilation step for the C++ library was missing or ordered incorrectly.
+**Learning:** When dealing with CGO dependencies in CI pipelines, ensure that all C/C++ libraries are built *before* any Go toolchain steps (like `go vet`, `go test`, or `go build`) are executed, otherwise the linker will fail.
+**Prevention:** Always check `ci.yml` to ensure native compilation steps explicitly precede Go checks.
