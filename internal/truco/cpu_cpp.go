@@ -48,7 +48,10 @@ static void fill_ai_state(
 }
 */
 import "C"
-import "fmt"
+import (
+	"fmt"
+	"runtime"
+)
 
 // rankToC converts a Go Rank to C enum value (0-9)
 func rankToC(r Rank) int {
@@ -119,10 +122,14 @@ func DecideCPUActionCpp(g *Game, playerID int) CPUAction {
 
 	// Build table card arrays
 	tableCards := snap.CurrentHand.RoundCards
-	tblSuits := make([]C.int, len(tableCards))
-	tblRanks := make([]C.int, len(tableCards))
-	tblPids := make([]C.int, len(tableCards))
-	tblTeams := make([]C.int, len(tableCards))
+	tblCap := len(tableCards)
+	if tblCap == 0 {
+		tblCap = 1
+	}
+	tblSuits := make([]C.int, tblCap)
+	tblRanks := make([]C.int, tblCap)
+	tblPids := make([]C.int, tblCap)
+	tblTeams := make([]C.int, tblCap)
 	for i, pc := range tableCards {
 		tblSuits[i] = C.int(suitToC(pc.Card.Suit))
 		tblRanks[i] = C.int(rankToC(pc.Card.Rank))
@@ -138,6 +145,15 @@ func DecideCPUActionCpp(g *Game, playerID int) CPUAction {
 
 	// Fill the C struct
 	var cs C.TrucoAIState
+	var p runtime.Pinner
+	p.Pin(&handSuits[0])
+	p.Pin(&handRanks[0])
+	p.Pin(&tblSuits[0])
+	p.Pin(&tblRanks[0])
+	p.Pin(&tblPids[0])
+	p.Pin(&tblTeams[0])
+	defer p.Unpin()
+
 	C.fill_ai_state(
 		&cs,
 		C.int(rankToC(snap.CurrentHand.Manilha)),
