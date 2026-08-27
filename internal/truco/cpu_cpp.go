@@ -48,7 +48,10 @@ static void fill_ai_state(
 }
 */
 import "C"
-import "fmt"
+import (
+	"fmt"
+	"runtime"
+)
 
 // rankToC converts a Go Rank to C enum value (0-9)
 func rankToC(r Rank) int {
@@ -138,6 +141,24 @@ func DecideCPUActionCpp(g *Game, playerID int) CPUAction {
 
 	// Fill the C struct
 	var cs C.TrucoAIState
+
+	var pinner runtime.Pinner
+	defer pinner.Unpin()
+	pinner.Pin(&handSuits[0])
+	pinner.Pin(&handRanks[0])
+
+	var pTblSuits, pTblRanks, pTblPids, pTblTeams *C.int
+	if len(tableCards) > 0 {
+		pTblSuits = &tblSuits[0]
+		pTblRanks = &tblRanks[0]
+		pTblPids = &tblPids[0]
+		pTblTeams = &tblTeams[0]
+		pinner.Pin(pTblSuits)
+		pinner.Pin(pTblRanks)
+		pinner.Pin(pTblPids)
+		pinner.Pin(pTblTeams)
+	}
+
 	C.fill_ai_state(
 		&cs,
 		C.int(rankToC(snap.CurrentHand.Manilha)),
@@ -160,10 +181,10 @@ func DecideCPUActionCpp(g *Game, playerID int) CPUAction {
 		&handSuits[0],
 		&handRanks[0],
 		C.int(len(cards)),
-		&tblSuits[0],
-		&tblRanks[0],
-		&tblPids[0],
-		&tblTeams[0],
+		pTblSuits,
+		pTblRanks,
+		pTblPids,
+		pTblTeams,
 		C.int(len(tableCards)),
 	)
 	cs.can_ask_truco = 0
