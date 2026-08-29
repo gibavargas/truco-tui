@@ -271,17 +271,17 @@ function renderPlayableCard(
   cardLabel: (card: Card) => string,
 ): string {
   if (!canPlay) {
-    return `<div class="game10-hand-card game10-hand-card-locked">${renderCard(card)}<span class="card-caption">${escapeHtml(cardLabel(card))}</span></div>`;
+    return `<div class="game10-hand-card game10-hand-card-locked">${renderCard(card)}<span class="card-caption" aria-hidden="true">${escapeHtml(cardLabel(card))}</span></div>`;
   }
 
   return `
     <div class="game10-hand-card">
       <form data-api-action="play" data-form-id="play-${index}">
         <input type="hidden" name="cardIndex" value="${index}">
-        <button class="card-button game10-card-button" type="submit" aria-label="${escapeHtml(`${t("game_play")} ${cardLabel(card)}`)}"${busyAttr(`play-${index}`)}>${renderCard(card)}</button>
+        <button class="card-button game10-card-button" type="submit" aria-label="${escapeHtml(`${t('game_play')} ${cardLabel(card)}`)}"${busyAttr(`play-${index}`)}>${renderCard(card)}</button>
       </form>
-      <span class="card-caption">${escapeHtml(cardLabel(card))}</span>
-      ${canFaceDown ? `<form data-api-action="play" data-form-id="play-down-${index}"><input type="hidden" name="cardIndex" value="${index}"><input type="hidden" name="faceDown" value="true"><button class="ghost-button game10-face-down" type="submit" aria-label="${escapeHtml(`${t("game_face_down")} ${cardLabel(card)}`)}"${busyAttr(`play-down-${index}`)}>${buttonLabel(`play-down-${index}`, t("game_face_down"))}</button></form>` : ""}
+      <span class="card-caption" aria-hidden="true">${escapeHtml(cardLabel(card))}</span>
+      ${canFaceDown ? `<form data-api-action="play" data-form-id="play-down-${index}"><input type="hidden" name="cardIndex" value="${index}"><input type="hidden" name="faceDown" value="true"><button class="ghost-button game10-face-down" type="submit" aria-label="${escapeHtml(`${t('game_face_down')} ${cardLabel(card)}`)}"${busyAttr(`play-down-${index}`)}>${buttonLabel(`play-down-${index}`, t("game_face_down"))}</button></form>` : ""}
     </div>
   `;
 }
