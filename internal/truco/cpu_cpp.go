@@ -48,7 +48,10 @@ static void fill_ai_state(
 }
 */
 import "C"
-import "fmt"
+import (
+	"fmt"
+	"runtime"
+)
 
 // rankToC converts a Go Rank to C enum value (0-9)
 func rankToC(r Rank) int {
@@ -136,6 +139,19 @@ func DecideCPUActionCpp(g *Game, playerID int) CPUAction {
 		trucoByTeam = snap.CurrentHand.TrucoByTeam
 	}
 
+	var ptrHandSuits, ptrHandRanks, ptrTblSuits, ptrTblRanks, ptrTblPids, ptrTblTeams *C.int
+	if len(cards) > 0 { ptrHandSuits = &handSuits[0]; ptrHandRanks = &handRanks[0] }
+	if len(tableCards) > 0 { ptrTblSuits = &tblSuits[0]; ptrTblRanks = &tblRanks[0]; ptrTblPids = &tblPids[0]; ptrTblTeams = &tblTeams[0] }
+
+	var p runtime.Pinner
+	if ptrHandSuits != nil { p.Pin(ptrHandSuits) }
+	if ptrHandRanks != nil { p.Pin(ptrHandRanks) }
+	if ptrTblSuits != nil { p.Pin(ptrTblSuits) }
+	if ptrTblRanks != nil { p.Pin(ptrTblRanks) }
+	if ptrTblPids != nil { p.Pin(ptrTblPids) }
+	if ptrTblTeams != nil { p.Pin(ptrTblTeams) }
+	defer p.Unpin()
+
 	// Fill the C struct
 	var cs C.TrucoAIState
 	C.fill_ai_state(
@@ -157,13 +173,13 @@ func DecideCPUActionCpp(g *Game, playerID int) CPUAction {
 		C.int(team),
 		C.int(snap.TurnPlayer),
 		C.int(0), // canAskTruco computed below
-		&handSuits[0],
-		&handRanks[0],
+		ptrHandSuits,
+		ptrHandRanks,
 		C.int(len(cards)),
-		&tblSuits[0],
-		&tblRanks[0],
-		&tblPids[0],
-		&tblTeams[0],
+		ptrTblSuits,
+		ptrTblRanks,
+		ptrTblPids,
+		ptrTblTeams,
 		C.int(len(tableCards)),
 	)
 	cs.can_ask_truco = 0
