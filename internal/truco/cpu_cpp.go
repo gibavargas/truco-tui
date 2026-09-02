@@ -49,6 +49,7 @@ static void fill_ai_state(
 */
 import "C"
 import "fmt"
+import "runtime"
 
 // rankToC converts a Go Rank to C enum value (0-9)
 func rankToC(r Rank) int {
@@ -110,8 +111,12 @@ func DecideCPUActionCpp(g *Game, playerID int) CPUAction {
 	}
 
 	// Build hand arrays
-	handSuits := make([]C.int, len(cards))
-	handRanks := make([]C.int, len(cards))
+	handCap := len(cards)
+	if handCap == 0 {
+		handCap = 1
+	}
+	handSuits := make([]C.int, handCap)
+	handRanks := make([]C.int, handCap)
 	for i, c := range cards {
 		handSuits[i] = C.int(suitToC(c.Suit))
 		handRanks[i] = C.int(rankToC(c.Rank))
@@ -119,10 +124,14 @@ func DecideCPUActionCpp(g *Game, playerID int) CPUAction {
 
 	// Build table card arrays
 	tableCards := snap.CurrentHand.RoundCards
-	tblSuits := make([]C.int, len(tableCards))
-	tblRanks := make([]C.int, len(tableCards))
-	tblPids := make([]C.int, len(tableCards))
-	tblTeams := make([]C.int, len(tableCards))
+	tblCap := len(tableCards)
+	if tblCap == 0 {
+		tblCap = 1
+	}
+	tblSuits := make([]C.int, tblCap)
+	tblRanks := make([]C.int, tblCap)
+	tblPids := make([]C.int, tblCap)
+	tblTeams := make([]C.int, tblCap)
 	for i, pc := range tableCards {
 		tblSuits[i] = C.int(suitToC(pc.Card.Suit))
 		tblRanks[i] = C.int(rankToC(pc.Card.Rank))
@@ -135,6 +144,15 @@ func DecideCPUActionCpp(g *Game, playerID int) CPUAction {
 	if snap.CurrentHand.TrucoByTeam >= 0 && snap.CurrentHand.TrucoByTeam <= 1 {
 		trucoByTeam = snap.CurrentHand.TrucoByTeam
 	}
+
+	var pinner runtime.Pinner
+	pinner.Pin(&handSuits[0])
+	pinner.Pin(&handRanks[0])
+	pinner.Pin(&tblSuits[0])
+	pinner.Pin(&tblRanks[0])
+	pinner.Pin(&tblPids[0])
+	pinner.Pin(&tblTeams[0])
+	defer pinner.Unpin()
 
 	// Fill the C struct
 	var cs C.TrucoAIState

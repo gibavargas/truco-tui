@@ -3,6 +3,8 @@ package netp2p
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
+	"crypto/subtle"
 	"crypto/tls"
 	"encoding/hex"
 	"errors"
@@ -960,7 +962,9 @@ func (h *HostSession) createReplacementInviteLocked(requesterSeat, targetSeat in
 	if err != nil {
 		return "", err
 	}
-	h.replaceInvites[replaceToken] = targetSeat
+	hashVal := sha256.Sum256([]byte(replaceToken))
+	replaceTokenHash := hex.EncodeToString(hashVal[:])
+	h.replaceInvites[replaceTokenHash] = targetSeat
 	inv := h.inviteBase
 	inv.ReplaceToken = replaceToken
 	if h.cfg.TransportMode == "relay_quic_v2" {
@@ -972,7 +976,7 @@ func (h *HostSession) createReplacementInviteLocked(requesterSeat, targetSeat in
 			TargetSeat:     targetSeat,
 		})
 		if err != nil {
-			delete(h.replaceInvites, replaceToken)
+			delete(h.replaceInvites, replaceTokenHash)
 			return "", err
 		}
 		inv.RelayJoinTicket = ticketResp.JoinTicket
@@ -1175,7 +1179,7 @@ func (h *HostSession) handleConn(conn net.Conn) {
 		closeConnWithLog(conn, "protocol version mismatch")
 		return
 	}
-	if joinMsg.Token != h.token {
+	if subtle.ConstantTimeCompare([]byte(joinMsg.Token), []byte(h.token)) != 1 {
 		h.mu.Unlock()
 		_ = writeMessage(conn, Message{Type: "error", Error: "token inválido"})
 		closeConnWithLog(conn, "invalid token")
@@ -1210,7 +1214,9 @@ func (h *HostSession) handleConn(conn net.Conn) {
 			}
 			reconnect = true
 		} else if joinMsg.ReplaceToken != "" {
-			target, ok := h.replaceInvites[joinMsg.ReplaceToken]
+			joinHashVal := sha256.Sum256([]byte(joinMsg.ReplaceToken))
+			joinReplaceTokenHash := hex.EncodeToString(joinHashVal[:])
+			target, ok := h.replaceInvites[joinReplaceTokenHash]
 			if !ok {
 				h.mu.Unlock()
 				_ = writeMessage(conn, Message{Type: "error", Error: "convite de reposição inválido"})
@@ -1224,7 +1230,7 @@ func (h *HostSession) handleConn(conn net.Conn) {
 				return
 			}
 			slot = target
-			replacementToken = joinMsg.ReplaceToken
+			replacementToken = joinReplaceTokenHash
 			previousSlotName = h.slots[slot]
 			previousSessionID, hadPreviousSessionID = h.seatID[slot]
 			h.slots[slot] = joinMsg.Name
