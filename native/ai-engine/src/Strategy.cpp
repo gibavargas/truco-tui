@@ -97,15 +97,11 @@ Decision BalancedStrategy::decide(const GameState& state) {
     Decision play = defaultPlay(state);
 
     // If leading and have weak card, hide it 40% of the time
-    if (lead.hasCards && lead.leadingTeam == state.myTeam && state.myHand.size() > 1) {
+    if (state.round > 1 && lead.hasCards && lead.leadingTeam == state.myTeam && state.myHand.size() > 1) {
         int weak = weakestCard(state.myHand, state.manilha);
         if (state.myHand[weak].power(state.manilha) < 5 && random() < 0.40) {
             return {Decision::PLAY_FACEDOWN, weak};
         }
-    }
-    // Strong hand round 1 — bluff face-down 25%
-    if (!lead.hasCards && state.round == 1 && hq.score >= 6.0 && random() < 0.25) {
-        return {Decision::PLAY_FACEDOWN, play.cardIndex};
     }
 
     return play;
@@ -149,12 +145,9 @@ Decision AggressiveStrategy::decide(const GameState& state) {
     TableLead lead = analyzeTable(state);
     Decision play = defaultPlay(state);
 
-    if (lead.hasCards && lead.leadingTeam == state.myTeam && state.myHand.size() > 1) {
+    if (state.round > 1 && lead.hasCards && lead.leadingTeam == state.myTeam && state.myHand.size() > 1) {
         int weak = weakestCard(state.myHand, state.manilha);
         if (random() < 0.60) return {Decision::PLAY_FACEDOWN, weak};
-    }
-    if (!lead.hasCards && state.round == 1 && random() < 0.35) {
-        return {Decision::PLAY_FACEDOWN, play.cardIndex};
     }
 
     return play;
@@ -236,13 +229,13 @@ Decision BlufferStrategy::decide(const GameState& state) {
     TableLead lead = analyzeTable(state);
     Decision play = defaultPlay(state);
 
-    if (lead.hasCards && lead.leadingTeam == state.myTeam && state.myHand.size() > 1) {
+    if (state.round > 1 && lead.hasCards && lead.leadingTeam == state.myTeam && state.myHand.size() > 1) {
         if (random() < 0.50) {
             int weak = weakestCard(state.myHand, state.manilha);
             return {Decision::PLAY_FACEDOWN, weak};
         }
     }
-    if (!lead.hasCards && random() < 0.45) {
+    if (state.round > 1 && !lead.hasCards && random() < 0.45) {
         return {Decision::PLAY_FACEDOWN, play.cardIndex};
     }
 
