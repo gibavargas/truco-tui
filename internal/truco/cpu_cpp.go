@@ -7,6 +7,10 @@ package truco
 #include <stdlib.h>
 #include "truco_ai.h"
 
+static int* truco_alloc_ints(int len) {
+    return (int*)malloc(sizeof(int) * (size_t)(len > 0 ? len : 1));
+}
+
 // Helper to allocate arrays for hand cards
 static void fill_ai_state(
     TrucoAIState* s,
@@ -48,7 +52,10 @@ static void fill_ai_state(
 }
 */
 import "C"
-import "fmt"
+import (
+	"fmt"
+	"unsafe"
+)
 
 // rankToC converts a Go Rank to C enum value (0-9)
 func rankToC(r Rank) int {
@@ -130,6 +137,33 @@ func DecideCPUActionCpp(g *Game, playerID int) CPUAction {
 		tblTeams[i] = C.int(teamForPlayer(snap.Players, pc.PlayerID))
 	}
 
+	// cgo requires valid pointers; &slice[0] panics on empty slices, which is
+	// the normal state on the first play of every hand. The arrays are also
+	// C-allocated because the C state struct stores them beyond the call, and
+	// cgo forbids passing Go pointers to unpinned Go memory (and Go pointers
+	// inside a Go struct passed to C).
+	cIntSlice := func(values []C.int) *C.int {
+		if len(values) == 0 {
+			return nil
+		}
+		out := C.truco_alloc_ints(C.int(len(values)))
+		header := (*[1 << 30]C.int)(unsafe.Pointer(out))[:len(values):len(values)]
+		copy(header, values)
+		return out
+	}
+	handSuitsPtr := cIntSlice(handSuits)
+	defer C.free(unsafe.Pointer(handSuitsPtr))
+	handRanksPtr := cIntSlice(handRanks)
+	defer C.free(unsafe.Pointer(handRanksPtr))
+	tblSuitsPtr := cIntSlice(tblSuits)
+	defer C.free(unsafe.Pointer(tblSuitsPtr))
+	tblRanksPtr := cIntSlice(tblRanks)
+	defer C.free(unsafe.Pointer(tblRanksPtr))
+	tblPidsPtr := cIntSlice(tblPids)
+	defer C.free(unsafe.Pointer(tblPidsPtr))
+	tblTeamsPtr := cIntSlice(tblTeams)
+	defer C.free(unsafe.Pointer(tblTeamsPtr))
+
 	// Determine truco_by_team
 	trucoByTeam := -1
 	if snap.CurrentHand.TrucoByTeam >= 0 && snap.CurrentHand.TrucoByTeam <= 1 {
@@ -157,13 +191,13 @@ func DecideCPUActionCpp(g *Game, playerID int) CPUAction {
 		C.int(team),
 		C.int(snap.TurnPlayer),
 		C.int(0), // canAskTruco computed below
-		&handSuits[0],
-		&handRanks[0],
+		handSuitsPtr,
+		handRanksPtr,
 		C.int(len(cards)),
-		&tblSuits[0],
-		&tblRanks[0],
-		&tblPids[0],
-		&tblTeams[0],
+		tblSuitsPtr,
+		tblRanksPtr,
+		tblPidsPtr,
+		tblTeamsPtr,
 		C.int(len(tableCards)),
 	)
 	cs.can_ask_truco = 0
@@ -180,6 +214,11 @@ func DecideCPUActionCpp(g *Game, playerID int) CPUAction {
 	case 0:
 		return CPUAction{Kind: "play", CardIndex: int(result.card_index)}
 	case 1:
+		// The game rejects face-down plays before the second trick; fall back
+		// to a face-up play of the same card instead of stalling the table.
+		if snap.CurrentHand.Round < 2 {
+			return CPUAction{Kind: "play", CardIndex: int(result.card_index)}
+		}
 		return CPUAction{Kind: "play_facedown", CardIndex: int(result.card_index)}
 	case 2:
 		return CPUAction{Kind: "ask_truco"}
