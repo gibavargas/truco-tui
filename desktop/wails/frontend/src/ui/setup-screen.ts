@@ -70,7 +70,7 @@ export function renderSetupScreen(params: SetupScreenParams): string {
             <div class="field-grid">
               <label>
                 <span>${escapeHtml(t("setup_name"))}</span>
-                <input name="name" type="text" value="${escapeHtml(displayName)}" autocomplete="off">
+                <input name="name" aria-label="${escapeHtml(t('setup_name'))}" type="text" value="${escapeHtml(displayName)}" autocomplete="off">
               </label>
               <label>
                 <span>${escapeHtml(t("setup_players"))}</span>
@@ -127,7 +127,7 @@ export function renderSetupScreen(params: SetupScreenParams): string {
               <div class="field-grid">
                 <label>
                   <span>${escapeHtml(t("setup_name"))}</span>
-                  <input name="name" type="text" value="${escapeHtml(displayName)}" autocomplete="off">
+                  <input name="name" aria-label="${escapeHtml(t('setup_name'))}" type="text" value="${escapeHtml(displayName)}" autocomplete="off">
                 </label>
                 <label>
                   <span>${escapeHtml(t("setup_players"))}</span>
@@ -145,7 +145,7 @@ export function renderSetupScreen(params: SetupScreenParams): string {
               </label>
               <label>
                 <span>${escapeHtml(t("setup_relay"))}</span>
-                <input name="relay_url" type="text" value="${escapeHtml(relayURL)}" placeholder="${escapeHtml(t("relay_placeholder"))}" autocomplete="off">
+                <input name="relay_url" aria-label="${escapeHtml(t('setup_relay'))}" type="text" value="${escapeHtml(relayURL)}" placeholder="${escapeHtml(t("relay_placeholder"))}" autocomplete="off">
               </label>
               <button class="secondary-button" type="submit"${busyAttr("startOnlineHost")}>${buttonLabel("startOnlineHost", t("setup_host"))}</button>
             </form>
@@ -160,11 +160,11 @@ export function renderSetupScreen(params: SetupScreenParams): string {
               <div class="field-grid">
                 <label>
                   <span>${escapeHtml(t("setup_name"))}</span>
-                  <input name="name" type="text" value="${escapeHtml(displayName)}" autocomplete="off">
+                  <input name="name" aria-label="${escapeHtml(t('setup_name'))}" type="text" value="${escapeHtml(displayName)}" autocomplete="off">
                 </label>
                 <label>
                   <span>${escapeHtml(t("setup_invite"))}</span>
-                  <input name="key" type="text" autocomplete="off">
+                  <input name="key" aria-label="${escapeHtml(t('setup_invite'))}" type="text" autocomplete="off">
                 </label>
               </div>
               <label>
