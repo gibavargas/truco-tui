@@ -667,7 +667,7 @@ function renderNetworkPanel(bundle: SnapshotBundle): string {
         ${bundle.lobby?.role ? renderMetric(t("connection_role"), bundle.lobby.role) : ""}
       </div>
       <form class="chat-form" data-api-action="sendChat" data-form-id="sendChat">
-        <input name="message" type="text" autocomplete="off" placeholder="${escapeHtml(t("chat_placeholder"))}">
+        <input name="message" type="text" autocomplete="off" placeholder="${escapeHtml(t("chat_placeholder"))}" aria-label="${escapeHtml(t("chat_placeholder"))}">
         <button class="secondary-button" type="submit"${busyAttr("sendChat")}>${buttonLabel("sendChat", t("lobby_chat"))}</button>
       </form>
     </article>
