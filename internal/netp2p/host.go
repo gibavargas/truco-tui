@@ -33,6 +33,7 @@ type HostSession struct {
 	cancel               context.CancelFunc
 	ln                   net.Listener
 	relayAcceptor        *netrelay.HostAcceptor
+	tailnet              *tailnetEndpoint
 	cfg                  HostConfig
 	tlsNotAfter          time.Time
 	tlsExpiryWarned      bool
@@ -62,20 +63,32 @@ type HostSession struct {
 }
 
 type HostConfig struct {
-	HeartbeatInterval   time.Duration
-	HeartbeatTimeout    time.Duration
-	ShutdownDrainWait   time.Duration
-	TLSExpiryWarnBefore time.Duration
-	HandoffPort         int
-	AdvertiseHost       string
-	RelayURL            string
-	RelaySPKIPin        string
-	TransportMode       string // tcp_tls|relay_quic_v2
-	RelaySessionID      string
-	RelayHostAdminToken string
-	RelayHostPeerID     string
-	RelayHostCredential string
-	RelayEpoch          int
+	HeartbeatInterval      time.Duration
+	HeartbeatTimeout       time.Duration
+	ShutdownDrainWait      time.Duration
+	TLSExpiryWarnBefore    time.Duration
+	HandoffPort            int
+	AdvertiseHost          string
+	RelayURL               string
+	RelaySPKIPin           string
+	RequestedTransportMode string
+	TransportMode          string // auto|tcp_tls|relay_quic_v2|tailnet_tsnet_v1
+	FallbackReason         string
+	RelaySessionID         string
+	RelayHostAdminToken    string
+	RelayHostPeerID        string
+	RelayHostCredential    string
+	RelayEpoch             int
+	TailnetCoordinatorURL  string
+	TailnetControlURL      string
+	TailnetAuthKey         string
+	TailnetStateDir        string
+	TailnetNodeName        string
+	TailnetSessionID       string
+	TailnetJoinTicket      string
+	TailnetHostAdminToken  string
+	TailnetServicePort     int
+	TailnetCoordinator     TailnetCoordinator
 }
 
 const (
@@ -129,16 +142,20 @@ func NewHostSessionWithConfig(bindAddr, hostName string, numPlayers int, cfg Hos
 }
 
 type RecoveredHostState struct {
-	Token               string
-	TLSSeed             string
-	RelayHostAdminToken string
-	RelayHostPeerID     string
-	RelayHostCredential string
-	RelayEpoch          int
-	Slots               []string
-	SeatSessionIDs      map[int]string
-	PeerHosts           map[int]string
-	TableHostSeat       int
+	Token                 string
+	TLSSeed               string
+	RelayHostAdminToken   string
+	RelayHostPeerID       string
+	RelayHostCredential   string
+	RelayEpoch            int
+	TailnetSessionID      string
+	TailnetHostAdminToken string
+	TailnetNodeName       string
+	TailnetServicePort    int
+	Slots                 []string
+	SeatSessionIDs        map[int]string
+	PeerHosts             map[int]string
+	TableHostSeat         int
 }
 
 func NewRecoveredHostSession(bindAddr, hostName string, numPlayers int, state RecoveredHostState, cfg HostConfig) (*HostSession, string, error) {
@@ -159,6 +176,15 @@ func NewRecoveredHostSession(bindAddr, hostName string, numPlayers int, state Re
 		cfg.RelayHostPeerID = strings.TrimSpace(state.RelayHostPeerID)
 		cfg.RelayHostCredential = strings.TrimSpace(state.RelayHostCredential)
 		cfg.RelayEpoch = state.RelayEpoch
+	}
+	if strings.TrimSpace(cfg.TransportMode) == TransportTailnetTSNetV1 {
+		cfg.TailnetSessionID = strings.TrimSpace(state.TailnetSessionID)
+		cfg.TailnetHostAdminToken = strings.TrimSpace(state.TailnetHostAdminToken)
+		cfg.TailnetNodeName = strings.TrimSpace(state.TailnetNodeName)
+		cfg.TailnetServicePort = state.TailnetServicePort
+		if cfg.TailnetSessionID == "" || cfg.TailnetHostAdminToken == "" {
+			return nil, "", errors.New("tailnet session inválida para recuperação")
+		}
 	}
 	hs, key, err := newHostSession(bindAddr, hostName, numPlayers, token, tlsSeed, cfg)
 	if err != nil {
@@ -235,18 +261,52 @@ func newHostSession(bindAddr, hostName string, numPlayers int, token, tlsSeed st
 	}
 	var ln net.Listener
 	var relayAcceptor *netrelay.HostAcceptor
+	var tailnet *tailnetEndpoint
 	inviteBase := InviteKey{
 		Token:       token,
 		Fingerprint: fingerprint,
 		Transport:   cfg.TransportMode,
 	}
-	if cfg.TransportMode == "relay_quic_v2" {
+	if cfg.TransportMode == TransportTailnetTSNetV1 {
+		tailnet, err = startTailnetHost(ctx, cfg, hostName, numPlayers)
+		if err != nil {
+			cancel()
+			if cfg.RequestedTransportMode == TransportAuto {
+				fallbackCfg := cfg
+				fallbackCfg.FallbackReason = err.Error()
+				if strings.TrimSpace(fallbackCfg.RelayURL) != "" {
+					fallbackCfg.TransportMode = TransportRelayQUICV2
+				} else {
+					fallbackCfg.TransportMode = TransportTCPTLS
+				}
+				return newHostSession(bindAddr, hostName, numPlayers, token, tlsSeed, fallbackCfg)
+			}
+			return nil, "", err
+		}
+		ln = tls.NewListener(tailnet.listener, tlsCfg)
+		inviteBase.TransportVersion = 2
+		inviteBase.TailnetCoordinatorURL = tailnet.coordinatorURL
+		inviteBase.TailnetControlURL = tailnet.controlURL
+		inviteBase.TailnetSessionID = tailnet.sessionID
+		inviteBase.TailnetJoinTicket = firstNonEmpty(tailnet.joinTicket, cfg.TailnetJoinTicket)
+		inviteBase.TailnetAuthorityNode = tailnet.authorityNode
+		inviteBase.TailnetServicePort = tailnet.servicePort
+		inviteBase.ExpiresAt = nonZeroTime(tailnet.expiresAt, time.Now().UTC().Add(5*time.Minute)).UTC().Format(time.RFC3339)
+		cfg.TailnetCoordinatorURL = tailnet.coordinatorURL
+		cfg.TailnetControlURL = tailnet.controlURL
+		cfg.TailnetSessionID = tailnet.sessionID
+		cfg.TailnetJoinTicket = inviteBase.TailnetJoinTicket
+		cfg.TailnetHostAdminToken = tailnet.hostAdminToken
+		cfg.TailnetNodeName = tailnet.nodeName
+		cfg.TailnetServicePort = tailnet.servicePort
+	} else if cfg.TransportMode == TransportRelayQUICV2 {
 		relaySessionID := strings.TrimSpace(cfg.RelaySessionID)
 		relayHostAdminToken := strings.TrimSpace(cfg.RelayHostAdminToken)
 		hostPeerID := strings.TrimSpace(cfg.RelayHostPeerID)
 		var hostCredential string
 		epoch := cfg.RelayEpoch
 		relayQUICAddr := ""
+		relayTCPAddr := ""
 		relaySec := relayClientSecurity(cfg.RelayURL, cfg.RelaySPKIPin)
 		if relaySessionID == "" || relayHostAdminToken == "" {
 			createResp, createErr := netrelay.CreateSession(cfg.RelayURL, relaySec, netrelay.CreateSessionRequest{
@@ -263,6 +323,7 @@ func newHostSession(bindAddr, hostName string, numPlayers int, token, tlsSeed st
 			hostCredential = createResp.HostPeerCredential
 			epoch = createResp.Epoch
 			relayQUICAddr = createResp.QuicAddr
+			relayTCPAddr = firstNonEmpty(createResp.TCPAddr, relayTCPAddrFromURL(cfg.RelayURL))
 		} else {
 			if hostPeerID == "" {
 				hostPeerID = "seat-0"
@@ -284,11 +345,15 @@ func newHostSession(bindAddr, hostName string, numPlayers int, token, tlsSeed st
 			hostCredential = published.HostPeerCredential
 			epoch = published.Epoch
 			relayQUICAddr = published.QuicAddr
+			relayTCPAddr = firstNonEmpty(published.TCPAddr, relayTCPAddrFromURL(cfg.RelayURL))
 		}
 		if strings.TrimSpace(relayQUICAddr) == "" {
 			relayQUICAddr = relayQUICAddrFromURL(cfg.RelayURL)
 		}
-		relayAcceptor, err = netrelay.OpenHostAcceptor(ctx, relaySec, relayQUICAddr, relaySessionID, hostPeerID, hostCredential)
+		if strings.TrimSpace(relayTCPAddr) == "" {
+			relayTCPAddr = relayTCPAddrFromURL(cfg.RelayURL)
+		}
+		relayAcceptor, err = netrelay.OpenHostAcceptor(ctx, relaySec, relayQUICAddr, relayTCPAddr, relaySessionID, hostPeerID, hostCredential)
 		if err != nil {
 			cancel()
 			return nil, "", err
@@ -325,7 +390,7 @@ func newHostSession(bindAddr, hostName string, numPlayers int, token, tlsSeed st
 		listenAddr := ln.Addr().String()
 		inviteAddr := buildInviteAddr(listenAddr, cfg.AdvertiseHost)
 		inviteBase.Addr = inviteAddr
-		inviteBase.Transport = "tcp_tls"
+		inviteBase.Transport = TransportTCPTLS
 		inviteBase.TransportVersion = 2
 		inviteBase.ExpiresAt = time.Now().UTC().Add(24 * time.Hour).Format(time.RFC3339)
 	}
@@ -335,6 +400,7 @@ func newHostSession(bindAddr, hostName string, numPlayers int, token, tlsSeed st
 		cancel:               cancel,
 		ln:                   ln,
 		relayAcceptor:        relayAcceptor,
+		tailnet:              tailnet,
 		cfg:                  cfg,
 		tlsNotAfter:          tlsNotAfter,
 		tlsSeed:              tlsSeed,
@@ -370,7 +436,12 @@ func newHostSession(bindAddr, hostName string, numPlayers int, token, tlsSeed st
 			hs.peerHosts[0] = normalized
 		}
 	}
-	if cfg.TransportMode == "relay_quic_v2" {
+	if cfg.TransportMode == TransportTailnetTSNetV1 {
+		if strings.TrimSpace(cfg.TailnetNodeName) != "" {
+			hs.peerHosts[0] = cfg.TailnetNodeName
+		}
+		hs.inviteBase.TailnetAuthorityNode = hs.peerHosts[0]
+	} else if cfg.TransportMode == TransportRelayQUICV2 {
 		if strings.TrimSpace(cfg.RelayHostPeerID) != "" {
 			hs.peerHosts[0] = cfg.RelayHostPeerID
 		} else {
@@ -378,7 +449,20 @@ func newHostSession(bindAddr, hostName string, numPlayers int, token, tlsSeed st
 		}
 		hs.inviteBase.RelayAuthorityPeer = hs.peerHosts[0]
 	}
-	if cfg.TransportMode == "relay_quic_v2" {
+	if cfg.TransportMode == TransportTailnetTSNetV1 && strings.TrimSpace(hs.inviteBase.TailnetJoinTicket) == "" {
+		mintCtx, mintCancel := context.WithTimeout(ctx, defaultTailnetRequestTimeout)
+		ticketResp, ticketErr := mintTailnetJoinTicket(mintCtx, cfg, "", "auto", 0)
+		mintCancel()
+		if ticketErr != nil {
+			if cerr := ln.Close(); cerr != nil {
+				logNetf("close listener (tailnet mint ticket failure): %v", cerr)
+			}
+			return nil, "", ticketErr
+		}
+		hs.inviteBase.TailnetJoinTicket = ticketResp.JoinTicket
+		hs.inviteBase.ExpiresAt = nonZeroTime(ticketResp.ExpiresAt, time.Now().UTC().Add(5*time.Minute)).UTC().Format(time.RFC3339)
+	}
+	if cfg.TransportMode == TransportRelayQUICV2 {
 		ticketResp, ticketErr := netrelay.MintJoinTicket(cfg.RelayURL, relayClientSecurity(cfg.RelayURL, cfg.RelaySPKIPin), netrelay.MintJoinTicketRequest{
 			SessionID:      cfg.RelaySessionID,
 			HostAdminToken: cfg.RelayHostAdminToken,
@@ -413,6 +497,14 @@ func HandoffPortForToken(token string) int {
 }
 
 func (c HostConfig) normalized() HostConfig {
+	requested := strings.TrimSpace(c.RequestedTransportMode)
+	if requested == "" {
+		requested = strings.TrimSpace(c.TransportMode)
+	}
+	if requested == "" {
+		requested = TransportAuto
+	}
+	c.RequestedTransportMode = requested
 	if c.HeartbeatInterval <= 0 {
 		c.HeartbeatInterval = defaultHostHeartbeatInterval
 	}
@@ -425,11 +517,30 @@ func (c HostConfig) normalized() HostConfig {
 	if c.TLSExpiryWarnBefore <= 0 {
 		c.TLSExpiryWarnBefore = defaultHostTLSExpiryWarnBefore
 	}
-	if strings.TrimSpace(c.TransportMode) == "" {
-		c.TransportMode = "tcp_tls"
-	}
-	if strings.TrimSpace(c.RelayURL) != "" {
-		c.TransportMode = "relay_quic_v2"
+	switch strings.TrimSpace(c.TransportMode) {
+	case "", TransportAuto:
+		switch {
+		case hasTailnetConfig(c):
+			c.TransportMode = TransportTailnetTSNetV1
+		case strings.TrimSpace(c.RelayURL) != "":
+			c.TransportMode = TransportRelayQUICV2
+			if c.FallbackReason == "" {
+				c.FallbackReason = "coordenador tailnet não configurado; usando relay"
+			}
+		default:
+			c.TransportMode = TransportTCPTLS
+			if c.FallbackReason == "" {
+				c.FallbackReason = "coordenador tailnet não configurado; usando TCP local"
+			}
+		}
+	case "relay_quic":
+		c.TransportMode = TransportRelayQUICV2
+	case TransportTCPTLS, TransportRelayQUICV2, TransportTailnetTSNetV1:
+		// already normalized
+	default:
+		c.FallbackReason = "modo de transporte inválido; usando auto"
+		c.TransportMode = TransportAuto
+		return c.normalized()
 	}
 	return c
 }
@@ -461,7 +572,13 @@ func (h *HostSession) Close() error {
 		_ = h.relayAcceptor.Close()
 	}
 	if err := h.ln.Close(); err != nil {
-		logNetf("close listener (host close): %v", err)
+		if !errors.Is(err, net.ErrClosed) {
+			logNetf("close listener (host close): %v", err)
+		}
+	}
+	if h.tailnet != nil {
+		h.tailnet.listener = nil
+		_ = h.tailnet.Close()
 	}
 	h.mu.Unlock()
 	return nil
@@ -541,9 +658,47 @@ func (h *HostSession) TransportMode() string {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if strings.TrimSpace(h.cfg.TransportMode) == "" {
-		return "tcp_tls"
+		return TransportTCPTLS
 	}
 	return h.cfg.TransportMode
+}
+
+func (h *HostSession) TransportDiagnostics() TransportDiagnostics {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	diag := TransportDiagnostics{
+		RequestedTransport: h.cfg.RequestedTransportMode,
+		SelectedTransport:  h.cfg.TransportMode,
+		CoordinatorURL:     h.cfg.TailnetCoordinatorURL,
+		FallbackReason:     h.cfg.FallbackReason,
+	}
+	if diag.RequestedTransport == "" {
+		diag.RequestedTransport = diag.SelectedTransport
+	}
+	if diag.SelectedTransport == "" {
+		diag.SelectedTransport = TransportTCPTLS
+	}
+	switch diag.SelectedTransport {
+	case TransportTailnetTSNetV1:
+		diag.CoordinatorStatus = "connected"
+		diag.TailnetNode = h.cfg.TailnetNodeName
+		diag.TailnetAuthority = firstNonEmpty(h.inviteBase.TailnetAuthorityNode, h.cfg.TailnetNodeName)
+		diag.TailnetServicePort = h.cfg.TailnetServicePort
+		if h.tailnet != nil {
+			diag.CoordinatorStatus = h.tailnet.coordinatorStatus
+			diag.TailnetNode = firstNonEmpty(h.tailnet.nodeName, diag.TailnetNode)
+			diag.TailnetAuthority = firstNonEmpty(h.tailnet.authorityNode, diag.TailnetAuthority)
+			diag.TailnetServicePort = h.tailnet.servicePort
+		}
+	case TransportRelayQUICV2:
+		diag.DirectPathKnown = true
+		diag.RelayFallback = h.cfg.RequestedTransportMode == TransportAuto
+	default:
+		diag.DirectPathKnown = true
+		diag.DirectPath = true
+		diag.RelayFallback = false
+	}
+	return diag
 }
 
 func (h *HostSession) SeatProtocolVersions() map[int]int {
@@ -745,6 +900,27 @@ func relayQUICAddrFromURL(relayURL string) string {
 	return host
 }
 
+// relayTCPAddrFromURL deriva o endereço TCP do túnel a partir da URL https do
+// relay (mesma regra de portas do relay: 443→9445, explícita mantém a porta).
+func relayTCPAddrFromURL(relayURL string) string {
+	u, err := url.Parse(strings.TrimSpace(relayURL))
+	if err != nil {
+		return ""
+	}
+	host := strings.TrimSpace(u.Host)
+	if host == "" {
+		host = strings.TrimSpace(relayURL)
+	}
+	h, p, err := net.SplitHostPort(host)
+	if err != nil {
+		return host
+	}
+	if p == "" || p == "443" {
+		return net.JoinHostPort(h, "9445")
+	}
+	return host
+}
+
 func relayClientSecurity(relayURL, pin string) netrelay.ClientSecurity {
 	sec := netrelay.ClientSecurity{RelaySPKIPin: strings.TrimSpace(pin)}
 	u, err := url.Parse(strings.TrimSpace(relayURL))
@@ -777,34 +953,46 @@ func interfaceAddrIP(addr net.Addr) net.IP {
 }
 
 type FailoverMetadata struct {
-	HostSeat            int
-	HandoffPort         int
-	Epoch               int
-	PeerHosts           map[int]string
-	SeatSessionIDs      map[int]string
-	RelaySessionID      string
-	RelayHostAdminToken string
-	RelayHostPeerID     string
-	RelayHostCredential string
-	RelayURL            string
-	RelaySPKIPin        string
+	HostSeat              int
+	HandoffPort           int
+	Epoch                 int
+	PeerHosts             map[int]string
+	SeatSessionIDs        map[int]string
+	RelaySessionID        string
+	RelayHostAdminToken   string
+	RelayHostPeerID       string
+	RelayHostCredential   string
+	RelayURL              string
+	RelaySPKIPin          string
+	TailnetCoordinatorURL string
+	TailnetControlURL     string
+	TailnetSessionID      string
+	TailnetHostAdminToken string
+	TailnetNodeName       string
+	TailnetServicePort    int
 }
 
 func (h *HostSession) FailoverMetadata() FailoverMetadata {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	meta := FailoverMetadata{
-		HostSeat:            h.tableHostSeat,
-		HandoffPort:         h.handoffPort,
-		Epoch:               h.epoch,
-		PeerHosts:           make(map[int]string, len(h.peerHosts)),
-		SeatSessionIDs:      make(map[int]string, len(h.seatID)),
-		RelaySessionID:      h.cfg.RelaySessionID,
-		RelayHostAdminToken: h.cfg.RelayHostAdminToken,
-		RelayHostPeerID:     h.cfg.RelayHostPeerID,
-		RelayHostCredential: h.cfg.RelayHostCredential,
-		RelayURL:            h.cfg.RelayURL,
-		RelaySPKIPin:        h.cfg.RelaySPKIPin,
+		HostSeat:              h.tableHostSeat,
+		HandoffPort:           h.handoffPort,
+		Epoch:                 h.epoch,
+		PeerHosts:             make(map[int]string, len(h.peerHosts)),
+		SeatSessionIDs:        make(map[int]string, len(h.seatID)),
+		RelaySessionID:        h.cfg.RelaySessionID,
+		RelayHostAdminToken:   h.cfg.RelayHostAdminToken,
+		RelayHostPeerID:       h.cfg.RelayHostPeerID,
+		RelayHostCredential:   h.cfg.RelayHostCredential,
+		RelayURL:              h.cfg.RelayURL,
+		RelaySPKIPin:          h.cfg.RelaySPKIPin,
+		TailnetCoordinatorURL: h.cfg.TailnetCoordinatorURL,
+		TailnetControlURL:     h.cfg.TailnetControlURL,
+		TailnetSessionID:      h.cfg.TailnetSessionID,
+		TailnetHostAdminToken: h.cfg.TailnetHostAdminToken,
+		TailnetNodeName:       h.cfg.TailnetNodeName,
+		TailnetServicePort:    h.cfg.TailnetServicePort,
 	}
 	for seat, host := range h.peerHosts {
 		meta.PeerHosts[seat] = host
@@ -963,7 +1151,18 @@ func (h *HostSession) createReplacementInviteLocked(requesterSeat, targetSeat in
 	h.replaceInvites[replaceToken] = targetSeat
 	inv := h.inviteBase
 	inv.ReplaceToken = replaceToken
-	if h.cfg.TransportMode == "relay_quic_v2" {
+	if h.cfg.TransportMode == TransportTailnetTSNetV1 {
+		mintCtx, mintCancel := context.WithTimeout(h.ctx, defaultTailnetRequestTimeout)
+		ticketResp, err := mintTailnetJoinTicket(mintCtx, h.cfg, "", "auto", targetSeat)
+		mintCancel()
+		if err != nil {
+			delete(h.replaceInvites, replaceToken)
+			return "", err
+		}
+		inv.TailnetJoinTicket = ticketResp.JoinTicket
+		inv.TailnetAuthorityNode = firstNonEmpty(h.peerHosts[h.tableHostSeat], inv.TailnetAuthorityNode)
+		inv.ExpiresAt = nonZeroTime(ticketResp.ExpiresAt, time.Now().UTC().Add(5*time.Minute)).UTC().Format(time.RFC3339)
+	} else if h.cfg.TransportMode == TransportRelayQUICV2 {
 		ticketResp, err := netrelay.MintJoinTicket(h.cfg.RelayURL, relayClientSecurity(h.cfg.RelayURL, h.cfg.RelaySPKIPin), netrelay.MintJoinTicketRequest{
 			SessionID:      h.cfg.RelaySessionID,
 			HostAdminToken: h.cfg.RelayHostAdminToken,
@@ -1087,6 +1286,13 @@ func (h *HostSession) protocolVersionForSeatLocked(seat int) int {
 		return pv
 	}
 	return protocolVersion
+}
+
+func (h *HostSession) routeHintLocked() string {
+	if h.cfg.TransportMode == TransportTailnetTSNetV1 {
+		return firstNonEmpty(h.inviteBase.TailnetAuthorityNode, h.peerHosts[h.tableHostSeat], h.cfg.TailnetNodeName)
+	}
+	return h.inviteBase.RelayAuthorityPeer
 }
 
 func (h *HostSession) acceptLoop() {
@@ -1266,7 +1472,9 @@ func (h *HostSession) handleConn(conn net.Conn) {
 	}
 	h.clients[slot] = conn
 	h.seatProtocolVersions[slot] = joinMsg.ProtocolVersion
-	if h.cfg.TransportMode == "relay_quic_v2" {
+	if h.cfg.TransportMode == TransportTailnetTSNetV1 {
+		h.peerHosts[slot] = firstNonEmpty(joinMsg.TailnetNodeName, h.seatAddressFromConnLocked(conn, joinMsg.AdvertiseHost))
+	} else if h.cfg.TransportMode == TransportRelayQUICV2 {
 		h.peerHosts[slot] = fmt.Sprintf("seat-%d", slot)
 	} else {
 		h.peerHosts[slot] = h.seatAddressFromConnLocked(conn, joinMsg.AdvertiseHost)
@@ -1305,15 +1513,21 @@ func (h *HostSession) handleConn(conn net.Conn) {
 	if reconnect && hasCachedState {
 		snap := cloneSnapshot(cachedState)
 		if err := writeMessage(conn, Message{
-			Type:                 "game_state",
-			ProtocolVersion:      joinMsg.ProtocolVersion,
-			State:                &snap,
-			HostSeat:             h.tableHostSeat,
-			HandoffPort:          h.handoffPort,
-			Epoch:                h.epoch,
-			AuthorityFingerprint: h.inviteBase.Fingerprint,
-			RouteHint:            h.inviteBase.RelayAuthorityPeer,
-			RelayHostAdminToken:  h.cfg.RelayHostAdminToken,
+			Type:                  "game_state",
+			ProtocolVersion:       joinMsg.ProtocolVersion,
+			State:                 &snap,
+			HostSeat:              h.tableHostSeat,
+			HandoffPort:           h.handoffPort,
+			Epoch:                 h.epoch,
+			AuthorityFingerprint:  h.inviteBase.Fingerprint,
+			RouteHint:             h.routeHintLocked(),
+			RelayHostAdminToken:   h.cfg.RelayHostAdminToken,
+			TailnetCoordinatorURL: h.inviteBase.TailnetCoordinatorURL,
+			TailnetControlURL:     h.inviteBase.TailnetControlURL,
+			TailnetSessionID:      h.inviteBase.TailnetSessionID,
+			TailnetAuthorityNode:  h.routeHintLocked(),
+			TailnetServicePort:    h.inviteBase.TailnetServicePort,
+			TailnetHostAdminToken: h.cfg.TailnetHostAdminToken,
 		}); err != nil {
 			h.dropClientLocked(slot, "falha ao sincronizar estado")
 			h.mu.Unlock()
@@ -1497,8 +1711,14 @@ func (h *HostSession) SendGameStateToSeat(seat int, state Message) {
 		state.HandoffPort = h.handoffPort
 		state.Epoch = h.epoch
 		state.AuthorityFingerprint = h.inviteBase.Fingerprint
-		state.RouteHint = h.inviteBase.RelayAuthorityPeer
+		state.RouteHint = h.routeHintLocked()
 		state.RelayHostAdminToken = h.cfg.RelayHostAdminToken
+		state.TailnetCoordinatorURL = h.inviteBase.TailnetCoordinatorURL
+		state.TailnetControlURL = h.inviteBase.TailnetControlURL
+		state.TailnetSessionID = h.inviteBase.TailnetSessionID
+		state.TailnetAuthorityNode = h.routeHintLocked()
+		state.TailnetServicePort = h.inviteBase.TailnetServicePort
+		state.TailnetHostAdminToken = h.cfg.TailnetHostAdminToken
 		state.PeerHosts = make(map[int]string, len(h.peerHosts))
 		for k, v := range h.peerHosts {
 			state.PeerHosts[k] = v

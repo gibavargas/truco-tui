@@ -41,3 +41,20 @@ func TestInviteDialAddrsExpandWildcard(t *testing.T) {
 		t.Fatalf("missing fallback addresses: %+v (got=%v)", need, got)
 	}
 }
+
+func TestRelayAddrFromURLPortDerivation(t *testing.T) {
+	cases := []struct{ url, wantQUIC, wantTCP string }{
+		{"https://relay.example.com", "relay.example.com", "relay.example.com"},
+		{"https://relay.example.com:443", "relay.example.com:9444", "relay.example.com:9445"},
+		{"https://relay.example.com:8443", "relay.example.com:8443", "relay.example.com:8443"},
+		{"https://relay.example.com:9443", "relay.example.com:9443", "relay.example.com:9443"},
+	}
+	for _, tc := range cases {
+		if got := relayQUICAddrFromURL(tc.url); got != tc.wantQUIC {
+			t.Errorf("relayQUICAddrFromURL(%q) = %q, want %q", tc.url, got, tc.wantQUIC)
+		}
+		if got := relayTCPAddrFromURL(tc.url); got != tc.wantTCP {
+			t.Errorf("relayTCPAddrFromURL(%q) = %q, want %q", tc.url, got, tc.wantTCP)
+		}
+	}
+}

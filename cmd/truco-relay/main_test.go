@@ -27,8 +27,10 @@ import (
 type relayTestServer struct {
 	httpURL  string
 	quicAddr string
+	tcpAddr  string
 	httpSrv  *http.Server
 	quicLn   *quic.Listener
+	tcpLn    net.Listener
 	sec      netrelay.ClientSecurity
 }
 
@@ -86,6 +88,22 @@ func startRelayTestServer(t *testing.T) *relayTestServer {
 		t.Fatalf("quic.ListenAddr: %v", err)
 	}
 	server := newRelayServer(ql.Addr().String())
+	server.tcpSignals = map[string]net.Conn{}
+	server.tcpWaiting = map[string]chan net.Conn{}
+	tcpLn, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("net.Listen tcp: %v", err)
+	}
+	server.tcpAddr = tcpLn.Addr().String()
+	go func() {
+		for {
+			conn, aerr := tcpLn.Accept()
+			if aerr != nil {
+				return
+			}
+			go server.handleTCPConn(tls.Server(conn, tlsCfg))
+		}
+	}()
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v2/create-session", server.handleCreateSession)
 	mux.HandleFunc("/v2/mint-join-ticket", server.handleMintJoinTicket)
@@ -122,8 +140,10 @@ func startRelayTestServer(t *testing.T) *relayTestServer {
 	return &relayTestServer{
 		httpURL:  "https://" + ln.Addr().String(),
 		quicAddr: ql.Addr().String(),
+		tcpAddr:  tcpLn.Addr().String(),
 		httpSrv:  httpSrv,
 		quicLn:   ql,
+		tcpLn:    tcpLn,
 		sec: netrelay.ClientSecurity{
 			RootCAs:      pool,
 			ServerName:   "127.0.0.1",
@@ -138,6 +158,7 @@ func (s *relayTestServer) Close(t *testing.T) {
 	defer cancel()
 	_ = s.httpSrv.Shutdown(ctx)
 	_ = s.quicLn.Close()
+	_ = s.tcpLn.Close()
 }
 
 func secureHTTPClient(sec netrelay.ClientSecurity) *http.Client {
@@ -315,7 +336,7 @@ func TestRelayTunnelForwarding(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateSession: %v", err)
 	}
-	hostAcceptor, err := netrelay.OpenHostAcceptor(context.Background(), srv.sec, created.QuicAddr, created.SessionID, created.HostPeerID, created.HostPeerCredential)
+	hostAcceptor, err := netrelay.OpenHostAcceptor(context.Background(), srv.sec, created.QuicAddr, srv.tcpAddr, created.SessionID, created.HostPeerID, created.HostPeerCredential)
 	if err != nil {
 		t.Fatalf("OpenHostAcceptor: %v", err)
 	}
@@ -361,7 +382,7 @@ func TestRelayTunnelForwarding(t *testing.T) {
 			hostErr <- werr
 		}()
 
-		peerConn, err := netrelay.OpenPeerTunnel(context.Background(), srv.sec, joined.QuicAddr, created.SessionID, joined.PeerID, joined.PeerCredential, joined.AuthorityPeerID)
+		peerConn, err := netrelay.OpenPeerTunnel(context.Background(), srv.sec, joined.QuicAddr, srv.tcpAddr, created.SessionID, joined.PeerID, joined.PeerCredential, joined.AuthorityPeerID)
 		if err != nil {
 			t.Fatalf("%s OpenPeerTunnel: %v", label, err)
 		}
@@ -394,4 +415,125 @@ func TestRelayTunnelForwarding(t *testing.T) {
 
 	roundTrip("first")
 	roundTrip("second")
+}
+
+// TestRelayTunnelForwardingTCPFallback cobre os dois cenários NAT-restritivos:
+// UDP bloqueado nos dois lados (host+par TCP) e rede assimétrica (host QUIC,
+// par TCP com QUIC morto).
+func TestRelayTunnelForwardingTCPFallback(t *testing.T) {
+	cases := []struct {
+		name         string
+		hostUsesQUIC bool
+	}{
+		{"tcp_only", false},
+		{"host_quic_peer_tcp", true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := startRelayTestServer(t)
+			defer srv.Close(t)
+
+			created, err := netrelay.CreateSession(srv.httpURL, srv.sec, netrelay.CreateSessionRequest{
+				HostIdentity: "Host",
+				NumPlayers:   2,
+			})
+			if err != nil {
+				t.Fatalf("CreateSession: %v", err)
+			}
+			if strings.TrimSpace(created.TCPAddr) == "" {
+				t.Fatalf("CreateSessionResponse.TCPAddr vazio; relay deve anunciar data plane TCP")
+			}
+			hostQUIC := "127.0.0.1:1" // QUIC "bloqueado": intragável força fallback TCP
+			if tc.hostUsesQUIC {
+				hostQUIC = created.QuicAddr
+			}
+
+			hostAcceptor, err := netrelay.OpenHostAcceptor(context.Background(), srv.sec, hostQUIC, srv.tcpAddr, created.SessionID, created.HostPeerID, created.HostPeerCredential)
+			if err != nil {
+				t.Fatalf("OpenHostAcceptor: %v", err)
+			}
+			defer hostAcceptor.Close()
+
+			ticket, err := netrelay.MintJoinTicket(srv.httpURL, srv.sec, netrelay.MintJoinTicketRequest{
+				SessionID:      created.SessionID,
+				HostAdminToken: created.HostAdminToken,
+				PlayerName:     "Guest",
+			})
+			if err != nil {
+				t.Fatalf("MintJoinTicket: %v", err)
+			}
+			joined, err := netrelay.JoinSession(srv.httpURL, srv.sec, netrelay.JoinSessionRequest{
+				SessionID:  created.SessionID,
+				JoinTicket: ticket.JoinTicket,
+				PlayerName: "Guest",
+			})
+			if err != nil {
+				t.Fatalf("JoinSession: %v", err)
+			}
+
+			hostErr := make(chan error, 1)
+			go func() {
+				c, aerr := hostAcceptor.Accept()
+				if aerr != nil {
+					hostErr <- aerr
+					return
+				}
+				defer c.Close()
+				buf := make([]byte, 4)
+				if _, rerr := io.ReadFull(c, buf); rerr != nil {
+					hostErr <- rerr
+					return
+				}
+				if string(buf) != "ping" {
+					hostErr <- io.ErrUnexpectedEOF
+					return
+				}
+				_, werr := c.Write([]byte("pong"))
+				hostErr <- werr
+			}()
+
+			peerConn, err := netrelay.OpenPeerTunnel(context.Background(), srv.sec, "127.0.0.1:1", srv.tcpAddr, created.SessionID, joined.PeerID, joined.PeerCredential, joined.AuthorityPeerID)
+			if err != nil {
+				t.Fatalf("OpenPeerTunnel (TCP): %v", err)
+			}
+			if _, err := peerConn.Write([]byte("ping")); err != nil {
+				_ = peerConn.Close()
+				t.Fatalf("peer write: %v", err)
+			}
+			resp := make([]byte, 4)
+			if _, err := io.ReadFull(peerConn, resp); err != nil {
+				_ = peerConn.Close()
+				t.Fatalf("peer read: %v", err)
+			}
+			if string(resp) != "pong" {
+				_ = peerConn.Close()
+				t.Fatalf("response = %q, want pong", string(resp))
+			}
+			_ = peerConn.Close()
+			select {
+			case err := <-hostErr:
+				if err != nil {
+					t.Fatalf("host stream error: %v", err)
+				}
+			case <-time.After(5 * time.Second):
+				t.Fatalf("timeout waiting host stream")
+			}
+		})
+	}
+}
+
+// TestDefaultRelayTCPAddr cobre a derivação de porta do data plane TCP.
+func TestDefaultRelayTCPAddr(t *testing.T) {
+	cases := []struct{ quic, want string }{
+		{"127.0.0.1:9444", "127.0.0.1:9445"},
+		{"0.0.0.0:9444", "0.0.0.0:9445"},
+		{"example.com:9444", "example.com:9445"},
+		{"example.com:7777", "example.com:7777"},
+		{"not-an-addr", "127.0.0.1:9445"},
+	}
+	for _, tc := range cases {
+		if got := defaultRelayTCPAddr(tc.quic); got != tc.want {
+			t.Errorf("defaultRelayTCPAddr(%q) = %q, want %q", tc.quic, got, tc.want)
+		}
+	}
 }

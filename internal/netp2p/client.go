@@ -36,16 +36,17 @@ type ClientSession struct {
 	closed              bool
 	relayState          RelayReconnectState
 
-	failoverHostSeat             int
-	failoverPort                 int
-	failoverPeers                map[int]string
-	failoverSeatIDs              map[int]string
-	failoverState                *truco.Snapshot
-	failoverTLSSeed              string
-	failoverEpoch                int
-	failoverAuthorityFingerprint string
-	failoverRouteHint            string
-	failoverRelayHostAdminToken  string
+	failoverHostSeat              int
+	failoverPort                  int
+	failoverPeers                 map[int]string
+	failoverSeatIDs               map[int]string
+	failoverState                 *truco.Snapshot
+	failoverTLSSeed               string
+	failoverEpoch                 int
+	failoverAuthorityFingerprint  string
+	failoverRouteHint             string
+	failoverRelayHostAdminToken   string
+	failoverTailnetHostAdminToken string
 }
 
 type joinProtocolError struct {
@@ -69,25 +70,26 @@ const (
 )
 
 type ClientFailoverState struct {
-	Ready                bool
-	HostSeat             int
-	HandoffPort          int
-	PeerHosts            map[int]string
-	SeatSessionIDs       map[int]string
-	FullState            *truco.Snapshot
-	Slots                []string
-	AssignedSeat         int
-	NumPlayers           int
-	Invite               InviteKey
-	Name                 string
-	DesiredRole          string
-	SessionID            string
-	TLSSeed              string
-	Epoch                int
-	AuthorityFingerprint string
-	RouteHint            string
-	RelayHostAdminToken  string
-	Relay                RelayReconnectState
+	Ready                 bool
+	HostSeat              int
+	HandoffPort           int
+	PeerHosts             map[int]string
+	SeatSessionIDs        map[int]string
+	FullState             *truco.Snapshot
+	Slots                 []string
+	AssignedSeat          int
+	NumPlayers            int
+	Invite                InviteKey
+	Name                  string
+	DesiredRole           string
+	SessionID             string
+	TLSSeed               string
+	Epoch                 int
+	AuthorityFingerprint  string
+	RouteHint             string
+	RelayHostAdminToken   string
+	TailnetHostAdminToken string
+	Relay                 RelayReconnectState
 }
 
 func JoinSession(key, playerName, desiredRole string) (*ClientSession, error) {
@@ -302,6 +304,10 @@ func attemptDialJoin(inv InviteKey, playerName, desiredRole, sessionID string, p
 		ReplaceToken:    inv.ReplaceToken,
 		AdvertiseHost:   advertiseHost,
 	}
+	if relayInfo != nil && strings.TrimSpace(relayInfo.TailnetNodeName) != "" {
+		req.TailnetNodeName = relayInfo.TailnetNodeName
+		req.AdvertiseHost = relayInfo.TailnetNodeName
+	}
 	if err := writeMessage(conn, req); err != nil {
 		closeConnWithLog(conn, "join send")
 		return nil, nil, Message{}, RelayReconnectState{}, err
@@ -379,9 +385,36 @@ func (c *ClientSession) TransportMode() string {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if strings.TrimSpace(c.invite.Transport) == "" {
-		return "tcp_tls"
+		return TransportTCPTLS
 	}
 	return c.invite.Transport
+}
+
+func (c *ClientSession) TransportDiagnostics() TransportDiagnostics {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	selected := strings.TrimSpace(c.invite.Transport)
+	if selected == "" {
+		selected = TransportTCPTLS
+	}
+	diag := TransportDiagnostics{
+		RequestedTransport: selected,
+		SelectedTransport:  selected,
+	}
+	switch selected {
+	case TransportTailnetTSNetV1:
+		diag.CoordinatorStatus = "connected"
+		diag.CoordinatorURL = firstNonEmpty(c.relayState.TailnetCoordinator, c.invite.TailnetCoordinatorURL)
+		diag.TailnetNode = c.relayState.TailnetNodeName
+		diag.TailnetAuthority = firstNonEmpty(c.relayState.TailnetAuthority, c.invite.TailnetAuthorityNode)
+		diag.TailnetServicePort = firstNonZero(c.relayState.TailnetServicePort, c.invite.TailnetServicePort)
+	case TransportRelayQUICV2:
+		diag.DirectPathKnown = true
+	default:
+		diag.DirectPathKnown = true
+		diag.DirectPath = true
+	}
+	return diag
 }
 
 func (c *ClientSession) WireProtocolVersion() int {
@@ -394,23 +427,24 @@ func (c *ClientSession) FailoverState() ClientFailoverState {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	out := ClientFailoverState{
-		HostSeat:             c.failoverHostSeat,
-		HandoffPort:          c.failoverPort,
-		PeerHosts:            make(map[int]string, len(c.failoverPeers)),
-		SeatSessionIDs:       make(map[int]string, len(c.failoverSeatIDs)),
-		Slots:                append([]string{}, c.slots...),
-		AssignedSeat:         c.assigned,
-		NumPlayers:           c.numPlayers,
-		Invite:               c.invite,
-		Name:                 c.name,
-		DesiredRole:          c.desiredRole,
-		SessionID:            c.sessionID,
-		TLSSeed:              c.failoverTLSSeed,
-		Epoch:                c.failoverEpoch,
-		AuthorityFingerprint: c.failoverAuthorityFingerprint,
-		RouteHint:            c.failoverRouteHint,
-		RelayHostAdminToken:  c.failoverRelayHostAdminToken,
-		Relay:                c.relayState,
+		HostSeat:              c.failoverHostSeat,
+		HandoffPort:           c.failoverPort,
+		PeerHosts:             make(map[int]string, len(c.failoverPeers)),
+		SeatSessionIDs:        make(map[int]string, len(c.failoverSeatIDs)),
+		Slots:                 append([]string{}, c.slots...),
+		AssignedSeat:          c.assigned,
+		NumPlayers:            c.numPlayers,
+		Invite:                c.invite,
+		Name:                  c.name,
+		DesiredRole:           c.desiredRole,
+		SessionID:             c.sessionID,
+		TLSSeed:               c.failoverTLSSeed,
+		Epoch:                 c.failoverEpoch,
+		AuthorityFingerprint:  c.failoverAuthorityFingerprint,
+		RouteHint:             c.failoverRouteHint,
+		RelayHostAdminToken:   c.failoverRelayHostAdminToken,
+		TailnetHostAdminToken: c.failoverTailnetHostAdminToken,
+		Relay:                 c.relayState,
 	}
 	for seat, host := range c.failoverPeers {
 		out.PeerHosts[seat] = host
@@ -423,11 +457,17 @@ func (c *ClientSession) FailoverState() ClientFailoverState {
 		out.FullState = &s
 	}
 	out.Ready = len(out.PeerHosts) > 0 && out.FullState != nil && len(out.Slots) == out.NumPlayers && strings.TrimSpace(out.TLSSeed) != ""
-	if strings.TrimSpace(out.Invite.Transport) == "relay_quic_v2" {
+	switch strings.TrimSpace(out.Invite.Transport) {
+	case TransportRelayQUICV2:
 		out.Ready = out.Ready &&
 			strings.TrimSpace(out.Relay.PeerID) != "" &&
 			strings.TrimSpace(out.Relay.PeerCredential) != "" &&
 			strings.TrimSpace(out.Relay.QuicAddr) != ""
+	case TransportTailnetTSNetV1:
+		out.Ready = out.Ready &&
+			strings.TrimSpace(out.Relay.TailnetNodeName) != "" &&
+			strings.TrimSpace(out.TailnetHostAdminToken) != "" &&
+			firstNonZero(out.Relay.TailnetServicePort, out.Invite.TailnetServicePort) > 0
 	}
 	return out
 }
@@ -578,11 +618,14 @@ func (c *ClientSession) tryReconnect() bool {
 			break
 		}
 		useRelayState := relayState
-		if strings.TrimSpace(inv.Transport) != "relay_quic_v2" {
+		if strings.TrimSpace(inv.Transport) != TransportRelayQUICV2 && strings.TrimSpace(inv.Transport) != TransportTailnetTSNetV1 {
 			useRelayState = RelayReconnectState{}
 		}
 		var relayArg *RelayReconnectState
 		if strings.TrimSpace(useRelayState.PeerID) != "" && strings.TrimSpace(useRelayState.PeerCredential) != "" && strings.TrimSpace(useRelayState.QuicAddr) != "" {
+			relayArg = &useRelayState
+		}
+		if strings.TrimSpace(useRelayState.TailnetNodeName) != "" && strings.TrimSpace(useRelayState.TailnetAuthority) != "" {
 			relayArg = &useRelayState
 		}
 		conn, reader, first, relayInfo, err := dialAndJoin(inv, name, role, sessionID, 1, protocolVersionCandidates(c.wireProtocolVersion), relayArg)
@@ -737,12 +780,37 @@ func (c *ClientSession) readLoop() {
 			if strings.TrimSpace(msg.RouteHint) != "" {
 				c.failoverRouteHint = msg.RouteHint
 				c.invite.RelayAuthorityPeer = msg.RouteHint
+				c.invite.TailnetAuthorityNode = msg.RouteHint
 				if c.relayState.PeerID != "" {
 					c.relayState.AuthorityPeer = msg.RouteHint
+				}
+				if c.relayState.TailnetNodeName != "" {
+					c.relayState.TailnetAuthority = msg.RouteHint
 				}
 			}
 			if strings.TrimSpace(msg.RelayHostAdminToken) != "" {
 				c.failoverRelayHostAdminToken = msg.RelayHostAdminToken
+			}
+			if strings.TrimSpace(msg.TailnetCoordinatorURL) != "" {
+				c.invite.TailnetCoordinatorURL = msg.TailnetCoordinatorURL
+			}
+			if strings.TrimSpace(msg.TailnetControlURL) != "" {
+				c.invite.TailnetControlURL = msg.TailnetControlURL
+				c.relayState.TailnetControlURL = msg.TailnetControlURL
+			}
+			if strings.TrimSpace(msg.TailnetSessionID) != "" {
+				c.invite.TailnetSessionID = msg.TailnetSessionID
+			}
+			if strings.TrimSpace(msg.TailnetAuthorityNode) != "" {
+				c.invite.TailnetAuthorityNode = msg.TailnetAuthorityNode
+				c.relayState.TailnetAuthority = msg.TailnetAuthorityNode
+			}
+			if msg.TailnetServicePort > 0 {
+				c.invite.TailnetServicePort = msg.TailnetServicePort
+				c.relayState.TailnetServicePort = msg.TailnetServicePort
+			}
+			if strings.TrimSpace(msg.TailnetHostAdminToken) != "" {
+				c.failoverTailnetHostAdminToken = msg.TailnetHostAdminToken
 			}
 			c.mu.Unlock()
 			if msg.State != nil {

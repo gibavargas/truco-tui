@@ -34,6 +34,13 @@ const (
 
 const ProtocolVersion = protocolVersion
 
+const (
+	TransportAuto           = "auto"
+	TransportTCPTLS         = "tcp_tls"
+	TransportRelayQUICV2    = "relay_quic_v2"
+	TransportTailnetTSNetV1 = "tailnet_tsnet_v1"
+)
+
 func supportedProtocolVersions() []int {
 	versions := []int{protocolVersion}
 	if protocolVersion > 1 {
@@ -85,19 +92,25 @@ func closeConnWithLog(conn net.Conn, context string) {
 
 // InviteKey carrega os dados mínimos para conectar a um host.
 type InviteKey struct {
-	Addr               string `json:"addr,omitempty"`
-	Token              string `json:"token"`
-	Fingerprint        string `json:"fingerprint,omitempty"`
-	ReplaceToken       string `json:"replace_token,omitempty"`
-	Transport          string `json:"transport,omitempty"` // tcp_tls|relay_quic_v2
-	TransportVersion   int    `json:"transport_version,omitempty"`
-	RelayURL           string `json:"relay_url,omitempty"`
-	RelaySessionID     string `json:"relay_session_id,omitempty"`
-	RelaySessionToken  string `json:"relay_session_token,omitempty"`
-	RelayJoinTicket    string `json:"relay_join_ticket,omitempty"`
-	RelayAuthorityPeer string `json:"relay_authority_peer,omitempty"`
-	RelaySPKIPin       string `json:"relay_spki_pin,omitempty"`
-	ExpiresAt          string `json:"expires_at,omitempty"`
+	Addr                  string `json:"addr,omitempty"`
+	Token                 string `json:"token"`
+	Fingerprint           string `json:"fingerprint,omitempty"`
+	ReplaceToken          string `json:"replace_token,omitempty"`
+	Transport             string `json:"transport,omitempty"` // tcp_tls|relay_quic_v2|tailnet_tsnet_v1
+	TransportVersion      int    `json:"transport_version,omitempty"`
+	RelayURL              string `json:"relay_url,omitempty"`
+	RelaySessionID        string `json:"relay_session_id,omitempty"`
+	RelaySessionToken     string `json:"relay_session_token,omitempty"`
+	RelayJoinTicket       string `json:"relay_join_ticket,omitempty"`
+	RelayAuthorityPeer    string `json:"relay_authority_peer,omitempty"`
+	RelaySPKIPin          string `json:"relay_spki_pin,omitempty"`
+	TailnetCoordinatorURL string `json:"tailnet_coordinator_url,omitempty"`
+	TailnetControlURL     string `json:"tailnet_control_url,omitempty"`
+	TailnetSessionID      string `json:"tailnet_session_id,omitempty"`
+	TailnetJoinTicket     string `json:"tailnet_join_ticket,omitempty"`
+	TailnetAuthorityNode  string `json:"tailnet_authority_node,omitempty"`
+	TailnetServicePort    int    `json:"tailnet_service_port,omitempty"`
+	ExpiresAt             string `json:"expires_at,omitempty"`
 }
 
 func EncodeInviteKey(k InviteKey) (string, error) {
@@ -138,20 +151,28 @@ func DecodeInviteKey(s string) (InviteKey, error) {
 	}
 	switch strings.TrimSpace(k.Transport) {
 	case "":
-		k.Transport = "tcp_tls"
+		k.Transport = TransportTCPTLS
 		fallthrough
-	case "tcp_tls":
+	case TransportTCPTLS:
 		if k.Addr == "" {
 			return k, errors.New("chave inválida")
 		}
-	case "relay_quic", "relay_quic_v2":
+	case "relay_quic", TransportRelayQUICV2:
 		if strings.TrimSpace(k.RelayJoinTicket) == "" {
 			k.RelayJoinTicket = strings.TrimSpace(k.RelaySessionToken)
 		}
 		if strings.TrimSpace(k.RelayURL) == "" || strings.TrimSpace(k.RelaySessionID) == "" || strings.TrimSpace(k.RelayJoinTicket) == "" {
 			return k, errors.New("chave de relay inválida")
 		}
-		k.Transport = "relay_quic_v2"
+		k.Transport = TransportRelayQUICV2
+	case TransportTailnetTSNetV1:
+		if strings.TrimSpace(k.TailnetCoordinatorURL) == "" ||
+			strings.TrimSpace(k.TailnetSessionID) == "" ||
+			strings.TrimSpace(k.TailnetJoinTicket) == "" ||
+			strings.TrimSpace(k.TailnetAuthorityNode) == "" ||
+			k.TailnetServicePort <= 0 {
+			return k, errors.New("chave tailnet inválida")
+		}
 	default:
 		return k, errors.New("transporte de convite inválido")
 	}
@@ -188,17 +209,24 @@ type Message struct {
 	TargetSeat    int    `json:"target_seat,omitempty"`
 
 	// Estado de partida (host -> clientes).
-	State                *truco.Snapshot `json:"state,omitempty"`
-	FullState            *truco.Snapshot `json:"full_state,omitempty"`
-	HostSeat             int             `json:"host_seat"`
-	HandoffPort          int             `json:"handoff_port,omitempty"`
-	PeerHosts            map[int]string  `json:"peer_hosts,omitempty"`
-	SeatSessionIDs       map[int]string  `json:"seat_session_ids,omitempty"`
-	TLSSeed              string          `json:"tls_seed,omitempty"`
-	Epoch                int             `json:"epoch,omitempty"`
-	AuthorityFingerprint string          `json:"authority_fingerprint,omitempty"`
-	RouteHint            string          `json:"route_hint,omitempty"`
-	RelayHostAdminToken  string          `json:"relay_host_admin_token,omitempty"`
+	State                 *truco.Snapshot `json:"state,omitempty"`
+	FullState             *truco.Snapshot `json:"full_state,omitempty"`
+	HostSeat              int             `json:"host_seat"`
+	HandoffPort           int             `json:"handoff_port,omitempty"`
+	PeerHosts             map[int]string  `json:"peer_hosts,omitempty"`
+	SeatSessionIDs        map[int]string  `json:"seat_session_ids,omitempty"`
+	TLSSeed               string          `json:"tls_seed,omitempty"`
+	Epoch                 int             `json:"epoch,omitempty"`
+	AuthorityFingerprint  string          `json:"authority_fingerprint,omitempty"`
+	RouteHint             string          `json:"route_hint,omitempty"`
+	RelayHostAdminToken   string          `json:"relay_host_admin_token,omitempty"`
+	TailnetCoordinatorURL string          `json:"tailnet_coordinator_url,omitempty"`
+	TailnetControlURL     string          `json:"tailnet_control_url,omitempty"`
+	TailnetSessionID      string          `json:"tailnet_session_id,omitempty"`
+	TailnetAuthorityNode  string          `json:"tailnet_authority_node,omitempty"`
+	TailnetNodeName       string          `json:"tailnet_node_name,omitempty"`
+	TailnetServicePort    int             `json:"tailnet_service_port,omitempty"`
+	TailnetHostAdminToken string          `json:"tailnet_host_admin_token,omitempty"`
 
 	// Heartbeat opcional para monitorar conectividade.
 	HeartbeatUnix int64 `json:"heartbeat_unix,omitempty"`

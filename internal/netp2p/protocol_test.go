@@ -52,6 +52,50 @@ func TestDecodeInviteKeyFallsBackToRelaySessionToken(t *testing.T) {
 	}
 }
 
+func TestDecodeInviteKeyAcceptsTailnetTSNetV1(t *testing.T) {
+	key, err := EncodeInviteKey(InviteKey{
+		Token:                 "token",
+		Fingerprint:           "abcd",
+		Transport:             TransportTailnetTSNetV1,
+		TransportVersion:      2,
+		TailnetCoordinatorURL: "https://coord.example",
+		TailnetSessionID:      "table-123",
+		TailnetJoinTicket:     "ticket-abc",
+		TailnetAuthorityNode:  "truco-host-abcd",
+		TailnetServicePort:    39001,
+	})
+	if err != nil {
+		t.Fatalf("EncodeInviteKey: %v", err)
+	}
+
+	inv, err := DecodeInviteKey(key)
+	if err != nil {
+		t.Fatalf("DecodeInviteKey: %v", err)
+	}
+	if inv.Transport != TransportTailnetTSNetV1 {
+		t.Fatalf("Transport = %q, want %q", inv.Transport, TransportTailnetTSNetV1)
+	}
+	if inv.TailnetServicePort != 39001 {
+		t.Fatalf("TailnetServicePort = %d, want 39001", inv.TailnetServicePort)
+	}
+}
+
+func TestDecodeInviteKeyRejectsIncompleteTailnetInvite(t *testing.T) {
+	key, err := EncodeInviteKey(InviteKey{
+		Token:            "token",
+		Fingerprint:      "abcd",
+		Transport:        TransportTailnetTSNetV1,
+		TailnetSessionID: "table-123",
+	})
+	if err != nil {
+		t.Fatalf("EncodeInviteKey: %v", err)
+	}
+
+	if _, err := DecodeInviteKey(key); err == nil {
+		t.Fatal("DecodeInviteKey succeeded for incomplete tailnet invite")
+	}
+}
+
 func TestProtocolVersionCandidatesPreferNegotiatedVersion(t *testing.T) {
 	got := protocolVersionCandidates(1)
 	if len(got) < 2 {

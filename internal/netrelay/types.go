@@ -19,6 +19,7 @@ type CreateSessionResponse struct {
 	AuthorityPeerID    string    `json:"authority_peer_id"`
 	Epoch              int       `json:"epoch"`
 	QuicAddr           string    `json:"quic_addr"`
+	TCPAddr            string    `json:"tcp_addr,omitempty"`
 	ExpiresAt          time.Time `json:"expires_at"`
 }
 
@@ -51,6 +52,7 @@ type JoinSessionResponse struct {
 	AuthorityPeerID  string    `json:"authority_peer_id"`
 	Epoch            int       `json:"epoch"`
 	QuicAddr         string    `json:"quic_addr"`
+	TCPAddr          string    `json:"tcp_addr,omitempty"`
 	ExpiresAt        time.Time `json:"expires_at"`
 	SessionExpiresAt time.Time `json:"session_expires_at"`
 }
@@ -70,6 +72,7 @@ type PublishAuthorityResponse struct {
 	Epoch              int    `json:"epoch"`
 	HostPeerCredential string `json:"host_peer_credential"`
 	QuicAddr           string `json:"quic_addr"`
+	TCPAddr            string `json:"tcp_addr,omitempty"`
 }
 
 type HeartbeatRequest struct {
@@ -85,4 +88,5 @@ type tunnelHello struct {
 	PeerID       string `json:"peer_id"`
 	Credential   string `json:"credential"`
 	TargetPeerID string `json:"target_peer_id,omitempty"`
+	TunnelID     string `json:"tunnel_id,omitempty"`
 }

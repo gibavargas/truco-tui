@@ -27,10 +27,17 @@ func normalizeFingerprint(fp string) string {
 }
 
 type RelayReconnectState struct {
-	PeerID         string
-	PeerCredential string
-	QuicAddr       string
-	AuthorityPeer  string
+	PeerID              string
+	PeerCredential      string
+	QuicAddr            string
+	TCPAddr             string
+	AuthorityPeer       string
+	TailnetNodeName     string
+	TailnetControlURL   string
+	TailnetCoordinator  string
+	TailnetAuthority    string
+	TailnetServicePort  int
+	TailnetConnectedP2P bool
 }
 
 func buildTLSConfig(tlsSeed string) (*tls.Config, string, time.Time, error) {
@@ -160,10 +167,14 @@ func dialSessionConn(inv InviteKey, timeout time.Duration) (net.Conn, error) {
 func dialSessionConnWithRelayState(inv InviteKey, timeout time.Duration, playerName, desiredRole, playerSession string, cachedRelayState *RelayReconnectState) (net.Conn, *RelayReconnectState, error) {
 	transport := strings.TrimSpace(inv.Transport)
 	if transport == "" {
-		transport = "tcp_tls"
+		transport = TransportTCPTLS
 	}
-	if transport == "relay_quic_v2" {
+	if transport == TransportTailnetTSNetV1 {
+		return dialTailnetSessionConn(inv, timeout, playerName, desiredRole, playerSession, cachedRelayState)
+	}
+	if transport == TransportRelayQUICV2 {
 		sec := relaySecurityFromInvite(inv)
+		tcpAddr := relayTCPAddrFromURL(inv.RelayURL)
 		if cachedRelayState != nil &&
 			strings.TrimSpace(cachedRelayState.PeerID) != "" &&
 			strings.TrimSpace(cachedRelayState.PeerCredential) != "" &&
@@ -174,7 +185,8 @@ func dialSessionConnWithRelayState(inv InviteKey, timeout time.Duration, playerN
 			}
 			ctx, cancel := context.WithTimeout(context.Background(), timeout)
 			defer cancel()
-			raw, err := netrelay.OpenPeerTunnel(ctx, sec, cachedRelayState.QuicAddr, inv.RelaySessionID, cachedRelayState.PeerID, cachedRelayState.PeerCredential, target)
+			useTCP := firstNonEmpty(cachedRelayState.TCPAddr, tcpAddr)
+			raw, err := netrelay.OpenPeerTunnel(ctx, sec, cachedRelayState.QuicAddr, useTCP, inv.RelaySessionID, cachedRelayState.PeerID, cachedRelayState.PeerCredential, target)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -186,6 +198,7 @@ func dialSessionConnWithRelayState(inv InviteKey, timeout time.Duration, playerN
 				PeerID:         cachedRelayState.PeerID,
 				PeerCredential: cachedRelayState.PeerCredential,
 				QuicAddr:       cachedRelayState.QuicAddr,
+				TCPAddr:        firstNonEmpty(cachedRelayState.TCPAddr, tcpAddr),
 				AuthorityPeer:  target,
 			}
 			return conn, &state, nil
@@ -207,7 +220,7 @@ func dialSessionConnWithRelayState(inv InviteKey, timeout time.Duration, playerN
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), timeout)
 		defer cancel()
-		raw, err := netrelay.OpenPeerTunnel(ctx, sec, joinResp.QuicAddr, inv.RelaySessionID, joinResp.PeerID, joinResp.PeerCredential, target)
+		raw, err := netrelay.OpenPeerTunnel(ctx, sec, joinResp.QuicAddr, firstNonEmpty(joinResp.TCPAddr, tcpAddr), inv.RelaySessionID, joinResp.PeerID, joinResp.PeerCredential, target)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -219,6 +232,7 @@ func dialSessionConnWithRelayState(inv InviteKey, timeout time.Duration, playerN
 			PeerID:         joinResp.PeerID,
 			PeerCredential: joinResp.PeerCredential,
 			QuicAddr:       joinResp.QuicAddr,
+			TCPAddr:        firstNonEmpty(joinResp.TCPAddr, tcpAddr),
 			AuthorityPeer:  target,
 		}
 		return conn, &state, nil

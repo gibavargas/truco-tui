@@ -25,6 +25,11 @@ import (
 
 const (
 	httpTimeout = 5 * time.Second
+
+	helloWriteTimeout = 3 * time.Second
+	ackReadTimeout    = 5 * time.Second
+	tcpDialTimeout    = 5 * time.Second
+	tcpKeepAlive      = 15 * time.Second
 )
 
 type RelayHTTPError struct {
@@ -89,19 +94,9 @@ func Heartbeat(relayURL string, sec ClientSecurity, req HeartbeatRequest) error 
 	return postJSON(relayURL, sec, "/v2/heartbeat", req, &out)
 }
 
-func OpenPeerTunnel(ctx context.Context, sec ClientSecurity, quicAddr, sessionID, peerID, credential, targetPeerID string) (net.Conn, error) {
-	if strings.TrimSpace(quicAddr) == "" {
-		return nil, errors.New("quic relay addr ausente")
-	}
-	conn, err := quic.DialAddr(ctx, quicAddr, relayTLSConfig(sec), relayQUICConfig())
-	if err != nil {
-		return nil, err
-	}
-	stream, err := conn.OpenStreamSync(ctx)
-	if err != nil {
-		_ = conn.CloseWithError(0, "open stream failed")
-		return nil, err
-	}
+// OpenPeerTunnel conecta ao relay (QUIC primeiro, TCP/TLS como fallback) e
+// abre um túnel bidirecional até a autoridade da sessão.
+func OpenPeerTunnel(ctx context.Context, sec ClientSecurity, quicAddr, tcpAddr, sessionID, peerID, credential, targetPeerID string) (net.Conn, error) {
 	hello := tunnelHello{
 		Type:         "peer_tunnel",
 		SessionID:    sessionID,
@@ -109,78 +104,211 @@ func OpenPeerTunnel(ctx context.Context, sec ClientSecurity, quicAddr, sessionID
 		Credential:   credential,
 		TargetPeerID: targetPeerID,
 	}
+	return openRelayStream(ctx, sec, quicAddr, tcpAddr, hello, true)
+}
+
+// openRelayStream tenta QUIC e, em falha de transporte, tenta TCP/TLS.
+// closeQuicConn indica se a conexão QUIC deve ser fechada junto do stream.
+func openRelayStream(ctx context.Context, sec ClientSecurity, quicAddr, tcpAddr string, hello tunnelHello, closeQuicConn bool) (net.Conn, error) {
+	quicAddr = strings.TrimSpace(quicAddr)
+	tcpAddr = strings.TrimSpace(tcpAddr)
+	var quicErr error
+	if quicAddr != "" {
+		qctx, cancel := quicDialBudget(ctx)
+		conn, _, err := openRelayQUICStream(qctx, sec, quicAddr, hello, closeQuicConn)
+		cancel()
+		if err == nil {
+			return conn, nil
+		}
+		quicErr = err
+	}
+	if tcpAddr != "" {
+		conn, _, err := dialRelayTCPConn(ctx, sec, tcpAddr, hello)
+		return conn, err
+	}
+	if quicErr != nil {
+		return nil, quicErr
+	}
+	return nil, errors.New("relay addr ausente")
+}
+
+// quicDialBudget reserva parte do deadline do contexto para a tentativa QUIC,
+// deixando o restante para o fallback TCP.
+func quicDialBudget(ctx context.Context) (context.Context, context.CancelFunc) {
+	if dl, ok := ctx.Deadline(); ok {
+		quic := time.Until(dl) * 3 / 5
+		if quic < 500*time.Millisecond {
+			quic = 500 * time.Millisecond
+		}
+		return context.WithTimeout(ctx, quic)
+	}
+	return context.WithTimeout(ctx, 3*time.Second)
+}
+
+func openRelayQUICStream(ctx context.Context, sec ClientSecurity, quicAddr string, hello tunnelHello, closeConn bool) (net.Conn, quic.Connection, error) {
+	conn, err := quic.DialAddr(ctx, quicAddr, relayTLSConfig(sec), relayQUICConfig())
+	if err != nil {
+		return nil, nil, err
+	}
+	stream, err := conn.OpenStreamSync(ctx)
+	if err != nil {
+		_ = conn.CloseWithError(0, "open stream failed")
+		return nil, nil, err
+	}
 	if err := writeHello(stream, hello); err != nil {
 		_ = stream.Close()
 		_ = conn.CloseWithError(0, "hello failed")
-		return nil, err
+		return nil, nil, err
 	}
-	return netquic.NewStreamConn(conn, stream, true), nil
+	return netquic.NewStreamConn(conn, stream, closeConn), conn, nil
+}
+
+// dialRelayTCPConn abre uma conexão TCP+TLS com o relay e escreve o hello.
+// Retorna também o bufio.Reader para não descartar bytes já bufferizados.
+func dialRelayTCPConn(ctx context.Context, sec ClientSecurity, tcpAddr string, hello tunnelHello) (net.Conn, *bufio.Reader, error) {
+	d := &net.Dialer{
+		Timeout:   tcpDialTimeout,
+		KeepAlive: tcpKeepAlive,
+	}
+	raw, err := d.DialContext(ctx, "tcp", tcpAddr)
+	if err != nil {
+		return nil, nil, err
+	}
+	tconn := tls.Client(raw, relayTLSConfig(sec))
+	if err := tconn.HandshakeContext(ctx); err != nil {
+		_ = raw.Close()
+		return nil, nil, err
+	}
+	if err := writeHello(tconn, hello); err != nil {
+		_ = tconn.Close()
+		return nil, nil, err
+	}
+	return tconn, bufio.NewReader(tconn), nil
 }
 
 type HostAcceptor struct {
-	conn   quic.Connection
-	accept chan net.Conn
-	errc   chan error
-	closed chan struct{}
+	conn       quic.Connection
+	signal     net.Conn
+	signalIn   *bufio.Reader
+	tcpAddr    string
+	sec        ClientSecurity
+	sessionID  string
+	peerID     string
+	credential string
+	accept     chan net.Conn
+	errc       chan error
+	closed     chan struct{}
 }
 
-func OpenHostAcceptor(ctx context.Context, sec ClientSecurity, quicAddr, sessionID, peerID, credential string) (*HostAcceptor, error) {
-	if strings.TrimSpace(quicAddr) == "" {
-		return nil, errors.New("quic relay addr ausente")
-	}
-	conn, err := quic.DialAddr(ctx, quicAddr, relayTLSConfig(sec), relayQUICConfig())
-	if err != nil {
-		return nil, err
-	}
-	registerStream, err := conn.OpenStreamSync(ctx)
-	if err != nil {
-		_ = conn.CloseWithError(0, "register stream failed")
-		return nil, err
-	}
+func OpenHostAcceptor(ctx context.Context, sec ClientSecurity, quicAddr, tcpAddr, sessionID, peerID, credential string) (*HostAcceptor, error) {
+	quicAddr = strings.TrimSpace(quicAddr)
+	tcpAddr = strings.TrimSpace(tcpAddr)
 	hello := tunnelHello{
 		Type:       "host_register",
 		SessionID:  sessionID,
 		PeerID:     peerID,
 		Credential: credential,
 	}
-	if err := writeHello(registerStream, hello); err != nil {
-		_ = registerStream.Close()
-		_ = conn.CloseWithError(0, "register failed")
-		return nil, err
+	if quicAddr != "" {
+		qctx, cancel := quicDialBudget(ctx)
+		conn, qconn, err := openRelayQUICStream(qctx, sec, quicAddr, hello, false)
+		if err == nil {
+			denied, aerr := readRegisterAck(conn)
+			_ = conn.Close() // fecha apenas o stream de registro; a conexão segue
+			if aerr == nil {
+				cancel()
+				if denied {
+					_ = qconn.CloseWithError(0, "register denied")
+					return nil, errors.New("registro no relay rejeitado")
+				}
+				a := &HostAcceptor{
+					conn:       qconn,
+					accept:     make(chan net.Conn, 32),
+					errc:       make(chan error, 1),
+					closed:     make(chan struct{}),
+				}
+				go a.acceptLoop()
+				return a, nil
+			}
+			_ = qconn.CloseWithError(0, "register ack failed")
+		}
+		cancel()
 	}
-	ackReader := bufio.NewReader(registerStream)
-	line, err := ackReader.ReadBytes('\n')
-	if err != nil {
-		_ = registerStream.Close()
-		_ = conn.CloseWithError(0, "register ack failed")
-		return nil, err
+	if tcpAddr != "" {
+		conn, reader, err := dialRelayTCPConn(ctx, sec, tcpAddr, hello)
+		if err != nil {
+			return nil, err
+		}
+		denied, aerr := readRegisterAckBuffered(conn, reader)
+		if aerr != nil {
+			_ = conn.Close()
+			return nil, aerr
+		}
+		if denied {
+			_ = conn.Close()
+			return nil, errors.New("registro no relay rejeitado")
+		}
+		a := &HostAcceptor{
+			signal:     conn,
+			signalIn:   reader,
+			tcpAddr:    tcpAddr,
+			sec:        sec,
+			sessionID:  sessionID,
+			peerID:     peerID,
+			credential: credential,
+			accept:     make(chan net.Conn, 32),
+			errc:       make(chan error, 1),
+			closed:     make(chan struct{}),
+		}
+		go a.acceptLoop()
+		return a, nil
 	}
-	var ack map[string]any
-	if err := json.Unmarshal(bytes.TrimSpace(line), &ack); err != nil {
-		_ = registerStream.Close()
-		_ = conn.CloseWithError(0, "invalid register ack")
-		return nil, err
-	}
-	if ok, _ := ack["ok"].(bool); !ok {
-		_ = registerStream.Close()
-		_ = conn.CloseWithError(0, "register denied")
-		return nil, errors.New("registro no relay rejeitado")
-	}
-	_ = registerStream.Close()
+	return nil, errors.New("relay addr ausente")
+}
 
-	a := &HostAcceptor{
-		conn:   conn,
-		accept: make(chan net.Conn, 32),
-		errc:   make(chan error, 1),
-		closed: make(chan struct{}),
+// readRegisterAck lê a resposta do host_register em modo QUIC.
+func readRegisterAck(conn net.Conn) (denied bool, err error) {
+	return readRegisterAckBuffered(conn, bufio.NewReader(conn))
+}
+
+func readRegisterAckBuffered(conn net.Conn, reader *bufio.Reader) (denied bool, err error) {
+	if err := conn.SetReadDeadline(time.Now().Add(ackReadTimeout)); err != nil {
+		return false, err
 	}
-	go a.acceptLoop()
-	return a, nil
+	defer func() {
+		_ = conn.SetReadDeadline(time.Time{})
+	}()
+	line, err := reader.ReadBytes('\n')
+	if err != nil {
+		return false, err
+	}
+	var ack struct {
+		OK    bool   `json:"ok"`
+		Error string `json:"error"`
+	}
+	if err := json.Unmarshal(bytes.TrimSpace(line), &ack); err != nil {
+		return false, err
+	}
+	if !ack.OK {
+		if strings.TrimSpace(ack.Error) != "" {
+			return true, errors.New(ack.Error)
+		}
+		return true, nil
+	}
+	return false, nil
 }
 
 func (a *HostAcceptor) acceptLoop() {
 	defer close(a.accept)
 	defer close(a.errc)
+	if a.conn != nil {
+		a.acceptLoopQUIC()
+		return
+	}
+	a.acceptLoopTCP()
+}
+
+func (a *HostAcceptor) acceptLoopQUIC() {
 	for {
 		stream, err := a.conn.AcceptStream(context.Background())
 		if err != nil {
@@ -196,6 +324,48 @@ func (a *HostAcceptor) acceptLoop() {
 			_ = stream.Close()
 			return
 		case a.accept <- netquic.NewStreamConn(a.conn, stream, false):
+		}
+	}
+}
+
+// acceptLoopTCP mantém a conexão de sinal e disca uma conexão de dados para
+// cada tunnel_open anunciado pelo relay.
+func (a *HostAcceptor) acceptLoopTCP() {
+	for {
+		line, err := a.signalIn.ReadBytes('\n')
+		if err != nil {
+			select {
+			case <-a.closed:
+			default:
+				a.errc <- err
+			}
+			return
+		}
+		var msg struct {
+			Type     string `json:"type"`
+			TunnelID string `json:"tunnel_id"`
+		}
+		if json.Unmarshal(bytes.TrimSpace(line), &msg) != nil || msg.Type != "tunnel_open" {
+			continue
+		}
+		hello := tunnelHello{
+			Type:       "tunnel_accept",
+			SessionID:  a.sessionID,
+			PeerID:     a.peerID,
+			Credential: a.credential,
+			TunnelID:   msg.TunnelID,
+		}
+		dctx, dcancel := context.WithTimeout(context.Background(), tcpDialTimeout)
+		conn, _, derr := dialRelayTCPConn(dctx, a.sec, a.tcpAddr, hello)
+		dcancel()
+		if derr != nil {
+			continue
+		}
+		select {
+		case <-a.closed:
+			_ = conn.Close()
+			return
+		case a.accept <- conn:
 		}
 	}
 }
@@ -228,6 +398,9 @@ func (a *HostAcceptor) Close() error {
 	default:
 		close(a.closed)
 	}
+	if a.signal != nil {
+		return a.signal.Close()
+	}
 	if a.conn != nil {
 		return a.conn.CloseWithError(0, "host acceptor closed")
 	}
@@ -235,23 +408,33 @@ func (a *HostAcceptor) Close() error {
 }
 
 func (a *HostAcceptor) Addr() net.Addr {
+	if a.signal != nil {
+		return a.signal.LocalAddr()
+	}
 	if a.conn == nil {
 		return nil
 	}
 	return a.conn.LocalAddr()
 }
 
-func writeHello(stream quic.Stream, hello tunnelHello) error {
+type deadlineWriter interface {
+	Write(p []byte) (int, error)
+	SetWriteDeadline(t time.Time) error
+}
+
+func writeHello(w deadlineWriter, hello tunnelHello) error {
 	b, err := json.Marshal(hello)
 	if err != nil {
 		return err
 	}
 	b = append(b, '\n')
-	if err := stream.SetWriteDeadline(time.Now().Add(3 * time.Second)); err != nil {
+	if err := w.SetWriteDeadline(time.Now().Add(helloWriteTimeout)); err != nil {
 		return err
 	}
-	defer stream.SetWriteDeadline(time.Time{})
-	_, err = stream.Write(b)
+	defer func() {
+		_ = w.SetWriteDeadline(time.Time{})
+	}()
+	_, err = w.Write(b)
 	return err
 }
 

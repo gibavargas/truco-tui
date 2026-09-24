@@ -81,6 +81,7 @@ Any change to the runtime JSON contract must bump `snapshot_schema_version` and 
 - Relay-backed invites must use protocol version `2`.
 - Join failures caused by invalid relay URL, bad tickets, expired tickets, auth failures, or incompatible protocol must surface a structured runtime error.
 - Relay and direct sessions share the same runtime modes, lobby shape, and event categories.
+- The relay data plane dials QUIC first and falls back to TLS-over-TCP per connection when UDP is unavailable; host and peer may use different transports in the same session. Relay responses advertise `tcp_addr` (additive; absent on older relays, in which case clients derive `host:9445` for the default `9444` QUIC port).
 
 ### Chat, host transfer, and replacement invites
 

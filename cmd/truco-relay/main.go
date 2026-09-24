@@ -57,8 +57,13 @@ type relayServer struct {
 	rateByIP       map[string]rateState
 	rateBySession  map[string]rateState
 	quicAddr       string
+	tcpAddr        string
 	ticketSecret   []byte
 	metrics        relayMetrics
+
+	tcpMu      sync.Mutex
+	tcpSignals map[string]net.Conn
+	tcpWaiting map[string]chan net.Conn
 }
 
 type relayMetrics struct {
@@ -198,6 +203,7 @@ func (s *relayServer) handleCreateSession(w http.ResponseWriter, r *http.Request
 		AuthorityPeerID:    hostPeerID,
 		Epoch:              1,
 		QuicAddr:           s.quicAddr,
+		TCPAddr:            s.tcpAddr,
 		ExpiresAt:          sess.ExpiresAt,
 	})
 }
@@ -316,6 +322,7 @@ func (s *relayServer) handleJoinSession(w http.ResponseWriter, r *http.Request) 
 		AuthorityPeerID:  sess.AuthorityPeerID,
 		Epoch:            sess.Epoch,
 		QuicAddr:         s.quicAddr,
+		TCPAddr:          s.tcpAddr,
 		ExpiresAt:        exp,
 		SessionExpiresAt: sess.ExpiresAt,
 	})
@@ -367,6 +374,7 @@ func (s *relayServer) handlePublishAuthority(w http.ResponseWriter, r *http.Requ
 		Epoch:              req.Epoch,
 		HostPeerCredential: cred,
 		QuicAddr:           s.quicAddr,
+		TCPAddr:            s.tcpAddr,
 	})
 }
 
@@ -485,12 +493,62 @@ func (s *relayServer) handleQUICStream(conn quic.Connection, stream quic.Stream)
 	}
 }
 
+// handleTCPConn processa uma conexão TCP+TLS no data plane do relay.
+// Cada conexão carrega um único hello e, exceto pelo sinal do host, é pura
+// tubulação de bytes após a autenticação.
+func (s *relayServer) handleTCPConn(conn net.Conn) {
+	handedOff := false
+	defer func() {
+		if handedOff {
+			return
+		}
+		s.tcpMu.Lock()
+		for sid, c := range s.tcpSignals {
+			if c == conn {
+				delete(s.tcpSignals, sid)
+			}
+		}
+		s.tcpMu.Unlock()
+		_ = conn.Close()
+	}()
+	if err := conn.SetReadDeadline(time.Now().Add(10 * time.Second)); err != nil {
+		return
+	}
+	reader := bufio.NewReader(conn)
+	line, err := reader.ReadBytes('\n')
+	if err != nil {
+		return
+	}
+	_ = conn.SetReadDeadline(time.Time{})
+	var h netrelayHeartbeatTunnelHello
+	if err := json.Unmarshal(bytesTrimSpace(line), &h); err != nil {
+		return
+	}
+	switch h.Type {
+	case "host_register":
+		if err := s.handleTCPHostRegister(conn, h); err != nil {
+			s.metrics.authFailures.Add(1)
+			return
+		}
+		// Mantém a conexão de sinal aberta até o host desconectar.
+		_, _ = reader.ReadBytes('\n')
+	case "peer_tunnel":
+		if err := s.handlePeerTunnel(reader, conn, h); err != nil {
+			return
+		}
+	case "tunnel_accept":
+		s.handleTCPTunnelAccept(conn, h, &handedOff)
+	default:
+	}
+}
+
 type netrelayHeartbeatTunnelHello struct {
 	Type         string `json:"type"`
 	SessionID    string `json:"session_id"`
 	PeerID       string `json:"peer_id"`
 	Credential   string `json:"credential"`
 	TargetPeerID string `json:"target_peer_id"`
+	TunnelID     string `json:"tunnel_id,omitempty"`
 }
 
 func (s *relayServer) handleHostRegister(conn quic.Connection, stream quic.Stream, h netrelayHeartbeatTunnelHello) error {
@@ -518,7 +576,80 @@ func (s *relayServer) handleHostRegister(conn quic.Connection, stream quic.Strea
 	return nil
 }
 
-func (s *relayServer) handlePeerTunnel(downstreamReader io.Reader, downstream quic.Stream, h netrelayHeartbeatTunnelHello) error {
+// handleTCPHostRegister autentica a conexão de sinal TCP do host e a registra
+// como canal de anúncios de túneis (tunnel_open).
+func (s *relayServer) handleTCPHostRegister(conn net.Conn, h netrelayHeartbeatTunnelHello) error {
+	now := time.Now()
+	s.mu.Lock()
+	if !allowRateLocked(s.rateBySession, "register:"+h.SessionID, rateRegisterPerSess, rateWindow, now) {
+		s.metrics.rateLimited.Add(1)
+		s.mu.Unlock()
+		return errors.New("rate_limited")
+	}
+	sess, ok := s.sessions[h.SessionID]
+	if !ok || sess.ExpiresAt.Before(now) {
+		s.mu.Unlock()
+		return errors.New("session expired")
+	}
+	mem, ok := sess.Members[h.PeerID]
+	if !ok || mem.Credential != h.Credential || mem.ExpiresAt.Before(now) {
+		s.mu.Unlock()
+		return errors.New("auth_failed")
+	}
+	if h.PeerID != sess.AuthorityPeerID {
+		s.mu.Unlock()
+		return errors.New("not authority")
+	}
+	s.mu.Unlock()
+
+	ack, _ := json.Marshal(map[string]any{"ok": true})
+	if _, err := conn.Write(append(ack, '\n')); err != nil {
+		return err
+	}
+	s.tcpMu.Lock()
+	s.tcpSignals[h.SessionID] = conn
+	s.tcpMu.Unlock()
+	return nil
+}
+
+// handleTCPTunnelAccept valida a conexão de dados discada pelo host TCP em
+// resposta a um tunnel_open e a entrega ao par que aguardava.
+func (s *relayServer) handleTCPTunnelAccept(conn net.Conn, h netrelayHeartbeatTunnelHello, handedOff *bool) {
+	now := time.Now()
+	s.mu.Lock()
+	sess, ok := s.sessions[h.SessionID]
+	if !ok || sess.ExpiresAt.Before(now) {
+		s.mu.Unlock()
+		return
+	}
+	mem, ok := sess.Members[h.PeerID]
+	if !ok || mem.Credential != h.Credential || mem.ExpiresAt.Before(now) {
+		s.metrics.authFailures.Add(1)
+		s.mu.Unlock()
+		return
+	}
+	if h.PeerID != sess.AuthorityPeerID {
+		s.mu.Unlock()
+		return
+	}
+	s.mu.Unlock()
+
+	s.tcpMu.Lock()
+	waiting, ok := s.tcpWaiting[h.TunnelID]
+	delete(s.tcpWaiting, h.TunnelID)
+	s.tcpMu.Unlock()
+	if !ok {
+		return
+	}
+	select {
+	case waiting <- conn:
+		*handedOff = true
+	default:
+		_ = conn.Close()
+	}
+}
+
+func (s *relayServer) handlePeerTunnel(downstreamReader io.Reader, downstream io.Writer, h netrelayHeartbeatTunnelHello) error {
 	now := time.Now()
 	s.mu.Lock()
 	if !allowRateLocked(s.rateBySession, "tunnel:"+h.SessionID, rateTunnelPerSess, rateWindow, now) {
@@ -559,11 +690,8 @@ func (s *relayServer) handlePeerTunnel(downstreamReader io.Reader, downstream qu
 	authorityConn, ok := s.authorityConns[h.SessionID]
 	s.mu.Unlock()
 	if !ok || authorityConn == nil {
-		s.metrics.tunnelsFailed.Add(1)
-		s.mu.Lock()
-		s.activeTunnels[h.SessionID]--
-		s.mu.Unlock()
-		return errors.New("authority unavailable")
+		// Autoridade sem conexão QUIC: pode estar registrada via TCP.
+		return s.handlePeerTunnelTCP(downstreamReader, downstream, h)
 	}
 	upstream, err := authorityConn.OpenStreamSync(context.Background())
 	if err != nil {
@@ -574,6 +702,62 @@ func (s *relayServer) handlePeerTunnel(downstreamReader io.Reader, downstream qu
 		return err
 	}
 	s.metrics.tunnelsOpened.Add(1)
+	s.bridgeTunnel(downstreamReader, downstream, upstream, h.SessionID)
+	return nil
+}
+
+// handlePeerTunnelTCP resolve o lado da autoridade quando o host está
+// registrado via TCP: anuncia tunnel_open na conexão de sinal e aguarda a
+// conexão de dados (tunnel_accept) discada pelo host.
+func (s *relayServer) handlePeerTunnelTCP(downstreamReader io.Reader, downstream io.Writer, h netrelayHeartbeatTunnelHello) error {
+	s.tcpMu.Lock()
+	signal, ok := s.tcpSignals[h.SessionID]
+	if !ok {
+		s.tcpMu.Unlock()
+		s.metrics.tunnelsFailed.Add(1)
+		s.mu.Lock()
+		s.activeTunnels[h.SessionID]--
+		s.mu.Unlock()
+		return errors.New("authority unavailable")
+	}
+	tunnelID := randomHex(16)
+	waiting := make(chan net.Conn, 1)
+	s.tcpWaiting[tunnelID] = waiting
+	s.tcpMu.Unlock()
+
+	announce, _ := json.Marshal(map[string]any{
+		"type":      "tunnel_open",
+		"tunnel_id": tunnelID,
+	})
+	if _, err := signal.Write(append(announce, '\n')); err != nil {
+		s.tcpMu.Lock()
+		delete(s.tcpWaiting, tunnelID)
+		s.tcpMu.Unlock()
+		s.metrics.tunnelsFailed.Add(1)
+		s.mu.Lock()
+		s.activeTunnels[h.SessionID]--
+		s.mu.Unlock()
+		return err
+	}
+	select {
+	case upstream := <-waiting:
+		s.metrics.tunnelsOpened.Add(1)
+		s.bridgeTunnel(downstreamReader, downstream, upstream, h.SessionID)
+		return nil
+	case <-time.After(10 * time.Second):
+		s.tcpMu.Lock()
+		delete(s.tcpWaiting, tunnelID)
+		s.tcpMu.Unlock()
+		s.metrics.tunnelsFailed.Add(1)
+		s.mu.Lock()
+		s.activeTunnels[h.SessionID]--
+		s.mu.Unlock()
+		return errors.New("authority dial timeout")
+	}
+}
+
+// bridgeTunnel copia bytes nas duas direções e contabiliza o túnel.
+func (s *relayServer) bridgeTunnel(downstreamReader io.Reader, downstream io.Writer, upstream io.ReadWriteCloser, sessionID string) {
 	errc := make(chan error, 2)
 	go func() {
 		n, e := io.Copy(upstream, downstreamReader)
@@ -587,11 +771,12 @@ func (s *relayServer) handlePeerTunnel(downstreamReader io.Reader, downstream qu
 	}()
 	<-errc
 	_ = upstream.Close()
-	_ = downstream.Close()
+	if closer, ok := downstream.(io.Closer); ok {
+		_ = closer.Close()
+	}
 	s.mu.Lock()
-	s.activeTunnels[h.SessionID]--
+	s.activeTunnels[sessionID]--
 	s.mu.Unlock()
-	return nil
 }
 
 func (s *relayServer) cleanupConn(conn quic.Connection) {
@@ -727,6 +912,19 @@ func remoteIP(addr string) string {
 	return strings.TrimSpace(host)
 }
 
+// defaultRelayTCPAddr deriva o endereço TCP do túnel a partir do QUIC:
+// mesma porta quando o operador escolheu uma porta explícita, 9445 no padrão.
+func defaultRelayTCPAddr(quicAddr string) string {
+	host, port, err := net.SplitHostPort(strings.TrimSpace(quicAddr))
+	if err != nil {
+		return "127.0.0.1:9445"
+	}
+	if port == "9444" {
+		return net.JoinHostPort(host, "9445")
+	}
+	return net.JoinHostPort(host, port)
+}
+
 func requestID(r *http.Request) string {
 	v := strings.TrimSpace(r.Header.Get("X-Request-ID"))
 	if v != "" {
@@ -820,8 +1018,15 @@ func main() {
 	if strings.TrimSpace(quicAddr) == "" {
 		quicAddr = "127.0.0.1:9444"
 	}
+	tcpAddr := os.Getenv("TRUCO_RELAY_TCP_ADDR")
+	if strings.TrimSpace(tcpAddr) == "" {
+		tcpAddr = defaultRelayTCPAddr(quicAddr)
+	}
 
 	server := newRelayServer(quicAddr)
+	server.tcpAddr = tcpAddr
+	server.tcpSignals = map[string]net.Conn{}
+	server.tcpWaiting = map[string]chan net.Conn{}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v2/create-session", server.handleCreateSession)
 	mux.HandleFunc("/v2/mint-join-ticket", server.handleMintJoinTicket)
@@ -859,7 +1064,21 @@ func main() {
 		}
 	}()
 
-	log.Printf("relay http=%s quic=%s", httpAddr, quicAddr)
+	tcpLn, err := tls.Listen("tcp", tcpAddr, tlsCfg)
+	if err != nil {
+		log.Fatalf("relay tcp listen: %v", err)
+	}
+	go func() {
+		for {
+			conn, err := tcpLn.Accept()
+			if err != nil {
+				return
+			}
+			go server.handleTCPConn(conn)
+		}
+	}()
+
+	log.Printf("relay http=%s quic=%s tcp=%s", httpAddr, quicAddr, tcpAddr)
 	httpSrv := &http.Server{
 		Addr:              httpAddr,
 		Handler:           mux,
