@@ -67,6 +67,9 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Build C++ AI engine
+        run: make -C native/ai-engine
+
       - name: Install GTK dependencies
         run: |
           sudo apt-get update
