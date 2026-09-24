@@ -51,16 +51,36 @@ dotnet publish "%PROJECT%" ^
   -c Release ^
   -r win-x64 ^
   --self-contained true ^
-  -p:PublishSingleFile=true ^
+  -p:PublishSingleFile=false ^
+  -p:Platform=x64 ^
   -p:WindowsPackageType=None ^
   -p:WindowsAppSDKSelfContained=true ^
-  -p:IncludeNativeLibrariesForSelfExtract=true ^
-  -p:EnableCompressionInSingleFile=true ^
   -o "%OUTPUT_DIR%"
 if errorlevel 1 (
     echo Failed to build GUI.
     popd
     exit /b 1
+)
+
+copy /Y "%ROOT%bin\truco-core-ffi.dll" "%OUTPUT_DIR%\truco-core-ffi.dll" >nul
+if errorlevel 1 (
+    echo Failed to copy truco-core-ffi.dll into the portable bundle.
+    popd
+    exit /b 1
+)
+
+for %%D in (libgcc_s_seh-1.dll libstdc++-6.dll libwinpthread-1.dll) do (
+    if not exist "%OUTPUT_DIR%\%%D" (
+        for /f "delims=" %%P in ('where %%D 2^>nul') do (
+            if not exist "%OUTPUT_DIR%\%%D" copy /Y "%%P" "%OUTPUT_DIR%\%%D" >nul
+        )
+    )
+    if not exist "%OUTPUT_DIR%\%%D" (
+        echo Missing MinGW runtime dependency %%D in "%OUTPUT_DIR%".
+        echo Add the MSYS2 mingw64 bin directory to PATH or set NativeRuntimeDir for dotnet publish.
+        popd
+        exit /b 1
+    )
 )
 
 echo.

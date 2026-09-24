@@ -49,13 +49,25 @@ test("renderSetupScreen includes offline and online launch areas", () => {
     escapeHtml,
     busyAttr,
     buttonLabel,
-    transportOptions: () => `<option value="">auto</option>`,
+    transportOptions: (active) =>
+      [
+        ["", "transport_auto"],
+        ["tcp_tls", "transport_direct"],
+        ["tailnet_tsnet_v1", "transport_tailnet"],
+        ["relay_quic_v2", "transport_relay"],
+      ]
+        .map(([value, label]) => `<option value="${value}"${active === value ? " selected" : ""}>${label}</option>`)
+        .join(""),
   });
 
   assert.match(html, /setup10-offline/);
   assert.match(html, /setup10-online/);
   assert.match(html, /startGame/);
   assert.match(html, /joinOnline/);
+  assert.match(html, /name="transport_mode"/);
+  assert.match(html, /value="tcp_tls"/);
+  assert.match(html, /value="tailnet_tsnet_v1"/);
+  assert.match(html, /value="relay_quic_v2"/);
 });
 
 test("renderLobbyScreen includes invite, seats, and panel tabs", () => {
@@ -114,8 +126,53 @@ test("renderLobbyScreen includes invite, seats, and panel tabs", () => {
 
   assert.match(html, /ABCD-1234/);
   assert.match(html, /lobby10-seat-grid/);
+  assert.match(html, /role="tablist"/);
   assert.match(html, /data-panel-tab="lobby:pulse"/);
+  assert.match(html, /aria-controls="lobby-panel-pulse"/);
   assert.match(html, /sendHostVote-1/);
+});
+
+test("renderLobbyScreen network tab exposes transport route and panel semantics", () => {
+  const bundle = baseBundle("host_lobby");
+  bundle.lobby = {
+    invite_key: "WXYZ-7777",
+    slots: ["Mesa", "Visitante"],
+    assigned_seat: 0,
+    num_players: 2,
+    started: false,
+    host_seat: 0,
+    connected_seats: { "0": true, "1": false },
+    role: "auto",
+  };
+  bundle.connection.network = {
+    transport: "relay_quic_v2",
+    requested_transport: "tcp_tls",
+    relay_fallback: true,
+    fallback_reason: "relay fallback",
+    negotiated_protocol_version: 2,
+    supported_protocol_versions: [2],
+    seat_protocol_versions: { "0": 2, "1": 1 },
+    mixed_protocol_session: true,
+  };
+
+  const html = renderLobbyScreen({
+    bundle,
+    panelTab: "network",
+    events: [],
+    t,
+    escapeHtml,
+    busyAttr,
+    buttonLabel,
+    renderMetric,
+    renderEventFeed,
+    protocolLabel,
+  });
+
+  assert.match(html, /role="tabpanel"/);
+  assert.match(html, /connection_requested_transport/);
+  assert.match(html, /connection_path/);
+  assert.match(html, /connection_fallback: relay fallback/);
+  assert.match(html, /#1: v2/);
 });
 
 test("renderGameScreen renders four-player felt table and panel tabs", () => {
@@ -149,7 +206,43 @@ test("renderGameScreen renders four-player felt table and panel tabs", () => {
   assert.match(html, /game10-seat-top/);
   assert.match(html, /game10-seat-left/);
   assert.match(html, /game10-hand-stage/);
+  assert.match(html, /data-api-action="newHand"/);
+  assert.match(html, /role="list"/);
   assert.match(html, /data-panel-tab="game:pulse"/);
+  assert.match(html, /aria-controls="game-panel-pulse"/);
+});
+
+test("renderGameScreen exposes local chat in offline matches", () => {
+  const bundle = baseBundle("offline_match");
+  bundle.match = fourPlayerMatch();
+  bundle.ui.actions.local_player_id = 0;
+
+  const html = renderGameScreen({
+    bundle,
+    panelTab: "chat",
+    events: [],
+    isOnlineMode: false,
+    t,
+    escapeHtml,
+    busyAttr,
+    buttonLabel,
+    renderMetric,
+    renderEventFeed,
+    renderCard,
+    protocolLabel,
+    cardLabel,
+    playerName,
+    teamScore,
+    localTeam,
+    nextStake,
+    raiseLabel,
+    lastTrickCopy,
+    seatPositions: (match, _bundle) => seatPositions(match),
+  });
+
+  assert.match(html, /id="game-panel-chat"/);
+  assert.match(html, /data-api-action="sendChat"/);
+  assert.match(html, /chat_placeholder/);
 });
 
 test("renderGameScreen network tab surfaces failover and seat strip for online play", () => {
@@ -209,7 +302,11 @@ test("renderGameScreen network tab surfaces failover and seat strip for online p
 
   assert.match(html, /signal_failover_promoted/);
   assert.match(html, /game10-seat-strip/);
+  assert.match(html, /match-sendHostVote-1/);
+  assert.match(html, /match-replacement-1/);
   assert.match(html, /connection_transport/);
+  assert.match(html, /connection_requested_transport/);
+  assert.match(html, /role="tabpanel"/);
 });
 
 function baseBundle(mode: SnapshotBundle["mode"]): SnapshotBundle {

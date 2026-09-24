@@ -153,11 +153,11 @@ func (t *TUI) hostLobbyFlow() error {
 		return err
 	}
 	relayURL := strings.TrimSpace(t.ask("Relay URL (opcional, Enter para P2P direto): "))
+	transportMode := parseHostTransportChoice(t.ask(tr("host_transport_prompt")))
 
-	hostCfg := netp2p.HostConfig{}
+	hostCfg := netp2p.HostConfig{TransportMode: transportMode}
 	if relayURL != "" {
 		hostCfg.RelayURL = relayURL
-		hostCfg.TransportMode = "relay_quic_v2"
 	}
 	host, key, err := netp2p.NewHostSessionWithConfig("0.0.0.0:0", hostName, n, hostCfg)
 	if err != nil {
@@ -206,6 +206,19 @@ func (t *TUI) joinLobbyFlow() error {
 		return t.runClientMatch(cli)
 	}
 	return nil
+}
+
+func parseHostTransportChoice(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "1", "direct", "direto", "tcp", "tcp_tls", "tcp/tls":
+		return netp2p.TransportTCPTLS
+	case "2", "tailnet", "tailscale", "tsnet", "tailnet_tsnet_v1":
+		return netp2p.TransportTailnetTSNetV1
+	case "3", "relay", "relay_quic", "relay_quic_v2", "quic":
+		return netp2p.TransportRelayQUICV2
+	default:
+		return netp2p.TransportAuto
+	}
 }
 
 func (t *TUI) runHostMatch(host *netp2p.HostSession) error {

@@ -87,7 +87,7 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
     private string relayUrl = string.Empty;
 
     [ObservableProperty]
-    private string transportMode = "tcp_tls";
+    private string transportMode = "auto";
 
     [ObservableProperty]
     private string joinKey = string.Empty;
@@ -192,6 +192,9 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
     private bool canResetSession;
 
     [ObservableProperty]
+    private bool canForceTick;
+
+    [ObservableProperty]
     private bool isLobbyScreen;
 
     [ObservableProperty]
@@ -202,6 +205,60 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
 
     [ObservableProperty]
     private bool isDiagnosticsOpen;
+
+    public string DiagnosticsToggleLabel => IsDiagnosticsOpen ? "Ocultar detalhes" : "Detalhes";
+
+    public string DiagnosticsSummaryText =>
+        $"Backlog: {_bundle.Diagnostics.EventBacklog}  |  Sequência: {_bundle.Connection.LastEventSequence}";
+
+    public string ReplaySeedText =>
+        _bundle.Diagnostics.ReplaySeedLo == 0 && _bundle.Diagnostics.ReplaySeedHi == 0
+            ? "Seed: automático"
+            : $"Seed: {_bundle.Diagnostics.ReplaySeedLo}/{_bundle.Diagnostics.ReplaySeedHi}";
+
+    public string InviteShareHintText => string.IsNullOrWhiteSpace(InviteKey)
+        ? string.Empty
+        : "Compartilhe este codigo com quem vai ocupar um assento livre.";
+
+    public string ReplacementInviteHintText => string.IsNullOrWhiteSpace(ReplacementInviteKey)
+        ? string.Empty
+        : "Use este codigo para substituir uma CPU provisoria ou reconectar um jogador.";
+
+    public string LobbySummaryText => BuildLobbySummary();
+
+    public string LobbyActionHintText => BuildLobbyActionHint();
+
+    public string StartHostedMatchHintText => CanStartHostedMatch
+        ? "Todos os assentos ocupados estao conectados."
+        : "O host inicia quando todos os assentos ocupados estiverem conectados.";
+
+    public string ChatHintText => HasActiveSession
+        ? "Pressione Enter para enviar a mensagem atual."
+        : "O chat fica disponivel quando a sessao esta ativa.";
+
+    public string MatchLogHintText => MatchLog.Count == 0
+        ? "As jogadas importantes da partida aparecem aqui."
+        : $"{MatchLog.Count} eventos de partida registrados.";
+
+    public string DiagnosticsConnectionText => BuildDiagnosticsConnectionText(_bundle.Connection.Network);
+
+    public string DiagnosticsLogHintText => DiagnosticsLog.Count == 0
+        ? "Nenhum evento de diagnostico registrado ainda."
+        : $"{DiagnosticsLog.Count} eventos de diagnostico registrados.";
+
+    public string SessionActionHintText => CanResetSession
+        ? "Ctrl+W encerra a sessao atual."
+        : "Abra ou entre em uma sessao para habilitar o encerramento.";
+
+    public Visibility InfoBannerVisibility => string.IsNullOrWhiteSpace(InfoBannerText) ? Visibility.Collapsed : Visibility.Visible;
+
+    public Visibility ErrorBannerVisibility => string.IsNullOrWhiteSpace(ErrorBannerText) ? Visibility.Collapsed : Visibility.Visible;
+
+    public Visibility ChatEmptyVisibility => ChatFeed.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+
+    public Visibility MatchLogEmptyVisibility => MatchLog.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+
+    public Visibility DiagnosticsEmptyVisibility => DiagnosticsLog.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
 
     public AppShellViewModel()
     {
@@ -235,11 +292,39 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private void ToggleDiagnostics() => IsDiagnosticsOpen = !IsDiagnosticsOpen;
 
+    partial void OnIsDiagnosticsOpenChanged(bool value)
+    {
+        OnPropertyChanged(nameof(DiagnosticsToggleLabel));
+    }
+
+    partial void OnChatInputChanged(string value)
+    {
+        CanSendChat = HasActiveSession && !string.IsNullOrWhiteSpace(value);
+        OnPropertyChanged(nameof(ChatHintText));
+    }
+
+    partial void OnInfoBannerTextChanged(string value)
+    {
+        OnPropertyChanged(nameof(InfoBannerVisibility));
+    }
+
+    partial void OnErrorBannerTextChanged(string value)
+    {
+        OnPropertyChanged(nameof(ErrorBannerVisibility));
+    }
+
     [RelayCommand]
     private void OpenDiagnostics() => IsDiagnosticsOpen = true;
 
     [RelayCommand]
     private void CloseDiagnostics() => IsDiagnosticsOpen = false;
+
+    [RelayCommand]
+    private void ForceTick()
+    {
+        HandleDispatchResult(_core.Tick(12), "Pulso de CPU executado.");
+        RefreshSnapshot(_core.GetSnapshot(), preserveMenuPane: false);
+    }
 
     [RelayCommand]
     private void CopyInviteKey() => CopyTextToClipboard(InviteKey);
@@ -450,24 +535,38 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
 
     private async Task PollLoopAsync(CancellationToken token)
     {
-        while (!token.IsCancellationRequested)
+        try
         {
-            await Task.Delay(120, token);
-            SnapshotBundle bundle = _core.GetSnapshot();
-            List<AppEvent> drained = [];
-            AppEvent? appEvent;
-            while ((appEvent = _core.PollEvent()) is not null)
+            while (!token.IsCancellationRequested)
             {
-                drained.Add(appEvent);
-            }
+                await Task.Delay(120, token);
+                SnapshotBundle bundle = _core.GetSnapshot();
+                List<AppEvent> drained = [];
+                AppEvent? appEvent;
+                while ((appEvent = _core.PollEvent()) is not null)
+                {
+                    drained.Add(appEvent);
+                }
 
+                _dispatcherQueue.TryEnqueue(() =>
+                {
+                    foreach (AppEvent ev in drained)
+                    {
+                        HandleEvent(ev);
+                    }
+                    RefreshSnapshot(bundle, preserveMenuPane: false);
+                });
+            }
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+        }
+        catch (Exception ex)
+        {
             _dispatcherQueue.TryEnqueue(() =>
             {
-                foreach (AppEvent ev in drained)
-                {
-                    HandleEvent(ev);
-                }
-                RefreshSnapshot(bundle, preserveMenuPane: false);
+                ErrorBannerText = $"Erro no runtime: {ex.Message}";
+                AddChatEntry("error", ErrorBannerText, "#FF7070", string.Empty);
             });
         }
     }
@@ -491,7 +590,7 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
         }
         ConnectionDetails = BuildConnectionDetails(bundle);
         StatusText = BuildStatusText(bundle);
-        ErrorBannerText = bundle.Connection.LastError?.Message ?? string.Empty;
+        ErrorBannerText = FormatAppError(bundle.Connection.LastError);
 
         MatchLog.ReplaceWith(bundle.Match?.Logs ?? []);
         DiagnosticsLog.ReplaceWith(bundle.Diagnostics.EventLog ?? []);
@@ -528,6 +627,23 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(WinnerText));
         OnPropertyChanged(nameof(StatusText));
         OnPropertyChanged(nameof(GameVisibility));
+        OnPropertyChanged(nameof(DiagnosticsSummaryText));
+        OnPropertyChanged(nameof(ReplaySeedText));
+        OnPropertyChanged(nameof(InviteShareHintText));
+        OnPropertyChanged(nameof(ReplacementInviteHintText));
+        OnPropertyChanged(nameof(LobbySummaryText));
+        OnPropertyChanged(nameof(LobbyActionHintText));
+        OnPropertyChanged(nameof(StartHostedMatchHintText));
+        OnPropertyChanged(nameof(ChatHintText));
+        OnPropertyChanged(nameof(MatchLogHintText));
+        OnPropertyChanged(nameof(DiagnosticsConnectionText));
+        OnPropertyChanged(nameof(DiagnosticsLogHintText));
+        OnPropertyChanged(nameof(SessionActionHintText));
+        OnPropertyChanged(nameof(InfoBannerVisibility));
+        OnPropertyChanged(nameof(ErrorBannerVisibility));
+        OnPropertyChanged(nameof(ChatEmptyVisibility));
+        OnPropertyChanged(nameof(MatchLogEmptyVisibility));
+        OnPropertyChanged(nameof(DiagnosticsEmptyVisibility));
         OnPropertyChanged(nameof(LeftSeatVisibility));
         OnPropertyChanged(nameof(RightSeatVisibility));
         OnPropertyChanged(nameof(TopSeatVisibility));
@@ -547,11 +663,20 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
 
     private string GetTrickText(int index)
     {
-        if (_bundle.Match?.CurrentHand?.TrickWins is { } wins && wins.TryGetValue(index, out int winner))
+        if (_bundle.Match?.CurrentHand?.TrickResults is { } results && index < results.Count)
         {
-            if (winner == -1) return "EMPATE";
-            return winner == BottomSeat.TeamIndex ? "NÓS" : "ELES";
+            int winnerTeam = results[index];
+            if (winnerTeam == -1)
+            {
+                return $"Rodada {index + 1}: EMPATE";
+            }
+
+            if (winnerTeam is 0 or 1)
+            {
+                return $"Rodada {index + 1}: {GameStateHelper.GetRelativeTeamLabel(winnerTeam, BottomSeat.TeamIndex)}";
+            }
         }
+
         return string.Empty;
     }
 
@@ -625,12 +750,13 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
                     IsConnected = uiSlot?.IsConnected ?? connected,
                     IsHost = uiSlot?.IsHost ?? i == lobby.HostSeat,
                     IsEmpty = isEmpty,
+                    IsProvisionalCpu = uiSlot?.IsProvisionalCpu ?? false,
                     CanVoteHost = uiSlot?.CanVoteHost ?? false,
                     CanRequestReplacement = uiSlot?.CanRequestReplacement ?? false,
                     ProtocolVersion = seatProtocolVersions.GetValueOrDefault(i),
                     StatusText = string.IsNullOrWhiteSpace(uiSlot?.Status)
                         ? connected ? "conectado" : lobby.Started && !isEmpty ? "aguardando reconexão" : "livre"
-                        : uiSlot.Status,
+                        : FormatLobbySlotStatus(uiSlot.Status),
                 });
             }
         }
@@ -649,10 +775,10 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
 
         if (match is null || match.Players.Count == 0)
         {
-            BottomSeat = new TableSeatViewModel();
-            TopSeat = new TableSeatViewModel();
-            LeftSeat = new TableSeatViewModel();
-            RightSeat = new TableSeatViewModel();
+            ResetSeat(BottomSeat);
+            ResetSeat(TopSeat);
+            ResetSeat(LeftSeat);
+            ResetSeat(RightSeat);
             LeftSeatVisibility = Visibility.Collapsed;
             RightSeatVisibility = Visibility.Collapsed;
             TopSeatVisibility = Visibility.Collapsed;
@@ -663,10 +789,11 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
 
         int localIndex = match.CurrentPlayerIdx >= 0 ? match.CurrentPlayerIdx : 0;
         List<TableSeatViewModel> layout = BuildTableLayout(match, localIndex);
-        BottomSeat = layout[0];
-        TopSeat = layout[1];
-        LeftSeat = layout[2];
-        RightSeat = layout[3];
+        UpdateSeatInPlace(BottomSeat, layout[0]);
+        UpdateSeatInPlace(TopSeat, layout[1]);
+        UpdateSeatInPlace(LeftSeat, layout[2]);
+        UpdateSeatInPlace(RightSeat, layout[3]);
+
         LocalSeatTitle = BottomSeat.Name;
         TopSeatVisibility = TopSeat.IsVisible ? Visibility.Visible : Visibility.Collapsed;
         LeftSeatVisibility = LeftSeat.IsVisible ? Visibility.Visible : Visibility.Collapsed;
@@ -691,14 +818,122 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
         }
     }
 
+    private static void ResetSeat(TableSeatViewModel seat)
+    {
+        seat.SeatIndex = -1;
+        seat.PlayerId = -1;
+        seat.Name = string.Empty;
+        seat.RoleLabel = string.Empty;
+        seat.TeamIndex = -1;
+        seat.TeamLabel = string.Empty;
+        seat.IsVisible = false;
+        seat.IsLocal = false;
+        seat.IsCurrentTurn = false;
+        seat.IsCpu = false;
+        seat.IsProvisionalCpu = false;
+        seat.HandCount = 0;
+        seat.HandCards.Clear();
+        seat.PlayedCard = null;
+        seat.PlayedCardViewModel = null;
+    }
+
+    private static void UpdateSeatInPlace(TableSeatViewModel existing, TableSeatViewModel target)
+    {
+        existing.SeatIndex = target.SeatIndex;
+        existing.PlayerId = target.PlayerId;
+        existing.Name = target.Name;
+        existing.RoleLabel = target.RoleLabel;
+        existing.TeamIndex = target.TeamIndex;
+        existing.TeamLabel = target.TeamLabel;
+        existing.IsVisible = target.IsVisible;
+        existing.IsLocal = target.IsLocal;
+        existing.IsCurrentTurn = target.IsCurrentTurn;
+        existing.IsCpu = target.IsCpu;
+        existing.IsProvisionalCpu = target.IsProvisionalCpu;
+        existing.HandCount = target.HandCount;
+        existing.PlayedCard = target.PlayedCard;
+        existing.PlayedCardViewModel = target.PlayedCardViewModel;
+
+        SyncHandCards(existing.HandCards, target.HandCards);
+    }
+
+    private static void SyncHandCards(ObservableCollection<HandCardViewModel> existing, IList<HandCardViewModel> targetList)
+    {
+        for (int i = existing.Count - 1; i >= 0; i--)
+        {
+            var item = existing[i];
+            bool found = false;
+            foreach (var target in targetList)
+            {
+                if (CardsEqual(item.Card, target.Card))
+                {
+                    found = true;
+                    break;
+                }
+            }
+            if (!found)
+            {
+                existing.RemoveAt(i);
+            }
+        }
+
+        for (int i = 0; i < targetList.Count; i++)
+        {
+            var target = targetList[i];
+            int existingIdx = -1;
+            for (int j = 0; j < existing.Count; j++)
+            {
+                if (CardsEqual(existing[j].Card, target.Card))
+                {
+                    existingIdx = j;
+                    break;
+                }
+            }
+
+            if (existingIdx == -1)
+            {
+                if (i < existing.Count)
+                {
+                    existing.Insert(i, target);
+                }
+                else
+                {
+                    existing.Add(target);
+                }
+            }
+            else
+            {
+                var existingItem = existing[existingIdx];
+                existingItem.IsFaceUp = target.IsFaceUp;
+                existingItem.Rotation = target.Rotation;
+                existingItem.Scale = target.Scale;
+                existingItem.TranslateX = target.TranslateX;
+                existingItem.TranslateY = target.TranslateY;
+
+                if (existingIdx != i)
+                {
+                    existing.Move(existingIdx, i);
+                }
+            }
+        }
+    }
+
+    private static bool CardsEqual(CardState? c1, CardState? c2)
+    {
+        if (c1 == null && c2 == null) return true;
+        if (c1 == null || c2 == null) return false;
+        return c1.Rank == c2.Rank && c1.Suit == c2.Suit;
+    }
+
     private void UpdateActionState(SnapshotBundle bundle)
     {
         MatchSnapshot? match = bundle.Match;
         bool hasMatch = match is not null;
         ActionSnapshot actions = bundle.Ui.Actions;
         HasActiveSession = bundle.Mode != "idle";
-        CanResetSession = HasActiveSession;
-        CanSendChat = HasActiveSession;
+        CanResetSession = actions.CanCloseSession;
+        CanSendChat = HasActiveSession && !string.IsNullOrWhiteSpace(ChatInput);
+        CanForceTick = hasMatch;
         CanStartNewHand = hasMatch && (bundle.Mode == "offline_match" || bundle.Mode == "host_match");
         CanRequestTruco = hasMatch && actions.CanAskOrRaise;
         CanAcceptTruco = hasMatch && actions.CanAccept;
@@ -719,8 +954,8 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
                 AppError? error = DeserializePayload<AppError>(appEvent.Payload);
                 if (error is not null)
                 {
-                    ErrorBannerText = error.Message;
-                    AddChatEntry("error", error.Message, "#FF7070", appEvent.Timestamp);
+                    ErrorBannerText = FormatAppError(error);
+                    AddChatEntry("error", ErrorBannerText, "#FF7070", appEvent.Timestamp);
                 }
                 break;
             case "locale_changed":
@@ -756,6 +991,9 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
                     AddChatEntry("system", "Convite de reposição gerado.", "#FFD166", appEvent.Timestamp);
                 }
                 break;
+            case "tick":
+                AddChatEntry("system", "Pulso de CPU processado.", "#80C8FF", appEvent.Timestamp);
+                break;
             case "client_joined":
                 AddChatEntry("system", "Jogador entrou na sessão.", "#80C8FF", appEvent.Timestamp);
                 break;
@@ -784,13 +1022,55 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
             return;
         }
 
-        ErrorBannerText = error.Message;
+        ErrorBannerText = FormatAppError(error);
     }
 
     private void SetMenuPane(string pane)
     {
         _menuPane = pane;
         RefreshSnapshot(_bundle, preserveMenuPane: true);
+    }
+
+    private string BuildLobbySummary()
+    {
+        if (LobbySeats.Count == 0)
+        {
+            return "Aguardando assentos do lobby.";
+        }
+
+        int occupiedSeats = LobbySeats.Count(seat => !seat.IsEmpty);
+        int connectedSeats = LobbySeats.Count(seat => !seat.IsEmpty && seat.IsConnected);
+        int provisionalCpuSeats = LobbySeats.Count(seat => seat.IsProvisionalCpu);
+        string summary = occupiedSeats == 0
+            ? "Nenhum assento ocupado ainda."
+            : $"{connectedSeats}/{occupiedSeats} assentos ocupados conectados.";
+
+        if (provisionalCpuSeats > 0)
+        {
+            summary += $" {provisionalCpuSeats} CPU provisoria aguardando reposicao.";
+        }
+
+        return summary;
+    }
+
+    private string BuildLobbyActionHint()
+    {
+        if (LobbySeats.Count == 0)
+        {
+            return "Os comandos de host e substituicao aparecem quando o lobby estiver carregado.";
+        }
+
+        if (LobbySeats.Any(seat => seat.CanRequestReplacement))
+        {
+            return "Use 'Chamar substituto' para gerar um convite de reposicao para CPU provisoria ou cadeira desconectada.";
+        }
+
+        if (LobbySeats.Any(seat => seat.CanVoteHost))
+        {
+            return "Use 'Votar host' para promover outro assento se o host atual sair.";
+        }
+
+        return "A mesa atualiza os convites e botoes especiais conforme os assentos mudam.";
     }
 
     private static string BuildVersionText(CoreVersions versions)
@@ -811,6 +1091,23 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
             "failover_promoted" => "Failover promovido.",
             "failover_rejoined" => "Reconectado após failover.",
             _ => kind.Replace('_', ' '),
+        };
+
+    private static string FormatAppError(AppError? error)
+        => error is null
+            ? string.Empty
+            : string.IsNullOrWhiteSpace(error.Code)
+                ? error.Message
+                : $"{error.Code}: {error.Message}";
+
+    private static string FormatLobbySlotStatus(string status)
+        => status switch
+        {
+            "empty" => "livre",
+            "provisional_cpu" => "CPU provisória aguardando reposição",
+            "occupied_online" => "conectado",
+            "occupied_offline" => "aguardando reconexão",
+            _ => status.Replace('_', ' '),
         };
 
     private static string BuildStatusText(SnapshotBundle bundle)
@@ -838,7 +1135,49 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
         string transport = FormatTransport(network?.Transport);
         string supported = FormatSupportedVersions(network);
         string compatibility = BuildCompatibilitySummary(bundle, network);
-        return $"Status: {bundle.Connection.Status}  |  Rede: {transport}  |  Compat: {compatibility}  |  Build: {supported}";
+        string route = BuildRouteSummary(network);
+        return $"Status: {bundle.Connection.Status}  |  Rede: {transport}  |  Rota: {route}  |  Compat: {compatibility}  |  Build: {supported}";
+    }
+
+    private static string BuildDiagnosticsConnectionText(NetworkSnapshot? network)
+    {
+        if (network is null)
+        {
+            return "Sessao offline. Nenhum transporte remoto ativo.";
+        }
+
+        List<string> parts =
+        [
+            $"Pedido: {FormatTransport(network.RequestedTransport)}",
+            $"Ativo: {FormatTransport(network.Transport)}",
+        ];
+
+        if (network.DirectPathKnown)
+        {
+            parts.Add(network.DirectPath ? "Rota direta confirmada" : "Sem rota direta");
+        }
+
+        if (network.RelayFallback)
+        {
+            parts.Add("Fallback via relay ativo");
+        }
+
+        if (!string.IsNullOrWhiteSpace(network.CoordinatorStatus))
+        {
+            parts.Add($"Coordenador: {network.CoordinatorStatus}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(network.TailnetNode))
+        {
+            parts.Add($"Tailnet: {network.TailnetNode}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(network.FallbackReason))
+        {
+            parts.Add($"Motivo: {network.FallbackReason}");
+        }
+
+        return string.Join("  |  ", parts);
     }
 
     private static string BuildCompatibilitySummary(SnapshotBundle bundle, NetworkSnapshot? network)
@@ -879,7 +1218,37 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
     }
 
     private static string FormatTransport(string? transport)
-        => transport == "relay_quic_v2" ? "Relay QUIC v2" : "TCP + TLS";
+        => transport switch
+        {
+            "auto" => "Auto",
+            "tailnet_tsnet_v1" => "Tailnet",
+            "relay_quic_v2" => "Relay QUIC v2",
+            "tcp_tls" => "TCP + TLS",
+            "" or null => "offline",
+            _ => transport,
+        };
+
+    private static string BuildRouteSummary(NetworkSnapshot? network)
+    {
+        if (network is null)
+        {
+            return "offline";
+        }
+
+        if (network.DirectPathKnown)
+        {
+            return network.DirectPath ? "direta" : network.RelayFallback ? "relay" : "sem rota direta";
+        }
+
+        if (network.RelayFallback)
+        {
+            return "relay";
+        }
+
+        return string.IsNullOrWhiteSpace(network.CoordinatorStatus)
+            ? "negociando"
+            : network.CoordinatorStatus;
+    }
 
     private static string BuildRaiseSummary(MatchSnapshot match)
     {
@@ -964,7 +1333,7 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
             IsCpu = player.Cpu,
             IsProvisionalCpu = player.ProvisionalCpu,
             HandCount = player.Hand.Count,
-            HandCards = BuildHandVisuals(player.Hand, relativeIndex == 0),
+            HandCards = new ObservableCollection<HandCardViewModel>(BuildHandVisuals(player.Hand, relativeIndex == 0)),
             PlayedCard = playedByPlayerId.TryGetValue(player.Id, out PlayedCardState? played) ? played.Card : null,
             PlayedCardViewModel = playedByPlayerId.TryGetValue(player.Id, out PlayedCardState? playedCard)
                 ? new HandCardViewModel
@@ -1028,13 +1397,27 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
             Channel = channel,
             Text = text,
             Accent = accent,
-            Timestamp = string.IsNullOrWhiteSpace(timestamp) ? DateTime.Now.ToString("HH:mm:ss", CultureInfo.InvariantCulture) : timestamp,
+            Timestamp = FormatTimestamp(timestamp),
         });
 
         while (ChatFeed.Count > 200)
         {
             ChatFeed.RemoveAt(0);
         }
+
+        OnPropertyChanged(nameof(ChatEmptyVisibility));
+        OnPropertyChanged(nameof(ChatHintText));
+    }
+
+    private static string FormatTimestamp(string? timestamp)
+    {
+        if (!string.IsNullOrWhiteSpace(timestamp) &&
+            DateTimeOffset.TryParse(timestamp, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out DateTimeOffset parsed))
+        {
+            return parsed.ToLocalTime().ToString("HH:mm:ss", CultureInfo.InvariantCulture);
+        }
+
+        return DateTime.Now.ToString("HH:mm:ss", CultureInfo.InvariantCulture);
     }
 
     private static void CopyTextToClipboard(string? text)
@@ -1060,9 +1443,12 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
 
     private static void NormalizeBundle(SnapshotBundle bundle)
     {
+        bundle.Versions ??= new CoreVersions();
         bundle.Ui ??= new UIStateSnapshot();
         bundle.Ui.LobbySlots ??= [];
         bundle.Ui.Actions ??= new ActionSnapshot();
+        bundle.Connection ??= new ConnectionSnapshot();
+        bundle.Diagnostics ??= new DiagnosticsSnapshot();
         bundle.Lobby ??= new LobbySnapshot();
         bundle.Lobby.Slots ??= [];
         bundle.Lobby.ConnectedSeats ??= [];
@@ -1080,6 +1466,8 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
 
         bundle.Match.Players ??= [];
         bundle.Match.Logs ??= [];
+        bundle.Match.LastTrickCards ??= [];
+        bundle.Match.TrickPiles ??= [];
         bundle.Match.MatchPoints ??= [];
         bundle.Match.CurrentHand ??= new HandState();
         bundle.Match.CurrentHand.RoundCards ??= [];
@@ -1100,12 +1488,24 @@ public partial class AppShellViewModel : ObservableObject, IDisposable
             return -1;
         }
 
-        int index = BottomSeat.HandCards.FindIndex(c => c.Card is not null && ReferenceEquals(c.Card, card));
-        if (index >= 0)
+        for (int i = 0; i < BottomSeat.HandCards.Count; i++)
         {
-            return index;
+            var c = BottomSeat.HandCards[i];
+            if (c.Card is not null && ReferenceEquals(c.Card, card))
+            {
+                return i;
+            }
         }
 
-        return BottomSeat.HandCards.FindIndex(c => c.Card is not null && c.Card.Rank == card.Rank && c.Card.Suit == card.Suit);
+        for (int i = 0; i < BottomSeat.HandCards.Count; i++)
+        {
+            var c = BottomSeat.HandCards[i];
+            if (c.Card is not null && c.Card.Rank == card.Rank && c.Card.Suit == card.Suit)
+            {
+                return i;
+            }
+        }
+
+        return -1;
     }
 }

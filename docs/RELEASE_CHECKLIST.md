@@ -33,6 +33,7 @@ Use this checklist before cutting a release or sharing build artifacts outside l
 - Confirm `browser-edition/dist` contains only the static web bundle plus the compiled `truco-api` binary
 - Confirm generated build output is not being treated as source-of-truth
 - Confirm browser and native adapters still consume the runtime contract from `docs/PARITY.md`
+- Confirm the WinUI bundle contains `truco-core-ffi.dll` plus `libgcc_s_seh-1.dll`, `libstdc++-6.dll`, and `libwinpthread-1.dll`
 - Confirm Wails frontend assets rebuild cleanly from `desktop/wails/frontend/src`
 
 ## Smoke Tests
@@ -47,6 +48,7 @@ Use this checklist before cutting a release or sharing build artifacts outside l
 - Replacement invite flow works after a real disconnect and replacement join
 - Disconnect/reconnect or failover surfaces visible recovery messaging instead of a silent stall
 - Leaving or resetting a session returns to `idle`
+- WinUI diagnostics opens, shows core/protocol/schema versions, can force a CPU tick, and keeps replacement invite keys copyable
 - Wails desktop window launches with the expected icon, title, and minimum size
 - Wails game layout is visually balanced at `1280px` width, a standard desktop window, and a larger monitor
 - Wails setup, lobby, and game screens keep network status accessible without diagnostics being mandatory

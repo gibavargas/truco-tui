@@ -9,7 +9,16 @@ import (
 	"truco-tui/internal/truco"
 )
 
-func (m UIModel) buildStatusLine() string {
+func (m UIModel) renderStatusLine(width int) string {
+	segments := []string{m.buildStatusLead()}
+	segments = append(segments, m.helpControlHints()...)
+	if width > 0 {
+		return joinSegmentsWithinWidth(width, segments...)
+	}
+	return strings.Join(segments, "  │  ")
+}
+
+func (m UIModel) buildStatusLead() string {
 	s := m.snapshot
 	localIdx := 0
 	if s.CurrentPlayerIdx >= 0 {
@@ -21,7 +30,7 @@ func (m UIModel) buildStatusLine() string {
 	localTeam := s.Players[localIdx].Team
 
 	if m.err != nil {
-		return m.renderAlert(tr("error_prefix")+m.err.Error()) + "  │  " + m.helpControls()
+		return m.renderAlert(tr("error_prefix") + m.err.Error())
 	}
 
 	// Priority alerts
@@ -43,7 +52,7 @@ func (m UIModel) buildStatusLine() string {
 			raiseTo,
 			raiseBy,
 			tr("ui_role_you"),
-		)) + "  │  " + m.helpControls()
+		))
 	}
 
 	if s.PendingRaiseFor != -1 {
@@ -62,7 +71,7 @@ func (m UIModel) buildStatusLine() string {
 			raiseTo,
 			raiseBy,
 			waiting,
-		)) + "  │  " + m.helpControls()
+		))
 	}
 
 	turnName := s.Players[s.CurrentHand.Turn].Name
@@ -75,12 +84,16 @@ func (m UIModel) buildStatusLine() string {
 		}
 	}
 	if len(provisional) > 0 {
-		return turnInfo + "  │  " + tr("ui_role_cpu_prov") + ": " + strings.Join(provisional, ", ") + "  │  " + m.helpControls()
+		return turnInfo + "  │  " + tr("ui_role_cpu_prov") + ": " + strings.Join(provisional, ", ")
 	}
-	return turnInfo + "  │  " + m.helpControls()
+	return turnInfo
 }
 
 func (m UIModel) helpControls() string {
+	return strings.Join(m.helpControlHints(), "  ")
+}
+
+func (m UIModel) helpControlHints() []string {
 	parts := []string{}
 	if m.canPlayCardNow() {
 		parts = append(parts, renderKeyHint("[1-3]", tr("help_play_cards_short")))
@@ -111,7 +124,44 @@ func (m UIModel) helpControls() string {
 	}
 	parts = append(parts, renderKeyHint("[tab]", tr("help_tab_short")))
 	parts = append(parts, renderKeyHint("[q]", tr("help_quit_short")))
-	return strings.Join(parts, "  ")
+	return parts
+}
+
+func (m UIModel) gameplayActionHints() []string {
+	parts := []string{}
+	if m.canPlayCardNow() {
+		parts = append(parts, renderKeyHint("[1-3]", tr("help_play_cards_short")))
+	}
+	if m.canFaceDownNow() {
+		label := tr("help_face_down_short")
+		if m.faceDownMode {
+			label = tr("help_face_down_armed_short")
+		}
+		parts = append(parts, renderKeyHint("[v]", label))
+	}
+	if m.mustRespondNow() {
+		parts = append(parts, renderKeyHint("[a/r]", tr("help_answer_short")))
+	}
+	if m.canAskOrRaiseNow() {
+		parts = append(parts, renderKeyHint("[t]", tr("help_truco_short")))
+	}
+	return parts
+}
+
+func (m UIModel) panelActionSummary(width int) string {
+	if width <= 0 {
+		return ""
+	}
+	segments := []string{chipAccentStyle.Render(tr("panel_actions_prefix"))}
+	segments = append(segments, m.gameplayActionHints()...)
+	if len(segments) == 1 {
+		if m.snapshot.MatchFinished {
+			segments = append(segments, winnerStyle.Render(tr("panel_actions_match_over")))
+		} else {
+			segments = append(segments, keyHintStyle.Render(tr("panel_actions_wait_turn")))
+		}
+	}
+	return joinSegmentsWithinWidth(width, segments...)
 }
 
 func (m UIModel) localActionContext() (int, int, bool) {

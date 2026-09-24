@@ -65,10 +65,12 @@ final class TrucoAppStore: ObservableObject {
         }
         
         if let parsedBundle = try? JSONDecoder().decode(SnapshotBundle.self, from: data) {
-            self.bundle = parsedBundle
-            self.snapshot = parsedBundle.match
-            if let m = parsedBundle.mode {
-                self.mode = m
+            withAnimation(.easeInOut(duration: 0.25)) {
+                self.bundle = parsedBundle
+                self.snapshot = parsedBundle.match
+                if let m = parsedBundle.mode {
+                    self.mode = m
+                }
             }
         }
     }

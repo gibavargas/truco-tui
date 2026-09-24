@@ -380,7 +380,7 @@ func (m *onlineMatchModel) handleKey(msg tea.KeyMsg) (bool, tea.Cmd) {
 	}
 
 	switch msg.String() {
-	case "1", "2", "3", "t", "a", "r":
+	case "1", "2", "3", "t", "a", "r", "v":
 		if m.trickOverlayMsg != "" {
 			return false, nil
 		}
@@ -599,6 +599,24 @@ func selectFailoverSeat(fs netp2p.ClientFailoverState) int {
 	return -1
 }
 
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
+}
+
+func firstNonZero(values ...int) int {
+	for _, value := range values {
+		if value != 0 {
+			return value
+		}
+	}
+	return 0
+}
+
 func attemptClientFailoverCmd(cli *netp2p.ClientSession) tea.Cmd {
 	return func() tea.Msg {
 		if cli == nil {
@@ -614,14 +632,23 @@ func attemptClientFailoverCmd(cli *netp2p.ClientSession) tea.Cmd {
 		}
 		inv := fs.Invite
 		hostAddr := strings.TrimSpace(fs.PeerHosts[targetSeat])
-		if inv.Transport != "relay_quic_v2" {
+		switch strings.TrimSpace(inv.Transport) {
+		case netp2p.TransportRelayQUICV2:
+			inv.RelayAuthorityPeer = fs.RouteHint
+		case netp2p.TransportTailnetTSNetV1:
+			inv.TailnetAuthorityNode = firstNonEmpty(fs.RouteHint, hostAddr, fs.Relay.TailnetAuthority)
+			if fs.Relay.TailnetServicePort > 0 {
+				inv.TailnetServicePort = fs.Relay.TailnetServicePort
+			}
+			if fs.HandoffPort > 0 {
+				inv.TailnetServicePort = fs.HandoffPort
+			}
+		default:
 			if hostAddr == "" {
 				return clientFailoverMsg{err: fmt.Errorf("endereço do host eleito indisponível")}
 			}
 			addr := net.JoinHostPort(hostAddr, strconv.Itoa(fs.HandoffPort))
 			inv.Addr = addr
-		} else {
-			inv.RelayAuthorityPeer = fs.RouteHint
 		}
 
 		if fs.AssignedSeat == targetSeat {
@@ -642,24 +669,34 @@ func attemptClientFailoverCmd(cli *netp2p.ClientSession) tea.Cmd {
 				rotatedSlots[0],
 				fs.NumPlayers,
 				netp2p.RecoveredHostState{
-					Token:               inv.Token,
-					TLSSeed:             fs.TLSSeed,
-					RelayHostAdminToken: fs.RelayHostAdminToken,
-					RelayHostPeerID:     fmt.Sprintf("seat-%d", targetSeat),
-					RelayEpoch:          fs.Epoch + 1,
-					Slots:               rotatedSlots,
-					SeatSessionIDs:      rotatedSeatIDs,
-					PeerHosts:           rotatedPeers,
-					TableHostSeat:       0,
+					Token:                 inv.Token,
+					TLSSeed:               fs.TLSSeed,
+					RelayHostAdminToken:   fs.RelayHostAdminToken,
+					RelayHostPeerID:       fmt.Sprintf("seat-%d", targetSeat),
+					RelayEpoch:            fs.Epoch + 1,
+					TailnetSessionID:      inv.TailnetSessionID,
+					TailnetHostAdminToken: fs.TailnetHostAdminToken,
+					TailnetNodeName:       fs.Relay.TailnetNodeName,
+					TailnetServicePort:    firstNonZero(fs.Relay.TailnetServicePort, inv.TailnetServicePort, fs.HandoffPort),
+					Slots:                 rotatedSlots,
+					SeatSessionIDs:        rotatedSeatIDs,
+					PeerHosts:             rotatedPeers,
+					TableHostSeat:         0,
 				},
 				netp2p.HostConfig{
-					HandoffPort:         fs.HandoffPort,
-					AdvertiseHost:       hostAddr,
-					RelayURL:            inv.RelayURL,
-					RelaySPKIPin:        inv.RelaySPKIPin,
-					TransportMode:       inv.Transport,
-					RelaySessionID:      inv.RelaySessionID,
-					RelayHostAdminToken: fs.RelayHostAdminToken,
+					HandoffPort:           fs.HandoffPort,
+					AdvertiseHost:         hostAddr,
+					RelayURL:              inv.RelayURL,
+					RelaySPKIPin:          inv.RelaySPKIPin,
+					TransportMode:         inv.Transport,
+					RelaySessionID:        inv.RelaySessionID,
+					RelayHostAdminToken:   fs.RelayHostAdminToken,
+					TailnetCoordinatorURL: inv.TailnetCoordinatorURL,
+					TailnetControlURL:     inv.TailnetControlURL,
+					TailnetSessionID:      inv.TailnetSessionID,
+					TailnetHostAdminToken: fs.TailnetHostAdminToken,
+					TailnetNodeName:       fs.Relay.TailnetNodeName,
+					TailnetServicePort:    firstNonZero(fs.Relay.TailnetServicePort, inv.TailnetServicePort, fs.HandoffPort),
 				},
 			)
 			if err != nil {

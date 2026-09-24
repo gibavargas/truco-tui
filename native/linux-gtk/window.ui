@@ -4,6 +4,8 @@
     <property name="title">Truco Paulista</property>
     <property name="default-width">1360</property>
     <property name="default-height">900</property>
+    <property name="width-request">960</property>
+    <property name="height-request">640</property>
 
     <property name="content">
       <object class="AdwToastOverlay" id="toast_overlay">
@@ -51,7 +53,7 @@
                         <property name="orientation">horizontal</property>
                         <property name="spacing">12</property>
                         <child>
-                          <object class="GtkLabel">
+                          <object class="GtkLabel" id="lbl_header_title">
                             <property name="label">TRUCO PAULISTA</property>
                             <property name="css-classes">header-title</property>
                           </object>
@@ -93,7 +95,7 @@
 
                                     <child>
                                       <object class="GtkBox">
-                                        <property name="orientation">horizontal</property>
+                                        <property name="orientation">vertical</property>
                                         <property name="spacing">24</property>
                                         <property name="css-classes">hero-shell</property>
 
@@ -136,7 +138,7 @@
                                                 <property name="margin-end">24</property>
 
                                                 <child>
-                                                  <object class="GtkLabel">
+                                                  <object class="GtkLabel" id="lbl_setup_title">
                                                     <property name="label">Prepare a mesa</property>
                                                     <property name="halign">start</property>
                                                     <property name="css-classes">section-title</property>
@@ -148,7 +150,7 @@
                                                     <property name="orientation">vertical</property>
                                                     <property name="spacing">6</property>
                                                     <child>
-                                                      <object class="GtkLabel">
+                                                      <object class="GtkLabel" id="lbl_name_field">
                                                         <property name="label">SEU NOME</property>
                                                         <property name="css-classes">setup-label</property>
                                                         <property name="halign">start</property>
@@ -173,7 +175,7 @@
                                                         <property name="spacing">6</property>
                                                         <property name="hexpand">true</property>
                                                         <child>
-                                                          <object class="GtkLabel">
+                                                          <object class="GtkLabel" id="lbl_players_field">
                                                             <property name="label">JOGADORES</property>
                                                             <property name="css-classes">setup-label</property>
                                                             <property name="halign">start</property>
@@ -199,7 +201,35 @@
                                                         <property name="spacing">6</property>
                                                         <property name="hexpand">true</property>
                                                         <child>
-                                                          <object class="GtkLabel">
+                                                          <object class="GtkLabel" id="lbl_transport_field">
+                                                            <property name="label">TRANSPORTE</property>
+                                                            <property name="css-classes">setup-label</property>
+                                                            <property name="halign">start</property>
+                                                          </object>
+                                                        </child>
+                                                        <child>
+                                                          <object class="GtkDropDown" id="dd_transport_mode">
+                                                            <property name="model">
+                                                              <object class="GtkStringList">
+                                                                <items>
+                                                                  <item>Auto</item>
+                                                                  <item>Direto (TCP/TLS)</item>
+                                                                  <item>Tailnet</item>
+                                                                  <item>Relay QUIC v2</item>
+                                                                </items>
+                                                              </object>
+                                                            </property>
+                                                          </object>
+                                                        </child>
+                                                      </object>
+                                                    </child>
+                                                    <child>
+                                                      <object class="GtkBox">
+                                                        <property name="orientation">vertical</property>
+                                                        <property name="spacing">6</property>
+                                                        <property name="hexpand">true</property>
+                                                        <child>
+                                                          <object class="GtkLabel" id="lbl_language_field">
                                                             <property name="label">IDIOMA</property>
                                                             <property name="css-classes">setup-label</property>
                                                             <property name="halign">start</property>
@@ -232,7 +262,7 @@
                                                         <property name="spacing">6</property>
                                                         <property name="hexpand">true</property>
                                                         <child>
-                                                          <object class="GtkLabel">
+                                                          <object class="GtkLabel" id="lbl_relay_field">
                                                             <property name="label">RELAY URL (OPCIONAL)</property>
                                                             <property name="css-classes">setup-label</property>
                                                             <property name="halign">start</property>
@@ -251,7 +281,7 @@
                                                         <property name="spacing">6</property>
                                                         <property name="hexpand">true</property>
                                                         <child>
-                                                          <object class="GtkLabel">
+                                                          <object class="GtkLabel" id="lbl_role_field">
                                                             <property name="label">PAPEL AO ENTRAR</property>
                                                             <property name="css-classes">setup-label</property>
                                                             <property name="halign">start</property>
@@ -315,6 +345,7 @@
                                         </child>
                                       </object>
                                     </child>
+
                                   </object>
                                 </property>
                               </object>
@@ -344,7 +375,7 @@
 
                                     <child>
                                       <object class="GtkBox">
-                                        <property name="orientation">horizontal</property>
+                                        <property name="orientation">vertical</property>
                                         <property name="spacing">12</property>
                                         <child>
                                           <object class="GtkLabel" id="lbl_online_status">
@@ -371,8 +402,18 @@
                                     </child>
 
                                     <child>
+                                      <object class="GtkLabel" id="lbl_online_meta">
+                                        <property name="label">Assentos 0/0</property>
+                                        <property name="wrap">true</property>
+                                        <property name="selectable">true</property>
+                                        <property name="halign">start</property>
+                                        <property name="css-classes">meta-label</property>
+                                      </object>
+                                    </child>
+
+                                    <child>
                                       <object class="GtkBox">
-                                        <property name="orientation">horizontal</property>
+                                        <property name="orientation">vertical</property>
                                         <property name="spacing">18</property>
                                         <property name="vexpand">true</property>
 
@@ -388,7 +429,7 @@
                                                 <property name="margin-start">18</property>
                                                 <property name="margin-end">18</property>
                                                 <child>
-                                                  <object class="GtkLabel">
+                                                  <object class="GtkLabel" id="lbl_slots_title">
                                                     <property name="label">Assentos</property>
                                                     <property name="halign">start</property>
                                                     <property name="css-classes">setup-label</property>
@@ -431,7 +472,7 @@
                                                 <property name="margin-start">18</property>
                                                 <property name="margin-end">18</property>
                                                 <child>
-                                                  <object class="GtkLabel">
+                                                  <object class="GtkLabel" id="lbl_chat_title">
                                                     <property name="label">Chat da mesa</property>
                                                     <property name="halign">start</property>
                                                     <property name="css-classes">setup-label</property>
@@ -471,6 +512,47 @@
                                             </property>
                                           </object>
                                         </child>
+                                      </object>
+                                    </child>
+
+                                    <child>
+                                      <object class="GtkFrame">
+                                        <property name="hexpand">true</property>
+                                        <property name="child">
+                                          <object class="GtkBox">
+                                            <property name="orientation">vertical</property>
+                                            <property name="spacing">12</property>
+                                            <property name="margin-top">18</property>
+                                            <property name="margin-bottom">18</property>
+                                            <property name="margin-start">18</property>
+                                            <property name="margin-end">18</property>
+                                            <child>
+                                              <object class="GtkLabel" id="lbl_diagnostics_title">
+                                                <property name="label">Detalhes da mesa</property>
+                                                <property name="halign">start</property>
+                                                <property name="css-classes">setup-label</property>
+                                              </object>
+                                            </child>
+                                            <child>
+                                              <object class="GtkLabel" id="lbl_diagnostics_summary">
+                                                <property name="label">Backlog 0</property>
+                                                <property name="wrap">true</property>
+                                                <property name="selectable">true</property>
+                                                <property name="xalign">0</property>
+                                                <property name="css-classes">diagnostics-summary</property>
+                                              </object>
+                                            </child>
+                                            <child>
+                                              <object class="GtkLabel" id="lbl_diagnostics_log">
+                                                <property name="label">Sem entradas de diagnóstico ainda.</property>
+                                                <property name="wrap">true</property>
+                                                <property name="selectable">true</property>
+                                                <property name="xalign">0</property>
+                                                <property name="css-classes">diagnostics-log</property>
+                                              </object>
+                                            </child>
+                                          </object>
+                                        </property>
                                       </object>
                                     </child>
                                   </object>

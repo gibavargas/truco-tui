@@ -8,6 +8,7 @@ struct GameView: View {
     @State private var trucoFlashOpacity: Double = 0
     @State private var trucoFlashScale: CGFloat = 0.5
     @State private var dealAnimationProgress: [Bool] = [false, false, false]
+    @State private var dealAnimationID: Int = 0
     @State private var lastPendingRaise: Int? = nil
     
     var body: some View {
@@ -94,9 +95,12 @@ struct GameView: View {
     }
     
     private func animateDeal() {
+        dealAnimationID += 1
+        let currentID = dealAnimationID
         dealAnimationProgress = [false, false, false]
         for i in 0..<3 {
             DispatchQueue.main.asyncAfter(deadline: .now() + Double(i) * 0.15) {
+                guard currentID == dealAnimationID else { return }
                 withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
                     dealAnimationProgress[i] = true
                 }
@@ -346,7 +350,10 @@ private struct CenterTableView: View {
             VStack(spacing: 6) {
                 Text("VIRA").font(.system(size: 9, weight: .bold)).foregroundColor(.white.opacity(0.5)).tracking(2)
                 if let vira = hand.Vira {
-                    CardView(card: vira).rotationEffect(.degrees(-6)).scaleEffect(compact ? 0.8 : 1)
+                    CardView(card: vira)
+                        .rotationEffect(.degrees(-6))
+                        .scaleEffect(compact ? 0.8 : 1)
+                        .frame(width: compact ? 86 * 0.8 : 86, height: compact ? 124 * 0.8 : 124)
                 }
             }
             ZStack {
@@ -356,7 +363,9 @@ private struct CenterTableView: View {
                         VStack(spacing: 2) {
                             Text(players?.first(where: { $0.ID == pc.PlayerID })?.Name ?? "?")
                                 .font(.system(size: 9)).foregroundColor(.white.opacity(0.7))
-                            CardView(card: pc.Card).scaleEffect(compact ? 0.75 : 0.9)
+                            CardView(card: pc.Card)
+                                .scaleEffect(compact ? 0.75 : 0.9)
+                                .frame(width: compact ? 86 * 0.75 : 86 * 0.9, height: compact ? 124 * 0.75 : 124 * 0.9)
                         }
                         .rotationEffect(.degrees(Double(idx * 15 - 10)))
                         .offset(x: CGFloat(idx * 15 - 5), y: CGFloat(idx * -10))
@@ -413,7 +422,9 @@ private struct OpponentView: View {
             if isVertical {
                 VStack(spacing: -30) {
                     ForEach(0..<(player.Hand?.count ?? 3), id: \.self) { _ in
-                        CardView(card: Card(Rank: "", Suit: ""), isFaceUp: false).scaleEffect(compact ? 0.55 : 0.7)
+                        CardView(card: Card(Rank: "", Suit: ""), isFaceUp: false)
+                            .scaleEffect(compact ? 0.55 : 0.7)
+                            .frame(width: compact ? 86 * 0.55 : 86 * 0.7, height: compact ? 124 * 0.55 : 124 * 0.7)
                     }
                 }
             } else {
@@ -421,6 +432,7 @@ private struct OpponentView: View {
                     ForEach(0..<(player.Hand?.count ?? 3), id: \.self) { _ in
                         CardView(card: Card(Rank: "", Suit: ""), isFaceUp: false)
                             .scaleEffect(compact ? 0.8 : 1)
+                            .frame(width: compact ? 86 * 0.8 : 86, height: compact ? 124 * 0.8 : 124)
                             .shadow(color: .black.opacity(0.3), radius: 4, x: -2, y: 3)
                     }
                 }
@@ -466,6 +478,7 @@ private struct PlayerHandView: View {
                     ForEach(Array(hand.enumerated()), id: \.element) { index, card in
                         CardView(card: card)
                             .scaleEffect(compact ? 0.85 : 1)
+                            .frame(width: compact ? 86 * 0.85 : 86, height: compact ? 124 * 0.85 : 124)
                             .offset(y: hoveredCard == card.Rank + card.Suit ? -30 : 0)
                             .opacity(index < dealProgress.count && dealProgress[index] ? 1 : 0.3)
                             .scaleEffect(index < dealProgress.count && dealProgress[index] ? 1 : 0.8)

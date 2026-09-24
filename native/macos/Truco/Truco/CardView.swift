@@ -22,6 +22,8 @@ struct CardView: View {
         .shadow(color: Color.black.opacity(0.34), radius: 12, x: 0, y: 8)
         .frame(width: 86, height: 124)
         .animation(.spring(response: 0.5, dampingFraction: 0.7), value: isFaceUp)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(isFaceUp ? card.accessibilityLabel : "Carta virada para baixo")
     }
     
     private var cardFront: some View {

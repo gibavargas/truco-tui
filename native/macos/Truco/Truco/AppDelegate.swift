@@ -18,16 +18,28 @@ struct TrucoApp: App {
             configuredRootView
         }
         .commands {
-            CommandGroup(replacing: .newItem) {
+            CommandMenu("Mesa") {
                 Button("Nova mesa offline") {
                     store.startOfflineDemo()
                 }
                 .keyboardShortcut("n")
-                
+
+                Button("Repetir última mesa") {
+                    store.replayOfflineMatch()
+                }
+                .keyboardShortcut("r")
+
+                Button("Começar partida hospedada") {
+                    store.startHostedMatch()
+                }
+                .keyboardShortcut(.return, modifiers: [.command])
+                .disabled(store.mode != "host_lobby")
+
                 Button("Sair da mesa") {
                     store.closeSession()
                 }
-                .keyboardShortcut("w")
+                .keyboardShortcut(".", modifiers: [.command])
+                .disabled(!store.canCloseSession)
             }
         }
     }
@@ -40,10 +52,15 @@ struct TrucoApp: App {
 
         if let launchWindowSize {
             content
-                .frame(width: launchWindowSize.width, height: launchWindowSize.height)
+                .frame(
+                    minWidth: 840,
+                    idealWidth: launchWindowSize.width,
+                    minHeight: 620,
+                    idealHeight: launchWindowSize.height
+                )
         } else {
             content
-                .frame(minWidth: 800, minHeight: 600)
+                .frame(minWidth: 840, minHeight: 620)
         }
     }
 }

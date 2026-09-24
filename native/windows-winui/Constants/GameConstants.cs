@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+
 namespace TrucoWinUI.Constants;
 
 public static class GameConstants

@@ -4,6 +4,7 @@ using System.Collections.ObjectModel;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace TrucoWinUI.Models;
 
@@ -101,6 +102,36 @@ public sealed class NetworkSnapshot
     [JsonPropertyName("transport")]
     public string Transport { get; set; } = string.Empty;
 
+    [JsonPropertyName("requested_transport")]
+    public string RequestedTransport { get; set; } = string.Empty;
+
+    [JsonPropertyName("direct_path_known")]
+    public bool DirectPathKnown { get; set; }
+
+    [JsonPropertyName("direct_path")]
+    public bool DirectPath { get; set; }
+
+    [JsonPropertyName("relay_fallback")]
+    public bool RelayFallback { get; set; }
+
+    [JsonPropertyName("coordinator_status")]
+    public string CoordinatorStatus { get; set; } = string.Empty;
+
+    [JsonPropertyName("coordinator_url")]
+    public string CoordinatorUrl { get; set; } = string.Empty;
+
+    [JsonPropertyName("tailnet_node")]
+    public string TailnetNode { get; set; } = string.Empty;
+
+    [JsonPropertyName("tailnet_authority")]
+    public string TailnetAuthority { get; set; } = string.Empty;
+
+    [JsonPropertyName("tailnet_service_port")]
+    public int TailnetServicePort { get; set; }
+
+    [JsonPropertyName("fallback_reason")]
+    public string FallbackReason { get; set; } = string.Empty;
+
     [JsonPropertyName("supported_protocol_versions")]
     public List<int> SupportedProtocolVersions { get; set; } = [];
 
@@ -173,6 +204,12 @@ public sealed class LobbySlotState
     [JsonPropertyName("is_connected")]
     public bool IsConnected { get; set; }
 
+    [JsonPropertyName("is_occupied")]
+    public bool IsOccupied { get; set; }
+
+    [JsonPropertyName("is_provisional_cpu")]
+    public bool IsProvisionalCpu { get; set; }
+
     [JsonPropertyName("can_vote_host")]
     public bool CanVoteHost { get; set; }
 
@@ -232,6 +269,12 @@ public sealed class MatchSnapshot
 
     [JsonPropertyName("CurrentHand")]
     public HandState CurrentHand { get; set; } = new();
+
+    [JsonPropertyName("LastTrickCards")]
+    public List<PlayedCardState> LastTrickCards { get; set; } = [];
+
+    [JsonPropertyName("TrickPiles")]
+    public List<TrickPileState> TrickPiles { get; set; } = [];
 
     [JsonPropertyName("MatchPoints")]
     public Dictionary<int, int> MatchPoints { get; set; } = [];
@@ -366,6 +409,21 @@ public sealed class PlayedCardState
     public bool FaceDown { get; set; }
 }
 
+public sealed class TrickPileState
+{
+    [JsonPropertyName("Winner")]
+    public int Winner { get; set; } = -1;
+
+    [JsonPropertyName("Team")]
+    public int Team { get; set; } = -1;
+
+    [JsonPropertyName("Round")]
+    public int Round { get; set; }
+
+    [JsonPropertyName("Cards")]
+    public List<PlayedCardState> Cards { get; set; } = [];
+}
+
 public sealed class CardState
 {
     [JsonPropertyName("Rank")]
@@ -389,6 +447,25 @@ public sealed class CardState
 
     [JsonIgnore]
     public bool IsRed => Suit is "Copas" or "Ouros";
+
+    [JsonIgnore]
+    public string AccessibilityLabel
+    {
+        get
+        {
+            if (string.IsNullOrWhiteSpace(Rank) && string.IsNullOrWhiteSpace(Suit))
+            {
+                return "Carta";
+            }
+
+            if (string.IsNullOrWhiteSpace(Suit))
+            {
+                return Rank;
+            }
+
+            return $"{Rank} de {Suit}";
+        }
+    }
 }
 
 public sealed class LobbySeatViewModel
@@ -399,48 +476,274 @@ public sealed class LobbySeatViewModel
     public bool IsConnected { get; set; }
     public bool IsHost { get; set; }
     public bool IsEmpty { get; set; }
+    public bool IsProvisionalCpu { get; set; }
     public bool CanVoteHost { get; set; }
     public bool CanRequestReplacement { get; set; }
     public int ProtocolVersion { get; set; }
     public string StatusText { get; set; } = string.Empty;
     public string DisplayLabel => $"Slot {SeatIndex + 1}: {Name}";
-    public string ConnectionBadge => IsConnected ? "Conectado" : IsEmpty ? "Livre" : "Offline";
+    public string ConnectionBadge => IsProvisionalCpu ? "CPU provisória" : IsConnected ? "Conectado" : IsEmpty ? "Livre" : "Offline";
     public string RoleBadge => IsHost ? "Host" : IsAssigned ? "Local" : string.Empty;
     public string ProtocolBadge => ProtocolVersion > 0 ? $"v{ProtocolVersion}" : string.Empty;
+    public bool HasRoleBadge => !string.IsNullOrWhiteSpace(RoleBadge);
+    public bool HasProtocolBadge => !string.IsNullOrWhiteSpace(ProtocolBadge);
+    public string ActionHint => CanRequestReplacement
+        ? "Gera um convite para substituir uma CPU provisoria ou trazer de volta um jogador desconectado."
+        : CanVoteHost
+            ? "Vota neste assento para assumir o host se o host atual cair."
+            : IsProvisionalCpu
+                ? "Este assento esta ocupado por uma CPU provisoria ate um substituto entrar."
+                : "Nenhuma acao especial disponivel neste assento agora.";
+    public string AccessibilityLabel
+    {
+        get
+        {
+            List<string> parts =
+            [
+                DisplayLabel,
+                StatusText,
+                ConnectionBadge,
+            ];
+            if (HasRoleBadge)
+            {
+                parts.Add(RoleBadge);
+            }
+
+            if (HasProtocolBadge)
+            {
+                parts.Add($"Compatibilidade {ProtocolBadge}");
+            }
+
+            return string.Join(". ", parts);
+        }
+    }
 }
 
-public sealed class TableSeatViewModel
+public sealed class TableSeatViewModel : ObservableObject
 {
-    public int SeatIndex { get; set; } = -1;
-    public int PlayerId { get; set; } = -1;
-    public string Name { get; set; } = string.Empty;
-    public string RoleLabel { get; set; } = string.Empty;
-    public int TeamIndex { get; set; } = -1;
-    public string TeamLabel { get; set; } = string.Empty;
-    public bool IsVisible { get; set; }
-    public bool IsLocal { get; set; }
-    public bool IsCurrentTurn { get; set; }
-    public bool IsCpu { get; set; }
-    public bool IsProvisionalCpu { get; set; }
-    public int HandCount { get; set; }
-    public List<HandCardViewModel> HandCards { get; set; } = [];
-    public CardState? PlayedCard { get; set; }
-    public HandCardViewModel? PlayedCardViewModel { get; set; }
+    private int seatIndex = -1;
+    private int playerId = -1;
+    private string name = string.Empty;
+    private string roleLabel = string.Empty;
+    private int teamIndex = -1;
+    private string teamLabel = string.Empty;
+    private bool isVisible;
+    private bool isLocal;
+    private bool isCurrentTurn;
+    private bool isCpu;
+    private bool isProvisionalCpu;
+    private int handCount;
+    private ObservableCollection<HandCardViewModel> handCards = [];
+    private CardState? playedCard;
+    private HandCardViewModel? playedCardViewModel;
+
+    public int SeatIndex { get => seatIndex; set => SetProperty(ref seatIndex, value); }
+    public int PlayerId { get => playerId; set => SetProperty(ref playerId, value); }
+    public string Name
+    {
+        get => name;
+        set
+        {
+            if (SetProperty(ref name, value))
+            {
+                OnPropertyChanged(nameof(Summary));
+                OnPropertyChanged(nameof(AccessibilityLabel));
+                OnPropertyChanged(nameof(PlayedCardAccessibilityLabel));
+                OnPropertyChanged(nameof(HiddenHandAccessibilityLabel));
+            }
+        }
+    }
+    public string RoleLabel
+    {
+        get => roleLabel;
+        set
+        {
+            if (SetProperty(ref roleLabel, value))
+            {
+                OnPropertyChanged(nameof(AccessibilityLabel));
+            }
+        }
+    }
+    public int TeamIndex { get => teamIndex; set => SetProperty(ref teamIndex, value); }
+    public string TeamLabel
+    {
+        get => teamLabel;
+        set
+        {
+            if (SetProperty(ref teamLabel, value))
+            {
+                OnPropertyChanged(nameof(Summary));
+                OnPropertyChanged(nameof(AccessibilityLabel));
+            }
+        }
+    }
+    public bool IsVisible
+    {
+        get => isVisible;
+        set
+        {
+            if (SetProperty(ref isVisible, value))
+            {
+                OnPropertyChanged(nameof(Summary));
+                OnPropertyChanged(nameof(AccessibilityLabel));
+            }
+        }
+    }
+    public bool IsLocal { get => isLocal; set => SetProperty(ref isLocal, value); }
+    public bool IsCurrentTurn
+    {
+        get => isCurrentTurn;
+        set
+        {
+            if (SetProperty(ref isCurrentTurn, value))
+            {
+                OnPropertyChanged(nameof(AccessibilityLabel));
+            }
+        }
+    }
+    public bool IsCpu
+    {
+        get => isCpu;
+        set
+        {
+            if (SetProperty(ref isCpu, value))
+            {
+                OnPropertyChanged(nameof(CpuTag));
+                OnPropertyChanged(nameof(AccessibilityLabel));
+            }
+        }
+    }
+    public bool IsProvisionalCpu
+    {
+        get => isProvisionalCpu;
+        set
+        {
+            if (SetProperty(ref isProvisionalCpu, value))
+            {
+                OnPropertyChanged(nameof(CpuTag));
+                OnPropertyChanged(nameof(AccessibilityLabel));
+            }
+        }
+    }
+    public int HandCount
+    {
+        get => handCount;
+        set
+        {
+            if (SetProperty(ref handCount, value))
+            {
+                OnPropertyChanged(nameof(HiddenHandText));
+                OnPropertyChanged(nameof(HiddenHandAccessibilityLabel));
+            }
+        }
+    }
+    public ObservableCollection<HandCardViewModel> HandCards { get => handCards; set => SetProperty(ref handCards, value); }
+    public CardState? PlayedCard
+    {
+        get => playedCard;
+        set
+        {
+            if (SetProperty(ref playedCard, value))
+            {
+                OnPropertyChanged(nameof(PlayedCardLabel));
+                OnPropertyChanged(nameof(PlayedCardAccessibilityLabel));
+            }
+        }
+    }
+    public HandCardViewModel? PlayedCardViewModel { get => playedCardViewModel; set => SetProperty(ref playedCardViewModel, value); }
+
     public string Summary => IsVisible ? $"{Name}  {TeamLabel}" : string.Empty;
     public string CpuTag => IsProvisionalCpu ? "CPU temporaria" : IsCpu ? "CPU" : string.Empty;
     public string PlayedCardLabel => PlayedCard?.ShortLabel ?? "--";
     public string HiddenHandText => HandCount <= 0 ? string.Empty : string.Join(" ", Enumerable.Repeat("[ ]", Math.Min(HandCount, 3)));
+    public string AccessibilityLabel
+    {
+        get
+        {
+            if (!IsVisible)
+            {
+                return string.Empty;
+            }
+
+            List<string> parts =
+            [
+                string.IsNullOrWhiteSpace(RoleLabel) ? Name : $"{RoleLabel}: {Name}",
+                TeamLabel,
+            ];
+
+            if (!string.IsNullOrWhiteSpace(CpuTag))
+            {
+                parts.Add(CpuTag);
+            }
+
+            parts.Add(IsCurrentTurn ? "Com a vez" : "Aguardando");
+            return string.Join(". ", parts);
+        }
+    }
+    public string PlayedCardAccessibilityLabel => PlayedCard is null
+        ? $"{Name} ainda nao jogou carta."
+        : $"{Name} jogou {PlayedCard.AccessibilityLabel}.";
+    public string HiddenHandAccessibilityLabel => HandCount <= 0
+        ? $"{Name} nao tem cartas na mao."
+        : $"{Name} tem {HandCount} cartas na mao.";
 }
 
-public sealed class HandCardViewModel
+public sealed class HandCardViewModel : ObservableObject
 {
-    public CardState? Card { get; set; }
-    public bool IsFaceUp { get; set; }
-    public double Rotation { get; set; }
-    public double Scale { get; set; } = 1.0;
-    public double TranslateX { get; set; }
-    public double TranslateY { get; set; }
+    private CardState? card;
+    private bool isFaceUp;
+    private double rotation;
+    private double scale = 1.0;
+    private double translateX;
+    private double translateY;
+
+    public CardState? Card
+    {
+        get => card;
+        set
+        {
+            if (SetProperty(ref card, value))
+            {
+                OnPropertyChanged(nameof(CardVisibility));
+                OnPropertyChanged(nameof(AccessibilityLabel));
+                OnPropertyChanged(nameof(PlayAutomationLabel));
+                OnPropertyChanged(nameof(FaceDownAutomationLabel));
+            }
+        }
+    }
+
+    public bool IsFaceUp
+    {
+        get => isFaceUp;
+        set
+        {
+            if (SetProperty(ref isFaceUp, value))
+            {
+                OnPropertyChanged(nameof(AccessibilityLabel));
+                OnPropertyChanged(nameof(PlayAutomationLabel));
+                OnPropertyChanged(nameof(FaceDownAutomationLabel));
+            }
+        }
+    }
+
+    public double Rotation { get => rotation; set => SetProperty(ref rotation, value); }
+    public double Scale { get => scale; set => SetProperty(ref scale, value); }
+    public double TranslateX { get => translateX; set => SetProperty(ref translateX, value); }
+    public double TranslateY { get => translateY; set => SetProperty(ref translateY, value); }
     public Microsoft.UI.Xaml.Visibility CardVisibility => Card is null ? Microsoft.UI.Xaml.Visibility.Collapsed : Microsoft.UI.Xaml.Visibility.Visible;
+    public string AccessibilityLabel => Card is null
+        ? "Carta indisponivel"
+        : IsFaceUp
+            ? Card.AccessibilityLabel
+            : "Carta virada";
+    public string PlayAutomationLabel => Card is null
+        ? "Carta indisponivel"
+        : IsFaceUp
+            ? $"Jogar {Card.AccessibilityLabel}"
+            : "Jogar carta";
+    public string FaceDownAutomationLabel => Card is null
+        ? "Carta indisponivel"
+        : $"Jogar {Card.AccessibilityLabel} virada";
 }
 
 public sealed class ActivityEntry

@@ -1,4 +1,11 @@
 import type { LobbySlotState, RuntimeEvent, SnapshotBundle } from "../types";
+import {
+  activeTransportLabel,
+  connectionPathLabel,
+  fallbackReasonLabel,
+  requestedTransportLabel,
+  seatProtocolLabel,
+} from "./network-copy";
 
 export type LobbyPanelTab = "pulse" | "network" | "chat";
 
@@ -29,12 +36,12 @@ export function renderLobbyScreen(params: LobbyScreenParams): string {
   const failoverSignal = latestFailoverSignal(events, t);
 
   return `
-    <section class="lobby10">
+    <section class="lobby10" aria-labelledby="lobby-title" data-seat-count="${slots.length}">
       <article class="surface-card lobby10-lead">
         <div class="lobby10-banner">
           <div>
             <p class="eyebrow">${escapeHtml(isHost ? t("lobby_host_headline") : t("lobby_join_headline"))}</p>
-            <h2>${escapeHtml(t("lobby_title"))}</h2>
+            <h2 id="lobby-title">${escapeHtml(t("lobby_title"))}</h2>
             <p class="supporting-copy" data-pretext-block="lock-height">${escapeHtml(failoverSignal || t("invite_hint"))}</p>
           </div>
           <div class="lobby10-banner-actions">
@@ -63,11 +70,11 @@ export function renderLobbyScreen(params: LobbyScreenParams): string {
           <div class="card-head">
             <div>
               <p class="eyebrow">${escapeHtml(t("lobby_slots"))}</p>
-              <h3>${escapeHtml(t("lobby_slots"))}</h3>
+              <h3 id="lobby-seats-title">${escapeHtml(t("lobby_slots"))}</h3>
             </div>
             <span class="section-pill">${occupiedSeats}/${lobby.num_players || slots.length}</span>
           </div>
-          <div class="lobby10-seat-grid">
+          <div class="lobby10-seat-grid" role="list" aria-labelledby="lobby-seats-title">
             ${slots.map((slot) => renderLobbySeat(slot, t, escapeHtml, busyAttr, buttonLabel)).join("")}
           </div>
         </article>
@@ -76,9 +83,9 @@ export function renderLobbyScreen(params: LobbyScreenParams): string {
           <div class="card-head">
             <div>
               <p class="eyebrow">${escapeHtml(t("lobby_events"))}</p>
-              <h3>${escapeHtml(tabTitle(panelTab, t))}</h3>
+              <h3 id="lobby-panel-title">${escapeHtml(tabTitle(panelTab, t))}</h3>
             </div>
-            <div class="panel-tabs">
+            <div class="panel-tabs" role="tablist" aria-label="${escapeHtml(t("lobby_events"))}">
               ${renderPanelTab("pulse", panelTab, t("lobby_events"), escapeHtml)}
               ${renderPanelTab("network", panelTab, t("game_network"), escapeHtml)}
               ${renderPanelTab("chat", panelTab, t("lobby_chat"), escapeHtml)}
@@ -106,7 +113,7 @@ function renderLobbySeat(
   ].filter(Boolean);
 
   return `
-    <section class="lobby10-seat${slot.is_local ? " lobby10-seat-local" : ""}">
+    <section class="lobby10-seat${slot.is_local ? " lobby10-seat-local" : ""}" role="listitem" aria-label="${escapeHtml(`${t("lobby_slots")} #${slot.seat + 1} · ${slot.name || t("slot_empty")} · ${slotStatusLabel(slot.status, t)}`)}">
       <div class="lobby10-seat-head">
         <div>
           <strong>${escapeHtml(slot.name || t("slot_empty"))}</strong>
@@ -136,48 +143,54 @@ function renderLobbyPanel(
   buttonLabel: (formId: string, label: string) => string,
 ): string {
   const network = bundle.connection.network;
+  const fallback = fallbackReasonLabel(network, t);
+  const seatProtocols = seatProtocolLabel(network);
   switch (panelTab) {
     case "network":
       return `
-        <div class="lobby10-panel">
+        <section class="lobby10-panel panel-region" id="lobby-panel-network" role="tabpanel" tabindex="0" aria-labelledby="lobby-tab-network" aria-label="${escapeHtml(t("game_network"))}">
           <div class="telemetry-grid">
             ${renderMetric(t("connection_status"), bundle.connection.status)}
             ${renderMetric(t("connection_mode"), bundle.connection.is_online ? t("connection_online") : t("connection_offline"))}
-            ${renderMetric(t("connection_transport"), network?.transport || "-")}
+            ${renderMetric(t("connection_transport"), activeTransportLabel(network, t))}
+            ${renderMetric(t("connection_requested_transport"), requestedTransportLabel(network, t))}
+            ${renderMetric(t("connection_path"), connectionPathLabel(network, t))}
             ${renderMetric(t("connection_protocol"), protocolLabel(network))}
             ${renderMetric(t("connection_backlog"), String(bundle.diagnostics.event_backlog || 0))}
             ${bundle.lobby?.role ? renderMetric(t("connection_role"), bundle.lobby.role) : ""}
+            ${seatProtocols ? renderMetric(t("connection_protocol_seats"), seatProtocols) : ""}
           </div>
-          ${bundle.connection.last_error ? `<div class="lobby10-inline-error">${escapeHtml(`${bundle.connection.last_error.code}: ${bundle.connection.last_error.message}`)}</div>` : ""}
+          ${bundle.connection.last_error ? `<div class="lobby10-inline-error" role="alert">${escapeHtml(`${bundle.connection.last_error.code}: ${bundle.connection.last_error.message}`)}</div>` : ""}
+          ${fallback ? `<p class="supporting-copy network-note">${escapeHtml(`${t("connection_fallback")}: ${fallback}`)}</p>` : ""}
           ${latestFailoverSignal(events, t) ? `<p class="supporting-copy">${escapeHtml(latestFailoverSignal(events, t) || "")}</p>` : ""}
-        </div>
+        </section>
       `;
     case "chat":
       return `
-        <div class="lobby10-panel">
+        <section class="lobby10-panel panel-region" id="lobby-panel-chat" role="tabpanel" tabindex="0" aria-labelledby="lobby-tab-chat" aria-label="${escapeHtml(t("lobby_chat"))}">
           <pre class="event-feed" role="log" aria-live="polite" data-pretext-block="lock-height" data-pretext-whitespace="pre-wrap">${escapeHtml(renderEventFeed())}</pre>
           <form class="chat-form" data-api-action="sendChat" data-form-id="sendChat">
             <input name="message" type="text" autocomplete="off" placeholder="${escapeHtml(t("chat_placeholder"))}">
             <button class="secondary-button" type="submit"${busyAttr("sendChat")}>${buttonLabel("sendChat", t("lobby_chat"))}</button>
           </form>
-        </div>
+        </section>
       `;
     default:
       return `
-        <div class="lobby10-panel">
+        <section class="lobby10-panel panel-region" id="lobby-panel-pulse" role="tabpanel" tabindex="0" aria-labelledby="lobby-tab-pulse" aria-label="${escapeHtml(t("lobby_overview"))}">
           <pre class="event-feed" role="log" aria-live="polite" data-pretext-block="lock-height" data-pretext-whitespace="pre-wrap">${escapeHtml(renderEventFeed())}</pre>
           <div class="lobby10-signal-grid">
             ${renderMetric(t("connection_status"), bundle.connection.status)}
             ${renderMetric(t("lobby_slots"), `${bundle.ui.lobby_slots.filter((slot) => !slot.is_empty).length}/${bundle.lobby?.num_players || bundle.ui.lobby_slots.length}`)}
             ${renderMetric(t("connection_backlog"), String(bundle.diagnostics.event_backlog || 0))}
           </div>
-        </div>
+        </section>
       `;
   }
 }
 
 function renderPanelTab(value: LobbyPanelTab, active: LobbyPanelTab, label: string, escapeHtml: (value: string) => string): string {
-  return `<button class="panel-tab${active === value ? " panel-tab-active" : ""}" type="button" role="tab" aria-selected="${active === value ? "true" : "false"}" data-panel-tab="lobby:${value}">${escapeHtml(label)}</button>`;
+  return `<button class="panel-tab${active === value ? " panel-tab-active" : ""}" type="button" id="lobby-tab-${value}" role="tab" tabindex="${active === value ? "0" : "-1"}" aria-selected="${active === value ? "true" : "false"}" aria-controls="lobby-panel-${value}" data-panel-tab="lobby:${value}" data-focus-key="lobby-tab:${value}">${escapeHtml(label)}</button>`;
 }
 
 function tabTitle(tab: LobbyPanelTab, t: (key: string, ...args: Array<string | number>) => string): string {

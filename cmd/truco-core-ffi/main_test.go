@@ -67,6 +67,21 @@ func TestDispatchIntentJSONErrors(t *testing.T) {
 	}
 }
 
+func TestCreateRuntimeHandleWithConfigJSON(t *testing.T) {
+	handle, err := createRuntimeHandleWithConfig(`{"app_data_dir":"/tmp/truco-test","coordinator_url":"https://coord.example","tailnet_control_url":"https://headscale.example"}`)
+	if err != nil {
+		t.Fatalf("createRuntimeHandleWithConfig: %v", err)
+	}
+	defer destroyRuntimeHandle(handle)
+	if handle == 0 {
+		t.Fatal("configured runtime handle is zero")
+	}
+
+	if _, err := createRuntimeHandleWithConfig(`{invalid`); err == nil {
+		t.Fatal("createRuntimeHandleWithConfig accepted invalid JSON")
+	}
+}
+
 func TestFFIRuntimeLifecycleProducesSnapshotAndEvents(t *testing.T) {
 	handle := createRuntimeHandle()
 	defer destroyRuntimeHandle(handle)

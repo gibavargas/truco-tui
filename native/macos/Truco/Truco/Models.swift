@@ -12,6 +12,78 @@ struct SnapshotBundle: Codable {
     let diagnostics: DiagnosticsSnapshot?
 }
 
+struct TrucoCopy {
+    let locale: String?
+
+    var isEnglish: Bool {
+        locale?.lowercased().hasPrefix("en") == true
+    }
+
+    func text(_ ptBR: String, _ enUS: String) -> String {
+        isEnglish ? enUS : ptBR
+    }
+
+    func seatLabel(_ seat: Int) -> String {
+        text("Assento \(seat + 1)", "Seat \(seat + 1)")
+    }
+
+    var waitingForPlayer: String { text("Aguardando...", "Waiting...") }
+    var youTag: String { text("você", "you") }
+    var hostTag: String { text("host", "host") }
+    var onlineTag: String { text("online", "online") }
+    var offlineTag: String { text("offline", "offline") }
+    var cpuTag: String { text("cpu", "cpu") }
+
+    func slotStatusLabel(_ status: String) -> String {
+        switch status {
+        case "occupied_online":
+            return text("ocupado", "occupied")
+        case "occupied_offline":
+            return text("desconectado", "disconnected")
+        case "provisional_cpu":
+            return text("cpu provisória", "provisional cpu")
+        default:
+            return text("vazio", "empty")
+        }
+    }
+
+    func roleLabel(_ role: String) -> String {
+        switch role {
+        case "partner":
+            return text("Parceiro", "Partner")
+        case "opponent":
+            return text("Adversário", "Opponent")
+        case "host":
+            return text("Host", "Host")
+        case "guest":
+            return text("Convidado", "Guest")
+        default:
+            return role
+        }
+    }
+
+    func eventSummary(_ event: AppEvent) -> String {
+        switch event.kind {
+        case "chat":
+            let author = event.payload?.author ?? text("Alguém", "Someone")
+            return "\(author): \(event.payload?.text ?? "")"
+        case "system":
+            return event.payload?.text ?? text("Atualização do sistema", "System update")
+        case "replacement_invite":
+            let key = event.payload?.invite_key ?? "-"
+            return text("Convite de substituição: \(key)", "Replacement invite: \(key)")
+        case "error":
+            return event.payload?.message ?? event.payload?.text ?? text("Erro", "Error")
+        case "lobby_updated":
+            return text("Lobby atualizado", "Lobby updated")
+        case "match_updated":
+            return text("Partida atualizada", "Match updated")
+        default:
+            return event.payload?.text ?? event.kind
+        }
+    }
+}
+
 struct CoreVersions: Codable {
     let core_api_version: Int?
     let protocol_version: Int?
@@ -119,18 +191,34 @@ struct ConnectionSnapshot: Codable {
 
 struct DiagnosticsSnapshot: Codable {
     let event_backlog: Int?
+    let replay_seed_lo: UInt64?
+    let replay_seed_hi: UInt64?
     let event_log: [String]?
 }
 
 struct NetworkSnapshot: Codable {
     let transport: String?
+    let requested_transport: String?
+    let direct_path_known: Bool?
+    let direct_path: Bool?
+    let relay_fallback: Bool?
+    let coordinator_status: String?
+    let coordinator_url: String?
+    let tailnet_node: String?
+    let tailnet_authority: String?
+    let tailnet_service_port: Int?
+    let fallback_reason: String?
     let supported_protocol_versions: [Int]?
     let negotiated_protocol_version: Int?
     let seat_protocol_versions: [String: Int]?
     let mixed_protocol_session: Bool?
 
     var transportLabel: String {
-        transport == "relay_quic_v2" ? "Relay QUIC v2" : "TCP + TLS"
+        switch transport {
+        case "tailnet_tsnet_v1": return "Tailnet"
+        case "relay_quic_v2": return "Relay QUIC v2"
+        default: return "TCP + TLS"
+        }
     }
 
     var supportedVersionsLabel: String {
@@ -157,6 +245,42 @@ struct NetworkSnapshot: Codable {
             return "Negociado v\(negotiatedProtocolVersion)"
         }
         return supportedVersionsLabel
+    }
+
+    func routeSummary(copy: TrucoCopy) -> String {
+        if relay_fallback == true {
+            return copy.text("Relay ativo", "Relay active")
+        }
+        if direct_path_known == true {
+            return direct_path == true
+                ? copy.text("Conexão direta confirmada", "Direct path confirmed")
+                : copy.text("Sem caminho direto", "No direct path")
+        }
+        if transport == "tailnet_tsnet_v1" {
+            return copy.text("Rota via Tailnet", "Tailnet route")
+        }
+        return copy.text("Aguardando rota", "Waiting for route")
+    }
+
+    func diagnosticsLines(copy: TrucoCopy) -> [(String, String)] {
+        var lines: [(String, String)] = [
+            (copy.text("Rede", "Network"), transportLabel),
+            (copy.text("Rota", "Route"), routeSummary(copy: copy)),
+        ]
+
+        if let requested_transport, !requested_transport.isEmpty, requested_transport != transport {
+            lines.append((copy.text("Preferência", "Preference"), requested_transport))
+        }
+        if let coordinator_status, !coordinator_status.isEmpty {
+            lines.append((copy.text("Coordenador", "Coordinator"), coordinator_status))
+        }
+        if let fallback_reason, !fallback_reason.isEmpty {
+            lines.append((copy.text("Fallback", "Fallback"), fallback_reason))
+        }
+        if let tailnet_node, !tailnet_node.isEmpty {
+            lines.append((copy.text("Nó Tailnet", "Tailnet node"), tailnet_node))
+        }
+        return lines
     }
 }
 
@@ -307,6 +431,33 @@ struct Card: Codable, Equatable, Hashable {
         case "Ouros": return "♦"
         case "Paus": return "♣"
         default: return ""
+        }
+    }
+
+    var accessibilityLabel: String {
+        if Rank.isEmpty || Suit.isEmpty {
+            return "Carta virada para baixo"
+        }
+        return "\(spokenRank) de \(spokenSuit)"
+    }
+
+    private var spokenRank: String {
+        switch Rank {
+        case "A": return "ás"
+        case "K": return "rei"
+        case "Q": return "dama"
+        case "J": return "valete"
+        default: return Rank
+        }
+    }
+
+    private var spokenSuit: String {
+        switch Suit {
+        case "Espadas": return "espadas"
+        case "Copas": return "copas"
+        case "Ouros": return "ouros"
+        case "Paus": return "paus"
+        default: return Suit.lowercased()
         }
     }
     

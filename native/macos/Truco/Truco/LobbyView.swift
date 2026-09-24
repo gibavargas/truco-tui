@@ -23,71 +23,78 @@ struct LobbyView: View {
             .ignoresSafeArea()
             
             LobbySuitPattern()
-            
-            VStack(spacing: 0) {
-                Spacer()
-                
-                // Title
-                VStack(spacing: 12) {
-                    HStack(spacing: 16) {
-                        Text("♠").font(.system(size: 40)).foregroundColor(.white.opacity(0.4))
-                        Text("TRUCO")
-                            .font(.system(size: 56, weight: .black, design: .rounded))
-                            .foregroundColor(.white)
-                            .tracking(6)
-                        Text("♣").font(.system(size: 40)).foregroundColor(.white.opacity(0.4))
+
+            GeometryReader { geometry in
+                let compact = geometry.size.width < 760 || geometry.size.height < 720
+                ScrollView {
+                    VStack(spacing: 0) {
+                        Spacer(minLength: compact ? 28 : 54)
+
+                        VStack(spacing: 12) {
+                            HStack(spacing: compact ? 10 : 16) {
+                                Text("♠")
+                                    .font(.system(size: compact ? 28 : 40))
+                                    .foregroundColor(.white.opacity(0.4))
+                                Text("TRUCO")
+                                    .font(.system(size: compact ? 42 : 56, weight: .black, design: .rounded))
+                                    .foregroundColor(.white)
+                                    .tracking(compact ? 4 : 6)
+                                Text("♣")
+                                    .font(.system(size: compact ? 28 : 40))
+                                    .foregroundColor(.white.opacity(0.4))
+                            }
+
+                            Text("PAULISTA")
+                                .font(.system(size: compact ? 14 : 18, weight: .bold, design: .rounded))
+                                .foregroundColor(.yellow.opacity(0.7))
+                                .tracking(compact ? 5 : 8)
+
+                            Rectangle()
+                                .fill(LinearGradient(colors: [.clear, .yellow.opacity(0.46), .clear], startPoint: .leading, endPoint: .trailing))
+                                .frame(width: compact ? 150 : 200, height: 2)
+                                .padding(.top, 8)
+                        }
+
+                        Spacer().frame(height: compact ? 30 : 50)
+
+                        VStack(spacing: compact ? 12 : 16) {
+                            LobbyButton(title: "Jogar Offline", icon: "person.fill", color: .green) {
+                                showOfflineSetup = true
+                            }
+
+                            LobbyButton(title: "Jogar Online", icon: "network", color: .blue) {
+                                showOnlineMenu = true
+                            }
+
+                            LobbyButton(title: "Idioma / Language", icon: "globe", color: .orange) {
+                                showLanguage = true
+                            }
+                        }
+                        .frame(maxWidth: compact ? 360 : 320)
+
+                        Spacer().frame(height: 30)
+
+                        if store.status != "Pronto para jogar" {
+                            Text(store.status)
+                                .font(.caption)
+                                .foregroundColor(.yellow.opacity(0.8))
+                                .padding(8)
+                                .background(Color.black.opacity(0.3))
+                                .cornerRadius(8)
+                                .textSelection(.enabled)
+                        }
+
+                        Spacer(minLength: compact ? 28 : 50)
+
+                        Text("v1.0 — Truco Paulista Nativo macOS")
+                            .font(.caption2)
+                            .foregroundColor(.white.opacity(0.25))
+                            .padding(.bottom, 16)
                     }
-                    
-                    Text("PAULISTA")
-                        .font(.system(size: 18, weight: .bold, design: .rounded))
-                        .foregroundColor(.yellow.opacity(0.7))
-                        .tracking(8)
-                    
-                    Rectangle()
-                        .fill(LinearGradient(colors: [.clear, .yellow.opacity(0.46), .clear], startPoint: .leading, endPoint: .trailing))
-                        .frame(width: 200, height: 2)
-                        .padding(.top, 8)
+                    .padding(.horizontal, compact ? 24 : 40)
+                    .frame(maxWidth: .infinity, minHeight: geometry.size.height)
                 }
-                
-                Spacer().frame(height: 50)
-                
-                // Menu buttons
-                VStack(spacing: 16) {
-                    LobbyButton(title: "Jogar Offline", icon: "person.fill", color: .green) {
-                        showOfflineSetup = true
-                    }
-                    
-                    LobbyButton(title: "Jogar Online", icon: "network", color: .blue) {
-                        showOnlineMenu = true
-                    }
-                    
-                    LobbyButton(title: "Idioma / Language", icon: "globe", color: .orange) {
-                        showLanguage = true
-                    }
-                }
-                .frame(maxWidth: 320)
-                
-                Spacer().frame(height: 30)
-                
-                // Status
-                if store.status != "Pronto para jogar" {
-                    Text(store.status)
-                        .font(.caption)
-                        .foregroundColor(.yellow.opacity(0.8))
-                        .padding(8)
-                        .background(Color.black.opacity(0.3))
-                        .cornerRadius(8)
-                }
-                
-                Spacer()
-                
-                // Footer
-                Text("v1.0 — Truco Paulista Nativo macOS")
-                    .font(.caption2)
-                    .foregroundColor(.white.opacity(0.25))
-                    .padding(.bottom, 16)
             }
-            .padding(.horizontal, 40)
         }
         .sheet(isPresented: $showOfflineSetup) {
             OfflineSetupSheet()
@@ -177,6 +184,7 @@ private struct LobbyButton: View {
             .scaleEffect(isHovered ? 1.018 : 1)
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(title)
         .onHover { h in
             withAnimation(.easeInOut(duration: 0.15)) { isHovered = h }
         }
@@ -250,7 +258,12 @@ struct OfflineSetupSheet: View {
             }
         }
         .padding()
-        .frame(width: 400, height: numPlayers == 4 ? 520 : 380)
+        .frame(
+            minWidth: 400,
+            idealWidth: 420,
+            minHeight: numPlayers == 4 ? 500 : 380,
+            idealHeight: numPlayers == 4 ? 540 : 400
+        )
     }
     
     private func startGame() {
@@ -318,7 +331,7 @@ struct OnlineMenuSheet: View {
                 .buttonStyle(.bordered)
         }
         .padding(30)
-        .frame(width: 400, height: 240)
+        .frame(minWidth: 380, idealWidth: 420, minHeight: 240, idealHeight: 260)
         .sheet(isPresented: $showHost) {
             HostSetupSheet()
                 .environmentObject(store)
@@ -339,7 +352,7 @@ struct HostSetupSheet: View {
     @State private var hostName = ""
     @State private var numPlayers = 2
     @State private var relayURL = ""
-    @State private var transportMode = "tcp_tls"
+    @State private var transportMode = "auto"
     
     var body: some View {
         VStack(spacing: 20) {
@@ -356,9 +369,10 @@ struct HostSetupSheet: View {
                 .pickerStyle(.segmented)
 
                 Picker("Transporte", selection: $transportMode) {
-                    Text("Direto").tag("tcp_tls")
-                    Text("Relay").tag("relay_quic_v2")
                     Text("Auto").tag("auto")
+                    Text("Direto").tag("tcp_tls")
+                    Text("Tailnet").tag("tailnet_tsnet_v1")
+                    Text("Relay").tag("relay_quic_v2")
                 }
                 .pickerStyle(.segmented)
                 
@@ -385,7 +399,7 @@ struct HostSetupSheet: View {
             }
         }
         .padding()
-        .frame(width: 400, height: 300)
+        .frame(minWidth: 400, idealWidth: 440, minHeight: 300, idealHeight: 330)
     }
 }
 
@@ -434,7 +448,7 @@ struct JoinSetupSheet: View {
             }
         }
         .padding()
-        .frame(width: 400, height: 340)
+        .frame(minWidth: 400, idealWidth: 430, minHeight: 320, idealHeight: 360)
     }
 }
 
@@ -473,13 +487,17 @@ struct LanguageSheet: View {
                 .buttonStyle(.bordered)
         }
         .padding(30)
-        .frame(width: 350, height: 300)
+        .frame(minWidth: 320, idealWidth: 360, minHeight: 280, idealHeight: 310)
     }
 }
 
 struct OnlineLobbyView: View {
     @EnvironmentObject var store: TrucoAppStore
     @State private var chatMessage = ""
+
+    private var copy: TrucoCopy {
+        TrucoCopy(locale: store.bundle?.locale)
+    }
     
     var body: some View {
         let lobby = store.bundle?.lobby
@@ -495,7 +513,7 @@ struct OnlineLobbyView: View {
                 let isCompact = geometry.size.width < 980 || geometry.size.height < 760
                 ScrollView {
                     VStack(spacing: isCompact ? 18 : 24) {
-                        Text(store.mode.contains("host") ? "🏠 Mesa criada" : "🔗 Conectado por convite")
+                        Text(store.mode.contains("host") ? copy.text("🏠 Mesa criada", "🏠 Table created") : copy.text("🔗 Conectado por convite", "🔗 Connected by invite"))
                             .font(.system(size: isCompact ? 30 : 34, weight: .black, design: .rounded))
                             .foregroundColor(.white)
 
@@ -520,7 +538,7 @@ struct OnlineLobbyView: View {
                         if isCompact {
                             HStack(spacing: 12) {
                                 if store.mode == "host_lobby" {
-                                    Button("Começar partida") {
+                                    Button(copy.text("Começar partida", "Start match")) {
                                         store.startHostedMatch()
                                     }
                                     .buttonStyle(.borderedProminent)
@@ -528,7 +546,7 @@ struct OnlineLobbyView: View {
                                     .controlSize(.regular)
                                 }
 
-                                Button("Sair da mesa") {
+                                Button(copy.text("Sair da mesa", "Leave table")) {
                                     store.closeSession()
                                 }
                                 .disabled(!store.canCloseSession)
@@ -537,7 +555,7 @@ struct OnlineLobbyView: View {
                                 .controlSize(.regular)
                             }
                         } else {
-                            Button("Sair da mesa") {
+                            Button(copy.text("Sair da mesa", "Leave table")) {
                                 store.closeSession()
                             }
                             .disabled(!store.canCloseSession)
@@ -567,7 +585,7 @@ struct OnlineLobbyView: View {
             if let lobby {
                 if let key = lobby.invite_key, !key.isEmpty {
                     VStack(spacing: 8) {
-                        Text("Chave de convite")
+                        Text(copy.text("Chave de convite", "Invite key"))
                             .font(.footnote.weight(.semibold))
                             .foregroundColor(.white.opacity(0.7))
 
@@ -590,12 +608,13 @@ struct OnlineLobbyView: View {
                         .padding(compact ? 10 : 12)
                         .background(Color.black.opacity(0.34))
                         .cornerRadius(10)
+                        .accessibilityLabel(copy.text("Chave de convite", "Invite key"))
                     }
                 }
 
                 if !slotStates.isEmpty {
                     VStack(spacing: 10) {
-                        Text("Assentos (\(slotStates.filter { !$0.is_empty }.count)/\(lobby.num_players ?? slotStates.count)):")
+                        Text("\(copy.text("Assentos", "Seats")) (\(slotStates.filter { !$0.is_empty }.count)/\(lobby.num_players ?? slotStates.count)):")
                             .font(.footnote.weight(.bold))
                             .foregroundColor(.white.opacity(0.7))
 
@@ -606,36 +625,36 @@ struct OnlineLobbyView: View {
                                         .fill(slotBadgeColor(for: slot))
                                         .frame(width: 10, height: 10)
                                     VStack(alignment: .leading, spacing: 4) {
-                                        Text(slot.name?.isEmpty == false ? slot.name! : "Aguardando...")
+                                        Text(slot.name?.isEmpty == false ? slot.name! : copy.waitingForPlayer)
                                             .font(.headline)
                                             .foregroundColor(slot.is_empty ? .gray : .white)
-                                        Text(slotStatusLabel(slot.status))
+                                        Text(copy.slotStatusLabel(slot.status))
                                             .font(.footnote)
                                             .foregroundColor(.white.opacity(0.68))
                                     }
                                     Spacer()
-                                    Text("Slot \(slot.seat + 1)")
+                                    Text(copy.seatLabel(slot.seat))
                                         .font(.caption.weight(.semibold))
                                         .foregroundColor(.white.opacity(0.56))
                                 }
 
                                 HStack(spacing: 6) {
-                                    if slot.is_local { slotTag("você", color: .yellow) }
-                                    if slot.is_host { slotTag("host", color: .blue) }
-                                    slotTag(slot.is_connected ? "online" : "offline", color: slot.is_connected ? .green : .gray)
-                                    if slot.is_provisional_cpu { slotTag("cpu", color: .orange) }
+                                    if slot.is_local { slotTag(copy.youTag, color: .yellow) }
+                                    if slot.is_host { slotTag(copy.hostTag, color: .blue) }
+                                    slotTag(slot.is_connected ? copy.onlineTag : copy.offlineTag, color: slot.is_connected ? .green : .gray)
+                                    if slot.is_provisional_cpu { slotTag(copy.cpuTag, color: .orange) }
                                 }
 
                                 HStack(spacing: 8) {
                                     if slot.can_vote_host {
-                                        Button("Votar host") {
+                                        Button(copy.text("Votar host", "Vote host")) {
                                             store.voteHost(candidateSeat: slot.seat)
                                         }
                                         .font(.caption)
                                         .buttonStyle(.bordered)
                                     }
                                     if slot.can_request_replacement {
-                                        Button("Chamar substituto") {
+                                        Button(copy.text("Chamar substituto", "Invite substitute")) {
                                             store.requestReplacementInvite(targetSeat: slot.seat)
                                         }
                                         .font(.caption)
@@ -651,6 +670,7 @@ struct OnlineLobbyView: View {
                                     .stroke(Color.white.opacity(0.08), lineWidth: 1)
                             )
                             .cornerRadius(12)
+                            .accessibilityElement(children: .combine)
                         }
                     }
                 }
@@ -658,21 +678,37 @@ struct OnlineLobbyView: View {
 
             VStack(alignment: .leading, spacing: 12) {
                 let network = connection?.network
-                Text("Detalhes da mesa")
+                Text(copy.text("Detalhes da mesa", "Table details"))
                     .font(.footnote.bold())
                     .foregroundColor(.white.opacity(0.7))
-                connectionLine("Estado", connection?.status ?? store.mode)
-                connectionLine("Modo", connection?.is_online == true ? "online" : "offline")
+                connectionLine(copy.text("Estado", "Status"), connection?.status ?? store.mode)
+                connectionLine(copy.text("Modo", "Mode"), connection?.is_online == true ? copy.onlineTag : copy.offlineTag)
                 if let role = lobby?.role, !role.isEmpty {
-                    connectionLine("Papel", role)
+                    connectionLine(copy.text("Papel", "Role"), copy.roleLabel(role))
                 }
                 if let network {
-                    connectionLine("Rede", network.transportLabel)
-                    connectionLine("Compatibilidade", network.compatibilitySummary(isHost: connection?.is_host == true))
+                    connectionLine(copy.text("Compatibilidade", "Compatibility"), network.compatibilitySummary(isHost: connection?.is_host == true))
+                    ForEach(Array(network.diagnosticsLines(copy: copy).dropFirst()), id: \.0) { line in
+                        connectionLine(line.0, line.1)
+                    }
                 }
-                connectionLine("Eventos", "\(diagnostics?.event_backlog ?? 0)")
+                connectionLine(copy.text("Eventos", "Events"), "\(diagnostics?.event_backlog ?? 0)")
                 if let message = connection?.last_error?.message, !message.isEmpty {
-                    connectionLine("Erro", message, tint: .red.opacity(0.95))
+                    connectionLine(copy.text("Erro", "Error"), message, tint: .red.opacity(0.95))
+                }
+                if let entries = diagnostics?.event_log?.suffix(4), !entries.isEmpty {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(copy.text("Diagnóstico", "Diagnostics"))
+                            .font(.caption.weight(.semibold))
+                            .foregroundColor(.white.opacity(0.6))
+                        ForEach(Array(entries.enumerated()), id: \.offset) { _, line in
+                            Text(line)
+                                .font(.caption2.monospaced())
+                                .foregroundColor(.white.opacity(0.72))
+                                .textSelection(.enabled)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                    }
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -681,7 +717,7 @@ struct OnlineLobbyView: View {
             .cornerRadius(12)
 
             if !compact && store.mode == "host_lobby" {
-                Button("Começar partida") {
+                Button(copy.text("Começar partida", "Start match")) {
                     store.startHostedMatch()
                 }
                 .buttonStyle(.borderedProminent)
@@ -689,7 +725,7 @@ struct OnlineLobbyView: View {
                 .controlSize(.large)
                 .font(.headline.weight(.black))
             } else if !compact {
-                Text("Aguardando o host iniciar a partida...")
+                Text(copy.text("Aguardando o host iniciar a partida...", "Waiting for the host to start the match..."))
                     .font(.footnote)
                     .foregroundColor(.white.opacity(0.6))
             }
@@ -699,7 +735,7 @@ struct OnlineLobbyView: View {
     @ViewBuilder
     private func lobbyEventsColumn(compact: Bool) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Atualizações")
+            Text(copy.text("Atualizações", "Updates"))
                 .font(.headline)
                 .foregroundColor(.white)
 
@@ -723,22 +759,16 @@ struct OnlineLobbyView: View {
             }
 
             HStack {
-                TextField("Digite uma mensagem...", text: $chatMessage)
+                TextField(copy.text("Digite uma mensagem...", "Type a message..."), text: $chatMessage)
                     .textFieldStyle(.roundedBorder)
                     .onSubmit {
-                        if !chatMessage.isEmpty {
-                            store.sendChat(text: chatMessage)
-                            chatMessage = ""
-                        }
+                        sendChatIfNeeded()
                     }
-                Button("Enviar") {
-                    if !chatMessage.isEmpty {
-                        store.sendChat(text: chatMessage)
-                        chatMessage = ""
-                    }
+                Button(copy.text("Enviar", "Send")) {
+                    sendChatIfNeeded()
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(chatMessage.isEmpty)
+                .disabled(chatMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
         }
         .frame(maxHeight: compact ? 250 : .infinity, alignment: .top)
@@ -754,19 +784,6 @@ struct OnlineLobbyView: View {
             return .orange
         default:
             return .gray
-        }
-    }
-
-    private func slotStatusLabel(_ status: String) -> String {
-        switch status {
-        case "occupied_online":
-            return "ocupado"
-        case "occupied_offline":
-            return "desconectado"
-        case "provisional_cpu":
-            return "cpu provisoria"
-        default:
-            return "vazio"
         }
     }
 
@@ -791,12 +808,19 @@ struct OnlineLobbyView: View {
         }
     }
 
+    private func sendChatIfNeeded() {
+        let trimmed = chatMessage.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        store.sendChat(text: trimmed)
+        chatMessage = ""
+    }
+
     @ViewBuilder
     private func eventRow(_ ev: AppEvent) -> some View {
         switch ev.kind {
         case "chat":
             HStack(alignment: .top) {
-                Text("\(ev.payload?.author ?? "Alguém"):")
+                Text("\(ev.payload?.author ?? copy.text("Alguém", "Someone")):")
                     .font(.footnote.bold())
                     .foregroundColor(.cyan)
                 Text(ev.payload?.text ?? "")
@@ -808,23 +832,24 @@ struct OnlineLobbyView: View {
                 .font(.footnote.italic())
                 .foregroundColor(.gray)
         case "replacement_invite":
-            Text("Convite de substituição (\(ev.payload?.target_seat ?? 0)): \(ev.payload?.invite_key ?? "")")
+            Text("\(copy.text("Convite de substituição", "Replacement invite")) (\(copy.seatLabel(max(0, ev.payload?.target_seat ?? 0)))): \(ev.payload?.invite_key ?? "")")
                 .font(.footnote.italic())
                 .foregroundColor(.yellow)
+                .textSelection(.enabled)
         case "error":
-            Text(ev.payload?.message ?? ev.payload?.text ?? "Erro")
+            Text(ev.payload?.message ?? ev.payload?.text ?? copy.text("Erro", "Error"))
                 .font(.footnote)
                 .foregroundColor(.red.opacity(0.9))
         case "lobby_updated":
-            Text("Lobby atualizado")
+            Text(copy.text("Lobby atualizado", "Lobby updated"))
                 .font(.footnote)
                 .foregroundColor(.white.opacity(0.6))
         case "match_updated":
-            Text("Partida atualizada")
+            Text(copy.text("Partida atualizada", "Match updated"))
                 .font(.footnote)
                 .foregroundColor(.white.opacity(0.6))
         default:
-            Text(ev.payload?.text ?? ev.kind)
+            Text(copy.eventSummary(ev))
                 .font(.footnote)
                 .foregroundColor(.white.opacity(0.7))
         }

@@ -156,6 +156,12 @@ type CoreVersions struct {
 	SnapshotSchema  int `json:"snapshot_schema_version"`
 }
 
+type RuntimeConfig struct {
+	AppDataDir        string `json:"app_data_dir,omitempty"`
+	CoordinatorURL    string `json:"coordinator_url,omitempty"`
+	TailnetControlURL string `json:"tailnet_control_url,omitempty"`
+}
+
 type LobbySnapshot struct {
 	InviteKey      string         `json:"invite_key,omitempty"`
 	Slots          []string       `json:"slots,omitempty"`
@@ -200,6 +206,16 @@ type UIStateSnapshot struct {
 
 type NetworkSnapshot struct {
 	Transport                 string      `json:"transport,omitempty"`
+	RequestedTransport        string      `json:"requested_transport,omitempty"`
+	DirectPathKnown           bool        `json:"direct_path_known,omitempty"`
+	DirectPath                bool        `json:"direct_path,omitempty"`
+	RelayFallback             bool        `json:"relay_fallback,omitempty"`
+	CoordinatorStatus         string      `json:"coordinator_status,omitempty"`
+	CoordinatorURL            string      `json:"coordinator_url,omitempty"`
+	TailnetNode               string      `json:"tailnet_node,omitempty"`
+	TailnetAuthority          string      `json:"tailnet_authority,omitempty"`
+	TailnetServicePort        int         `json:"tailnet_service_port,omitempty"`
+	FallbackReason            string      `json:"fallback_reason,omitempty"`
 	SupportedProtocolVersions []int       `json:"supported_protocol_versions,omitempty"`
 	NegotiatedProtocolVersion int         `json:"negotiated_protocol_version,omitempty"`
 	SeatProtocolVersions      map[int]int `json:"seat_protocol_versions,omitempty"`
@@ -245,11 +261,13 @@ type NewOfflineGamePayload struct {
 }
 
 type CreateHostPayload struct {
-	BindAddr      string `json:"bind_addr,omitempty"`
-	HostName      string `json:"host_name"`
-	NumPlayers    int    `json:"num_players"`
-	RelayURL      string `json:"relay_url,omitempty"`
-	TransportMode string `json:"transport_mode,omitempty"`
+	BindAddr          string `json:"bind_addr,omitempty"`
+	HostName          string `json:"host_name"`
+	NumPlayers        int    `json:"num_players"`
+	RelayURL          string `json:"relay_url,omitempty"`
+	TransportMode     string `json:"transport_mode,omitempty"`
+	CoordinatorURL    string `json:"coordinator_url,omitempty"`
+	TailnetControlURL string `json:"tailnet_control_url,omitempty"`
 }
 
 type JoinSessionPayload struct {

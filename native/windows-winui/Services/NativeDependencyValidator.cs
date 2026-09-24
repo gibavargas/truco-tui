@@ -7,17 +7,22 @@ namespace TrucoWinUI.Services;
 
 public static class NativeDependencyValidator
 {
+    private const string CoreLibrary = "truco-core-ffi.dll";
+
     private static readonly string[] RequiredFiles =
     [
-        "truco-core-ffi.dll",
+        CoreLibrary,
         "libgcc_s_seh-1.dll",
         "libstdc++-6.dll",
         "libwinpthread-1.dll",
     ];
 
-    public static void EnsurePresent()
+    public static void EnsurePresent(string? coreLibraryPath = null)
     {
-        string baseDir = AppContext.BaseDirectory;
+        string baseDir = string.IsNullOrWhiteSpace(coreLibraryPath)
+            ? AppContext.BaseDirectory
+            : Path.GetDirectoryName(Path.GetFullPath(coreLibraryPath)) ?? AppContext.BaseDirectory;
+
         List<string> missing = RequiredFiles
             .Where(file => !File.Exists(Path.Combine(baseDir, file)))
             .ToList();
@@ -28,7 +33,8 @@ public static class NativeDependencyValidator
         }
 
         throw new DllNotFoundException(
-            "Windows native dependencies are missing from the application output: " +
-            string.Join(", ", missing));
+            $"Windows native dependencies are missing from {baseDir}: " +
+            string.Join(", ", missing) +
+            ". Build the portable bundle so the Go FFI DLL and MinGW runtime DLLs are copied together.");
     }
 }

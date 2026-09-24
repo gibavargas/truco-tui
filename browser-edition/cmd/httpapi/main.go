@@ -220,9 +220,12 @@ func (srv *apiServer) dispatch(action, sessionID string, body map[string]interfa
 
 	case "startOnlineHost":
 		if err := dispatchIntent(bs.rt, appcore.IntentCreateHostSession, appcore.CreateHostPayload{
-			HostName:   strings.TrimSpace(strVal(body, "name", "Host")),
-			NumPlayers: sanitizeNumPlayers(intVal(body, "numPlayers", 2)),
-			RelayURL:   strings.TrimSpace(strVal(body, "relay_url", "")),
+			HostName:          strings.TrimSpace(strVal(body, "name", "Host")),
+			NumPlayers:        sanitizeNumPlayers(intVal(body, "numPlayers", 2)),
+			RelayURL:          strings.TrimSpace(strVal(body, "relay_url", "")),
+			TransportMode:     strings.TrimSpace(strVal(body, "transport_mode", "")),
+			CoordinatorURL:    strings.TrimSpace(strVal(body, "coordinator_url", "")),
+			TailnetControlURL: strings.TrimSpace(strVal(body, "tailnet_control_url", "")),
 		}); err != nil {
 			return http.StatusUnprocessableEntity, runtimeErrResult(bs.rt, "create_host_session_failed", err)
 		}

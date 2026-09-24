@@ -19,6 +19,8 @@ mod imp {
         #[template_child]
         pub main_stack: TemplateChild<gtk::Stack>,
         #[template_child]
+        pub lbl_header_title: TemplateChild<gtk::Label>,
+        #[template_child]
         pub lbl_status_chip: TemplateChild<gtk::Label>,
         #[template_child]
         pub lobby_page: TemplateChild<gtk::Box>,
@@ -26,6 +28,20 @@ mod imp {
         pub lbl_lobby_title: TemplateChild<gtk::Label>,
         #[template_child]
         pub lbl_lobby_subtitle: TemplateChild<gtk::Label>,
+        #[template_child]
+        pub lbl_setup_title: TemplateChild<gtk::Label>,
+        #[template_child]
+        pub lbl_name_field: TemplateChild<gtk::Label>,
+        #[template_child]
+        pub lbl_players_field: TemplateChild<gtk::Label>,
+        #[template_child]
+        pub lbl_language_field: TemplateChild<gtk::Label>,
+        #[template_child]
+        pub lbl_relay_field: TemplateChild<gtk::Label>,
+        #[template_child]
+        pub lbl_transport_field: TemplateChild<gtk::Label>,
+        #[template_child]
+        pub lbl_role_field: TemplateChild<gtk::Label>,
         #[template_child]
         pub btn_start_demo: TemplateChild<gtk::Button>,
         #[template_child]
@@ -36,6 +52,8 @@ mod imp {
         pub dd_locale: TemplateChild<gtk::DropDown>,
         #[template_child]
         pub entry_relay_url: TemplateChild<gtk::Entry>,
+        #[template_child]
+        pub dd_transport_mode: TemplateChild<gtk::DropDown>,
         #[template_child]
         pub dd_desired_role: TemplateChild<gtk::DropDown>,
         #[template_child]
@@ -49,11 +67,17 @@ mod imp {
         #[template_child]
         pub lbl_invite_key_display: TemplateChild<gtk::Label>,
         #[template_child]
+        pub lbl_online_meta: TemplateChild<gtk::Label>,
+        #[template_child]
+        pub lbl_slots_title: TemplateChild<gtk::Label>,
+        #[template_child]
         pub btn_copy_invite: TemplateChild<gtk::Button>,
         #[template_child]
         pub list_slots: TemplateChild<gtk::ListBox>,
         #[template_child]
         pub btn_start_online_match: TemplateChild<gtk::Button>,
+        #[template_child]
+        pub lbl_chat_title: TemplateChild<gtk::Label>,
         #[template_child]
         pub list_chat: TemplateChild<gtk::ListBox>,
         #[template_child]
@@ -62,6 +86,12 @@ mod imp {
         pub btn_send_chat: TemplateChild<gtk::Button>,
         #[template_child]
         pub btn_leave_online: TemplateChild<gtk::Button>,
+        #[template_child]
+        pub lbl_diagnostics_title: TemplateChild<gtk::Label>,
+        #[template_child]
+        pub lbl_diagnostics_summary: TemplateChild<gtk::Label>,
+        #[template_child]
+        pub lbl_diagnostics_log: TemplateChild<gtk::Label>,
 
         #[template_child]
         pub game_page: TemplateChild<gtk::Overlay>,
@@ -143,6 +173,9 @@ impl TrucoWindow {
     pub fn main_stack(&self) -> gtk::Stack {
         self.imp().main_stack.get()
     }
+    pub fn lbl_header_title(&self) -> gtk::Label {
+        self.imp().lbl_header_title.get()
+    }
     pub fn lbl_status_chip(&self) -> gtk::Label {
         self.imp().lbl_status_chip.get()
     }
@@ -154,6 +187,27 @@ impl TrucoWindow {
     }
     pub fn lbl_lobby_subtitle(&self) -> gtk::Label {
         self.imp().lbl_lobby_subtitle.get()
+    }
+    pub fn lbl_setup_title(&self) -> gtk::Label {
+        self.imp().lbl_setup_title.get()
+    }
+    pub fn lbl_name_field(&self) -> gtk::Label {
+        self.imp().lbl_name_field.get()
+    }
+    pub fn lbl_players_field(&self) -> gtk::Label {
+        self.imp().lbl_players_field.get()
+    }
+    pub fn lbl_language_field(&self) -> gtk::Label {
+        self.imp().lbl_language_field.get()
+    }
+    pub fn lbl_relay_field(&self) -> gtk::Label {
+        self.imp().lbl_relay_field.get()
+    }
+    pub fn lbl_transport_field(&self) -> gtk::Label {
+        self.imp().lbl_transport_field.get()
+    }
+    pub fn lbl_role_field(&self) -> gtk::Label {
+        self.imp().lbl_role_field.get()
     }
     pub fn btn_start_demo(&self) -> gtk::Button {
         self.imp().btn_start_demo.get()
@@ -169,6 +223,9 @@ impl TrucoWindow {
     }
     pub fn entry_relay_url(&self) -> gtk::Entry {
         self.imp().entry_relay_url.get()
+    }
+    pub fn dd_transport_mode(&self) -> gtk::DropDown {
+        self.imp().dd_transport_mode.get()
     }
     pub fn dd_desired_role(&self) -> gtk::DropDown {
         self.imp().dd_desired_role.get()
@@ -188,6 +245,12 @@ impl TrucoWindow {
     pub fn lbl_invite_key_display(&self) -> gtk::Label {
         self.imp().lbl_invite_key_display.get()
     }
+    pub fn lbl_online_meta(&self) -> gtk::Label {
+        self.imp().lbl_online_meta.get()
+    }
+    pub fn lbl_slots_title(&self) -> gtk::Label {
+        self.imp().lbl_slots_title.get()
+    }
     pub fn btn_copy_invite(&self) -> gtk::Button {
         self.imp().btn_copy_invite.get()
     }
@@ -196,6 +259,9 @@ impl TrucoWindow {
     }
     pub fn btn_start_online_match(&self) -> gtk::Button {
         self.imp().btn_start_online_match.get()
+    }
+    pub fn lbl_chat_title(&self) -> gtk::Label {
+        self.imp().lbl_chat_title.get()
     }
     pub fn list_chat(&self) -> gtk::ListBox {
         self.imp().list_chat.get()
@@ -208,6 +274,15 @@ impl TrucoWindow {
     }
     pub fn btn_leave_online(&self) -> gtk::Button {
         self.imp().btn_leave_online.get()
+    }
+    pub fn lbl_diagnostics_title(&self) -> gtk::Label {
+        self.imp().lbl_diagnostics_title.get()
+    }
+    pub fn lbl_diagnostics_summary(&self) -> gtk::Label {
+        self.imp().lbl_diagnostics_summary.get()
+    }
+    pub fn lbl_diagnostics_log(&self) -> gtk::Label {
+        self.imp().lbl_diagnostics_log.get()
     }
 
     pub fn game_page(&self) -> gtk::Overlay {

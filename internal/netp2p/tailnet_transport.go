@@ -122,7 +122,6 @@ type tailnetEndpoint struct {
 	authorityNode     string
 	servicePort       int
 	coordinatorStatus string
-	fallbackReason    string
 }
 
 func (e *tailnetEndpoint) Close() error {

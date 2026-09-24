@@ -91,7 +91,7 @@ func TestViewReflectsSelectedTabPanel(t *testing.T) {
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})
 	m = updated.(UIModel)
 	view := m.View()
-	if !strings.Contains(view, "CHAT (offline)") {
+	if !strings.Contains(view, "CHAT:") && !strings.Contains(view, "CHAT (offline)") {
 		t.Fatalf("chat panel not rendered; view=%q", view)
 	}
 
@@ -99,7 +99,11 @@ func TestViewReflectsSelectedTabPanel(t *testing.T) {
 	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
 	m = updated.(UIModel)
 	view = m.View()
-	if !strings.Contains(view, "LOG DA PARTIDA") {
+	expectedLogSummary := lastLine(m.snapshot.Logs)
+	if expectedLogSummary == "" {
+		expectedLogSummary = "sem eventos recentes"
+	}
+	if !strings.Contains(view, expectedLogSummary) && !strings.Contains(view, "LOG DA PARTIDA") {
 		t.Fatalf("log panel not rendered; view=%q", view)
 	}
 }
@@ -276,6 +280,30 @@ func TestHelpControlsOnlineHostShowsGovernanceCommands(t *testing.T) {
 	}
 }
 
+func TestTablePanelShowsCurrentActionSummary(t *testing.T) {
+	m := newUIModelForTest(t)
+	m.snapshot.TurnPlayer = m.snapshot.Players[m.localPlayerIdx].ID
+
+	panel := m.renderTabPanel(100, 3)
+	if !strings.Contains(panel, "Ações:") {
+		t.Fatalf("table panel should show action summary: %q", panel)
+	}
+	if !strings.Contains(panel, "[1-3]") {
+		t.Fatalf("table panel should advertise playable card keys: %q", panel)
+	}
+}
+
+func TestCompactLogPanelShowsLatestErrorInsteadOfOnlyHeader(t *testing.T) {
+	m := newUIModelForTest(t)
+	m.activeTab = "log"
+	m.errorLog = []string{"Erro: conexão perdida"}
+
+	panel := m.renderTabPanel(80, 1)
+	if !strings.Contains(panel, "conexão perdida") {
+		t.Fatalf("compact log panel should surface latest error: %q", panel)
+	}
+}
+
 func TestRoleLaneIncludesLocalRole(t *testing.T) {
 	m := newUIModelForFourPlayers(t)
 	roleLane := m.renderRoleLane(120)
@@ -296,6 +324,26 @@ func TestViewHighlightsLeadingRoundCard(t *testing.T) {
 	view := m.View()
 	if !strings.Contains(view, "★") {
 		t.Fatalf("leading-card marker is missing: view=%q", view)
+	}
+}
+
+func TestOnlineFaceDownKeyRoutesWhenAvailable(t *testing.T) {
+	m := onlineMatchModel{
+		mode:    onlineModeHost,
+		UIModel: newUIModelForTest(t),
+	}
+	m.snapshot.CurrentHand.Round = 2
+	m.snapshot.PendingRaiseFor = -1
+	m.snapshot.TurnPlayer = m.snapshot.Players[m.localPlayerIdx].ID
+
+	if !m.canFaceDownNow() {
+		t.Fatalf("expected face-down action to be available in test setup")
+	}
+
+	updated, _ := m.Update(keyRune('v'))
+	m = updated.(onlineMatchModel)
+	if !m.faceDownMode {
+		t.Fatalf("expected face-down mode to toggle on in online match")
 	}
 }
 

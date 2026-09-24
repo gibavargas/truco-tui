@@ -1,17 +1,26 @@
+using System.Collections.Generic;
 using System.Text.Json.Serialization;
 
-namespace TrucoWinUI.Models;
+namespace TrucoWinUI.Contracts;
 
-public sealed class CoreVersions
+public static class RuntimeContract
 {
-    [JsonPropertyName("core_api_version")]
-    public int CoreApiVersion { get; set; }
+    public const int CoreApiVersion = 1;
+    public const int ProtocolVersion = 2;
+    public const int SnapshotSchemaVersion = 2;
 
-    [JsonPropertyName("protocol_version")]
-    public int ProtocolVersion { get; set; }
-
-    [JsonPropertyName("snapshot_schema_version")]
-    public int SnapshotSchemaVersion { get; set; }
+    public const string SetLocale = "set_locale";
+    public const string NewOfflineGame = "new_offline_game";
+    public const string NewHand = "new_hand";
+    public const string CreateHostSession = "create_host_session";
+    public const string JoinSession = "join_session";
+    public const string StartHostedMatch = "start_hosted_match";
+    public const string GameAction = "game_action";
+    public const string Tick = "tick";
+    public const string SendChat = "send_chat";
+    public const string VoteHost = "vote_host";
+    public const string RequestReplacementInvite = "request_replacement_invite";
+    public const string CloseSession = "close_session";
 }
 
 public sealed class AppIntentEnvelope<TPayload>
@@ -41,6 +50,10 @@ public sealed class NewOfflineGameIntentPayload
 
 public sealed class CreateHostSessionIntentPayload
 {
+    [JsonPropertyName("bind_addr")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? BindAddr { get; set; }
+
     [JsonPropertyName("host_name")]
     public string HostName { get; set; } = "";
 
@@ -50,6 +63,18 @@ public sealed class CreateHostSessionIntentPayload
     [JsonPropertyName("relay_url")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? RelayUrl { get; set; }
+
+    [JsonPropertyName("transport_mode")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? TransportMode { get; set; }
+
+    [JsonPropertyName("coordinator_url")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? CoordinatorUrl { get; set; }
+
+    [JsonPropertyName("tailnet_control_url")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? TailnetControlUrl { get; set; }
 }
 
 public sealed class JoinSessionIntentPayload
@@ -72,6 +97,17 @@ public sealed class GameActionIntentPayload
     [JsonPropertyName("card_index")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public int CardIndex { get; set; }
+
+    [JsonPropertyName("face_down")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool FaceDown { get; set; }
+}
+
+public sealed class TickIntentPayload
+{
+    [JsonPropertyName("max_steps")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public int MaxSteps { get; set; }
 }
 
 public sealed class SendChatIntentPayload

@@ -36,7 +36,7 @@ final class TrucoAppStore: ObservableObject {
 
     // MARK: - Online Host
 
-    func createHost(name: String, numPlayers: Int, relayURL: String?, transportMode: String = "tcp_tls") {
+    func createHost(name: String, numPlayers: Int, relayURL: String?, transportMode: String = "auto") {
         var payload: [String: Any] = [
             "host_name": name,
             "num_players": numPlayers,
@@ -96,6 +96,11 @@ final class TrucoAppStore: ObservableObject {
         guard canCloseSession else { return }
         dispatchIntent(json: makeIntentJSON(kind: "close_session"))
         events.removeAll()
+    }
+
+    func newHand() {
+        guard let mode = bundle?.mode, mode == "offline_match" || mode == "host_match" else { return }
+        dispatchIntent(json: makeIntentJSON(kind: "new_hand"))
     }
 
     func replayOfflineMatch() {

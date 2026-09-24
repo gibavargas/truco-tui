@@ -8,6 +8,7 @@
     <UseWinUI>true</UseWinUI>
     <WindowsPackageType>None</WindowsPackageType>
     <Nullable>enable</Nullable>
+    <ApplicationIcon>Assets\truco.ico</ApplicationIcon>
     <NativeRuntimeDir Condition="'$(NativeRuntimeDir)' == '' and Exists('C:\msys64\mingw64\bin')">C:\msys64\mingw64\bin</NativeRuntimeDir>
     <AppxGeneratePriEnabled>false</AppxGeneratePriEnabled>
     <EnableDefaultWindowsAppSdkPRIResourceItems>false</EnableDefaultWindowsAppSdkPRIResourceItems>
@@ -35,5 +36,11 @@
       <Link>libwinpthread-1.dll</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="Assets\truco.ico">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
   </ItemGroup>
 </Project>

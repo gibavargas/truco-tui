@@ -973,6 +973,15 @@ function renderSetup(): string {
                     <span>${escapeHtml(t("setup_relay"))}</span>
                     <input name="relay_url" type="text" value="${escapeHtml(state.relayURL)}" placeholder="${escapeHtml(t("relay_placeholder"))}" autocomplete="off" title="${escapeHtml(t("setup_relay_hint"))}">
                   </label>
+                  <label>
+                    <span>${escapeHtml(t("setup_transport"))}</span>
+                    <select name="transport_mode">
+                      <option value="">${escapeHtml(t("transport_auto"))}</option>
+                      <option value="tcp_tls">${escapeHtml(t("transport_direct"))}</option>
+                      <option value="tailnet_tsnet_v1">${escapeHtml(t("transport_tailnet"))}</option>
+                      <option value="relay_quic_v2">${escapeHtml(t("transport_relay"))}</option>
+                    </select>
+                  </label>
                 </div>
               </details>
               <button class="secondary-button" type="submit"${busyAttr("startOnlineHost")}>${buttonLabel("startOnlineHost", t("setup_host"))}</button>

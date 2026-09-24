@@ -247,6 +247,17 @@ func (m UIModel) View() string {
 	if m.width == 0 {
 		return tr("ui_loading")
 	}
+	if m.width < minRenderWidth || m.height < minRenderHeight {
+		title := tr("terminal_too_small_title")
+		desc := fmt.Sprintf(tr("terminal_too_small_desc"), minRenderWidth, minRenderHeight, m.width, m.height)
+		warningBox := lipgloss.NewStyle().
+			Border(lipgloss.DoubleBorder()).
+			BorderForeground(lgRed).
+			Padding(1, 2).
+			Align(lipgloss.Center).
+			Render(fmt.Sprintf("%s\n\n%s", title, desc))
+		return fitBlock(warningBox, maxInt(1, m.width), maxInt(1, m.height), lipgloss.Center, lipgloss.Center, lgBlack)
+	}
 	return m.renderTable()
 }
 
@@ -294,7 +305,7 @@ func (m UIModel) renderFooter(w int, lp layoutProfile) (string, string, string) 
 	tabPanel := m.renderTabPanel(w, lp.panelLines)
 
 	// ─── 4. Status / Help bar ───────────────────────────────────────────
-	statusLine := fitSingleLine(m.buildStatusLine(), maxInt(1, w-statusHorizontalPadding))
+	statusLine := fitSingleLine(m.renderStatusLine(maxInt(1, w-statusHorizontalPadding)), maxInt(1, w-statusHorizontalPadding))
 	helpBar := helpStyle.Width(w).Render(statusLine)
 	return tabBar, tabPanel, helpBar
 }
@@ -497,45 +508,14 @@ func (m UIModel) renderTabPanel(w int, linesLimit int) string {
 		Width(w)
 	contentW := maxInt(1, w-panelHorizontalPadding)
 
-	lines := make([]string, 0, 3)
+	var lines []string
 	switch m.activeTab {
 	case "chat":
-		chatDesc := tr("panel_chat_desc_offline")
-		if m.isOnline {
-			chatDesc = tr("panel_chat_desc_online")
-		}
-		lines = append(lines, chatDesc+" "+tr("panel_chat_message_prefix")+m.renderChatInputWithCursor())
-		if strings.TrimSpace(m.chatInput) == "" {
-			lines = append(lines, tr("panel_chat_hint"))
-		}
-		lines = append(lines, m.chatCommandsHint())
-		for _, line := range tailLines(m.chatLog, 2) {
-			lines = append(lines, styleEventLine(line))
-		}
+		lines = m.buildChatPanelLines(linesLimit, contentW)
 	case "log":
-		lines = append(lines, tr("panel_log_title"))
-		scoreEvents := scoreHistoryFromLogs(m.snapshot.Logs, 2)
-		if len(scoreEvents) > 0 {
-			lines = append(lines, tr("panel_recent_score_prefix")+strings.Join(scoreEvents, " | "))
-		}
-		if len(m.errorLog) > 0 {
-			lines = append(lines, tr("panel_error_log_title"))
-			for _, line := range tailLines(m.errorLog, 2) {
-				lines = append(lines, styleEventLine(line))
-			}
-		}
-		for _, line := range tailLines(m.snapshot.Logs, 2) {
-			lines = append(lines, styleEventLine(line))
-		}
+		lines = m.buildLogPanelLines(linesLimit)
 	default:
-		wins := m.snapshot.CurrentHand.TrickWins
-		lines = append(lines, fmt.Sprintf("%s: %s T1 %d x %d T2 | %s %d", tr("panel_table_label"), tr("panel_tricks_label"), wins[0], wins[1], tr("panel_round_label"), m.snapshot.CurrentHand.Round))
-		lines = append(lines, tr("panel_history_prefix")+formatTrickHistory(m.snapshot.CurrentHand.TrickResults))
-		lines = append(lines, fmt.Sprintf("%s %s | %s %s | %s %d", tr("panel_trump_label"), m.snapshot.CurrentHand.Manilha, tr("panel_flip_label"), suitSymbol(m.snapshot.CurrentHand.Vira), tr("panel_stake_label"), m.snapshot.CurrentHand.Stake))
-		if m.snapshot.PendingRaiseFor != -1 {
-			raiseBy := safePlayerName(m.snapshot.Players, m.snapshot.CurrentHand.RaiseRequester)
-			lines = append(lines, fmt.Sprintf(tr("panel_raise_pending_format"), strings.ToUpper(raiseLabelUI(m.snapshot.PendingRaiseTo)), m.snapshot.PendingRaiseTo, raiseBy))
-		}
+		lines = m.buildTablePanelLines(linesLimit, contentW)
 	}
 	if linesLimit < 1 {
 		linesLimit = 1
@@ -549,14 +529,108 @@ func (m UIModel) renderTabPanel(w int, linesLimit int) string {
 	return panel.Render(strings.Join(lines[:linesLimit], "\n"))
 }
 
-func tailLines(items []string, n int) []string {
-	if n <= 0 || len(items) == 0 {
-		return nil
+func (m UIModel) buildChatPanelLines(linesLimit, width int) []string {
+	chatDesc := tr("panel_chat_desc_offline")
+	if m.isOnline {
+		chatDesc = tr("panel_chat_desc_online")
 	}
-	if len(items) <= n {
-		return items
+	composer := chatDesc + " " + tr("panel_chat_message_prefix") + m.renderChatInputWithCursor()
+	latestChat := lastLine(m.chatLog)
+	if linesLimit <= 1 {
+		if strings.TrimSpace(m.chatInput) != "" {
+			return []string{composer}
+		}
+		if latestChat != "" {
+			return []string{strings.ToUpper(tr("tab_chat")) + ": " + styleEventLine(latestChat)}
+		}
+		return []string{chatDesc + " " + tr("panel_chat_hint")}
 	}
-	return items[len(items)-n:]
+
+	lines := []string{composer}
+	secondLine := joinSegmentsWithinWidth(width, tr("panel_chat_hint"), m.chatCommandsHint())
+	if strings.TrimSpace(m.chatInput) != "" {
+		secondLine = m.chatCommandsHint()
+	}
+	lines = append(lines, secondLine)
+	if latestChat != "" {
+		lines = append(lines, styleEventLine(latestChat))
+	}
+	return lines
+}
+
+func (m UIModel) buildLogPanelLines(linesLimit int) []string {
+	scoreEvents := scoreHistoryFromLogs(m.snapshot.Logs, 2)
+	scoreLine := ""
+	if len(scoreEvents) > 0 {
+		scoreLine = tr("panel_recent_score_prefix") + strings.Join(scoreEvents, " | ")
+	}
+	latestErr := lastLine(m.errorLog)
+	latestLog := lastLine(m.snapshot.Logs)
+
+	if linesLimit <= 1 {
+		return []string{firstNonEmpty(scoreLine, latestErr, latestLog, tr("panel_log_empty"))}
+	}
+
+	header := tr("panel_log_title")
+	if scoreLine != "" {
+		header += " " + scoreLine
+	}
+	lines := []string{header}
+	if latestErr != "" {
+		lines = append(lines, styleEventLine(tr("panel_error_log_title")+" "+latestErr))
+	}
+	if latestLog != "" {
+		lines = append(lines, styleEventLine(latestLog))
+	}
+	if len(lines) == 1 {
+		lines = append(lines, tr("panel_log_empty"))
+	}
+	return lines
+}
+
+func (m UIModel) buildTablePanelLines(linesLimit, width int) []string {
+	wins := m.snapshot.CurrentHand.TrickWins
+	summary := fmt.Sprintf("%s: %s T1 %d x %d T2 | %s %d | %s %d",
+		tr("panel_table_label"),
+		tr("panel_tricks_label"),
+		wins[0],
+		wins[1],
+		tr("panel_round_label"),
+		m.snapshot.CurrentHand.Round,
+		tr("panel_stake_label"),
+		m.snapshot.CurrentHand.Stake,
+	)
+	history := tr("panel_history_prefix") + formatTrickHistory(m.snapshot.CurrentHand.TrickResults)
+	trumpLine := fmt.Sprintf("%s %s | %s %s",
+		tr("panel_trump_label"),
+		m.snapshot.CurrentHand.Manilha,
+		tr("panel_flip_label"),
+		suitSymbol(m.snapshot.CurrentHand.Vira),
+	)
+	if m.snapshot.PendingRaiseFor != -1 {
+		raiseBy := safePlayerName(m.snapshot.Players, m.snapshot.CurrentHand.RaiseRequester)
+		history = fmt.Sprintf(tr("panel_raise_pending_format"), strings.ToUpper(raiseLabelUI(m.snapshot.PendingRaiseTo)), m.snapshot.PendingRaiseTo, raiseBy)
+	}
+
+	actionSummary := m.panelActionSummary(width)
+	if linesLimit <= 1 {
+		return []string{joinSegmentsWithinWidth(width, actionSummary, summary)}
+	}
+	lines := []string{summary, actionSummary}
+	if history != "" {
+		lines = append(lines, history)
+	} else {
+		lines = append(lines, trumpLine)
+	}
+	return lines
+}
+
+
+func lastLine(items []string) string {
+	if len(items) == 0 {
+		return ""
+	}
+	return items[len(items)-1]
 }
 
 func styleEventLine(line string) string {

@@ -21,6 +21,7 @@ test("expectedModesForAction encodes transition-critical flows", () => {
   assert.deepEqual(expectedModesForAction("startGame"), ["offline_match"]);
   assert.deepEqual(expectedModesForAction("startOnlineHost"), ["host_lobby"]);
   assert.deepEqual(expectedModesForAction("joinOnline"), ["client_lobby", "client_match"]);
+  assert.deepEqual(expectedModesForAction("newHand"), []);
   assert.deepEqual(expectedModesForAction("reset"), ["idle"]);
 });
 

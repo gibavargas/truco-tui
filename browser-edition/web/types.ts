@@ -84,6 +84,7 @@ export interface LobbySnapshot {
   host_seat: number;
   connected_seats: Record<string, boolean>;
   role?: string;
+  metadata?: Record<string, unknown>;
 }
 
 export interface LobbySlotState {
@@ -123,6 +124,16 @@ export interface AppError {
 
 export interface NetworkSnapshot {
   transport?: string;
+  requested_transport?: string;
+  direct_path_known?: boolean;
+  direct_path?: boolean;
+  relay_fallback?: boolean;
+  coordinator_status?: string;
+  coordinator_url?: string;
+  tailnet_node?: string;
+  tailnet_authority?: string;
+  tailnet_service_port?: number;
+  fallback_reason?: string;
   supported_protocol_versions?: number[];
   negotiated_protocol_version?: number;
   seat_protocol_versions?: Record<string, number>;

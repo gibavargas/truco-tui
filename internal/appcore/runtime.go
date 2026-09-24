@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -18,6 +19,7 @@ import (
 type Runtime struct {
 	mu sync.Mutex
 
+	config     RuntimeConfig
 	mode       string
 	host       *netp2p.HostSession
 	client     *netp2p.ClientSession
@@ -41,7 +43,12 @@ type Runtime struct {
 }
 
 func NewRuntime() *Runtime {
+	return NewRuntimeWithConfig(RuntimeConfig{})
+}
+
+func NewRuntimeWithConfig(config RuntimeConfig) *Runtime {
 	return &Runtime{
+		config:    config,
 		mode:      ModeIdle,
 		localSeat: -1,
 	}
@@ -256,6 +263,13 @@ func (r *Runtime) clearErrorLocked() {
 	r.lastError = nil
 }
 
+func (r *Runtime) tailnetStateDir() string {
+	if strings.TrimSpace(r.config.AppDataDir) == "" {
+		return ""
+	}
+	return filepath.Join(strings.TrimSpace(r.config.AppDataDir), "tailnet")
+}
+
 func (r *Runtime) teardownSessionLocked() {
 	r.sessionGen++
 	if r.host != nil {
@@ -330,9 +344,14 @@ func (r *Runtime) createHostLocked(payload CreateHostPayload) error {
 	if payload.BindAddr == "" {
 		payload.BindAddr = "0.0.0.0:0"
 	}
+	coordinatorURL := firstNonEmpty(payload.CoordinatorURL, r.config.CoordinatorURL)
+	tailnetControlURL := firstNonEmpty(payload.TailnetControlURL, r.config.TailnetControlURL)
 	host, key, err := netp2p.NewHostSessionWithConfig(payload.BindAddr, payload.HostName, payload.NumPlayers, netp2p.HostConfig{
-		RelayURL:      payload.RelayURL,
-		TransportMode: payload.TransportMode,
+		RelayURL:              payload.RelayURL,
+		TransportMode:         payload.TransportMode,
+		TailnetCoordinatorURL: coordinatorURL,
+		TailnetControlURL:     tailnetControlURL,
+		TailnetStateDir:       r.tailnetStateDir(),
 	})
 	if err != nil {
 		return r.failLocked("create_host_failed", err)
@@ -592,8 +611,19 @@ func (r *Runtime) buildHostNetworkSnapshotLocked() *NetworkSnapshot {
 		return nil
 	}
 	seatVersions := r.host.SeatProtocolVersions()
+	diag := r.host.TransportDiagnostics()
 	return &NetworkSnapshot{
-		Transport:                 r.host.TransportMode(),
+		Transport:                 diag.SelectedTransport,
+		RequestedTransport:        diag.RequestedTransport,
+		DirectPathKnown:           diag.DirectPathKnown,
+		DirectPath:                diag.DirectPath,
+		RelayFallback:             diag.RelayFallback,
+		CoordinatorStatus:         diag.CoordinatorStatus,
+		CoordinatorURL:            diag.CoordinatorURL,
+		TailnetNode:               diag.TailnetNode,
+		TailnetAuthority:          diag.TailnetAuthority,
+		TailnetServicePort:        diag.TailnetServicePort,
+		FallbackReason:            diag.FallbackReason,
 		SupportedProtocolVersions: netp2p.SupportedProtocolVersions(),
 		SeatProtocolVersions:      seatVersions,
 		MixedProtocolSession:      hasMixedProtocolVersions(seatVersions),
@@ -604,8 +634,19 @@ func (r *Runtime) buildClientNetworkSnapshotLocked() *NetworkSnapshot {
 	if r.client == nil {
 		return nil
 	}
+	diag := r.client.TransportDiagnostics()
 	return &NetworkSnapshot{
-		Transport:                 r.client.TransportMode(),
+		Transport:                 diag.SelectedTransport,
+		RequestedTransport:        diag.RequestedTransport,
+		DirectPathKnown:           diag.DirectPathKnown,
+		DirectPath:                diag.DirectPath,
+		RelayFallback:             diag.RelayFallback,
+		CoordinatorStatus:         diag.CoordinatorStatus,
+		CoordinatorURL:            diag.CoordinatorURL,
+		TailnetNode:               diag.TailnetNode,
+		TailnetAuthority:          diag.TailnetAuthority,
+		TailnetServicePort:        diag.TailnetServicePort,
+		FallbackReason:            diag.FallbackReason,
 		SupportedProtocolVersions: netp2p.SupportedProtocolVersions(),
 		NegotiatedProtocolVersion: r.client.WireProtocolVersion(),
 	}
@@ -631,6 +672,16 @@ func cloneNetworkSnapshot(src *NetworkSnapshot) *NetworkSnapshot {
 	}
 	out := &NetworkSnapshot{
 		Transport:                 src.Transport,
+		RequestedTransport:        src.RequestedTransport,
+		DirectPathKnown:           src.DirectPathKnown,
+		DirectPath:                src.DirectPath,
+		RelayFallback:             src.RelayFallback,
+		CoordinatorStatus:         src.CoordinatorStatus,
+		CoordinatorURL:            src.CoordinatorURL,
+		TailnetNode:               src.TailnetNode,
+		TailnetAuthority:          src.TailnetAuthority,
+		TailnetServicePort:        src.TailnetServicePort,
+		FallbackReason:            src.FallbackReason,
 		NegotiatedProtocolVersion: src.NegotiatedProtocolVersion,
 		MixedProtocolSession:      src.MixedProtocolSession,
 	}
@@ -732,7 +783,18 @@ func (r *Runtime) handleClientFailover(gen uint64, client *netp2p.ClientSession)
 	}
 	inv := fs.Invite
 	hostAddr := strings.TrimSpace(fs.PeerHosts[targetSeat])
-	if inv.Transport != "relay_quic_v2" {
+	switch strings.TrimSpace(inv.Transport) {
+	case netp2p.TransportRelayQUICV2:
+		inv.RelayAuthorityPeer = fs.RouteHint
+	case netp2p.TransportTailnetTSNetV1:
+		inv.TailnetAuthorityNode = firstNonEmpty(fs.RouteHint, hostAddr, fs.Relay.TailnetAuthority)
+		if fs.Relay.TailnetServicePort > 0 {
+			inv.TailnetServicePort = fs.Relay.TailnetServicePort
+		}
+		if fs.HandoffPort > 0 {
+			inv.TailnetServicePort = fs.HandoffPort
+		}
+	default:
 		if hostAddr == "" {
 			r.mu.Lock()
 			if !r.closed && gen == r.sessionGen && r.client == client {
@@ -743,8 +805,6 @@ func (r *Runtime) handleClientFailover(gen uint64, client *netp2p.ClientSession)
 		}
 		addr := net.JoinHostPort(hostAddr, strconv.Itoa(fs.HandoffPort))
 		inv.Addr = addr
-	} else {
-		inv.RelayAuthorityPeer = fs.RouteHint
 	}
 
 	if fs.AssignedSeat == targetSeat {
@@ -774,24 +834,35 @@ func (r *Runtime) handleClientFailover(gen uint64, client *netp2p.ClientSession)
 			rotatedSlots[0],
 			fs.NumPlayers,
 			netp2p.RecoveredHostState{
-				Token:               inv.Token,
-				TLSSeed:             fs.TLSSeed,
-				RelayHostAdminToken: fs.RelayHostAdminToken,
-				RelayHostPeerID:     fmt.Sprintf("seat-%d", targetSeat),
-				RelayEpoch:          fs.Epoch + 1,
-				Slots:               rotatedSlots,
-				SeatSessionIDs:      rotatedSeatIDs,
-				PeerHosts:           rotatedPeers,
-				TableHostSeat:       0,
+				Token:                 inv.Token,
+				TLSSeed:               fs.TLSSeed,
+				RelayHostAdminToken:   fs.RelayHostAdminToken,
+				RelayHostPeerID:       fmt.Sprintf("seat-%d", targetSeat),
+				RelayEpoch:            fs.Epoch + 1,
+				TailnetSessionID:      inv.TailnetSessionID,
+				TailnetHostAdminToken: fs.TailnetHostAdminToken,
+				TailnetNodeName:       fs.Relay.TailnetNodeName,
+				TailnetServicePort:    firstNonZero(fs.Relay.TailnetServicePort, inv.TailnetServicePort, fs.HandoffPort),
+				Slots:                 rotatedSlots,
+				SeatSessionIDs:        rotatedSeatIDs,
+				PeerHosts:             rotatedPeers,
+				TableHostSeat:         0,
 			},
 			netp2p.HostConfig{
-				HandoffPort:         fs.HandoffPort,
-				AdvertiseHost:       hostAddr,
-				RelayURL:            inv.RelayURL,
-				RelaySPKIPin:        inv.RelaySPKIPin,
-				TransportMode:       inv.Transport,
-				RelaySessionID:      inv.RelaySessionID,
-				RelayHostAdminToken: fs.RelayHostAdminToken,
+				HandoffPort:           fs.HandoffPort,
+				AdvertiseHost:         hostAddr,
+				RelayURL:              inv.RelayURL,
+				RelaySPKIPin:          inv.RelaySPKIPin,
+				TransportMode:         inv.Transport,
+				RelaySessionID:        inv.RelaySessionID,
+				RelayHostAdminToken:   fs.RelayHostAdminToken,
+				TailnetCoordinatorURL: inv.TailnetCoordinatorURL,
+				TailnetControlURL:     inv.TailnetControlURL,
+				TailnetSessionID:      inv.TailnetSessionID,
+				TailnetHostAdminToken: fs.TailnetHostAdminToken,
+				TailnetNodeName:       fs.Relay.TailnetNodeName,
+				TailnetServicePort:    firstNonZero(fs.Relay.TailnetServicePort, inv.TailnetServicePort, fs.HandoffPort),
+				TailnetStateDir:       r.tailnetStateDir(),
 			},
 		)
 		if err != nil {
@@ -1191,4 +1262,22 @@ func minInt(a, b int) int {
 		return a
 	}
 	return b
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
+}
+
+func firstNonZero(values ...int) int {
+	for _, value := range values {
+		if value != 0 {
+			return value
+		}
+	}
+	return 0
 }

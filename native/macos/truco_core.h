@@ -89,6 +89,7 @@ extern "C" {
 #endif
 
 extern uintptr_t TrucoCoreCreate(void);
+extern uintptr_t TrucoCoreCreateWithConfigJSON(char* payload);
 extern void TrucoCoreDestroy(uintptr_t handle);
 extern char* TrucoCoreDispatchIntentJSON(uintptr_t handle, char* payload);
 extern char* TrucoCorePollEventJSON(uintptr_t handle);

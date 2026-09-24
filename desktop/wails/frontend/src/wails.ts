@@ -162,10 +162,14 @@ function numberValue(value: unknown, fallback: number): number {
 
 function transportValue(value: unknown): string {
   switch (value) {
+    case "auto":
+      return "auto";
     case "tcp_tls":
       return "tcp_tls";
     case "relay_quic_v2":
       return "relay_quic_v2";
+    case "tailnet_tsnet_v1":
+      return "tailnet_tsnet_v1";
     default:
       return "";
   }

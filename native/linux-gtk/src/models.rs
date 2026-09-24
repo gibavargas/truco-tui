@@ -38,14 +38,54 @@ pub struct ConnectionSnapshot {
     pub is_online: Option<bool>,
     #[serde(rename = "is_host")]
     pub is_host: Option<bool>,
+    pub network: Option<NetworkSnapshot>,
     #[serde(rename = "last_error")]
     pub last_error: Option<AppError>,
+    #[serde(rename = "last_event_sequence")]
+    pub last_event_sequence: Option<i64>,
+}
+
+#[derive(Deserialize, Debug, Clone, Default)]
+pub struct NetworkSnapshot {
+    pub transport: Option<String>,
+    #[serde(rename = "requested_transport")]
+    pub requested_transport: Option<String>,
+    #[serde(rename = "direct_path_known")]
+    pub direct_path_known: Option<bool>,
+    #[serde(rename = "direct_path")]
+    pub direct_path: Option<bool>,
+    #[serde(rename = "relay_fallback")]
+    pub relay_fallback: Option<bool>,
+    #[serde(rename = "coordinator_status")]
+    pub coordinator_status: Option<String>,
+    #[serde(rename = "coordinator_url")]
+    pub coordinator_url: Option<String>,
+    #[serde(rename = "tailnet_node")]
+    pub tailnet_node: Option<String>,
+    #[serde(rename = "tailnet_authority")]
+    pub tailnet_authority: Option<String>,
+    #[serde(rename = "tailnet_service_port")]
+    pub tailnet_service_port: Option<i32>,
+    #[serde(rename = "fallback_reason")]
+    pub fallback_reason: Option<String>,
+    #[serde(rename = "supported_protocol_versions")]
+    pub supported_protocol_versions: Option<Vec<i32>>,
+    #[serde(rename = "negotiated_protocol_version")]
+    pub negotiated_protocol_version: Option<i32>,
+    #[serde(rename = "seat_protocol_versions")]
+    pub seat_protocol_versions: Option<HashMap<String, i32>>,
+    #[serde(rename = "mixed_protocol_session")]
+    pub mixed_protocol_session: Option<bool>,
 }
 
 #[derive(Deserialize, Debug, Clone, Default)]
 pub struct DiagnosticsSnapshot {
     #[serde(rename = "event_backlog")]
     pub event_backlog: Option<i32>,
+    #[serde(rename = "replay_seed_lo")]
+    pub replay_seed_lo: Option<u64>,
+    #[serde(rename = "replay_seed_hi")]
+    pub replay_seed_hi: Option<u64>,
     #[serde(rename = "event_log")]
     pub event_log: Option<Vec<String>>,
 }
@@ -168,6 +208,7 @@ pub struct LobbySnapshot {
     #[serde(rename = "connected_seats")]
     pub connected_seats: Option<HashMap<String, bool>>,
     pub role: Option<String>,
+    pub metadata: Option<HashMap<String, Value>>,
 }
 
 #[derive(Deserialize, Debug, Clone, Default)]

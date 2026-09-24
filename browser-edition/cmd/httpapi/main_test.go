@@ -117,6 +117,66 @@ func containsKind(kinds []string, target string) bool {
 	return false
 }
 
+func eventsContainText(t *testing.T, res map[string]interface{}, text string) bool {
+	t.Helper()
+	raw, ok := res["events"].([]interface{})
+	if !ok {
+		t.Fatalf("expected events array, got %T", res["events"])
+	}
+	for _, item := range raw {
+		ev, ok := item.(map[string]interface{})
+		if !ok {
+			t.Fatalf("expected event object, got %T", item)
+		}
+		payload, ok := ev["payload"].(map[string]interface{})
+		if !ok {
+			continue
+		}
+		for _, value := range payload {
+			if s, ok := value.(string); ok && strings.Contains(s, text) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func replacementInviteKey(t *testing.T, res map[string]interface{}) string {
+	t.Helper()
+	raw, ok := res["events"].([]interface{})
+	if !ok {
+		t.Fatalf("expected events array, got %T", res["events"])
+	}
+	for _, item := range raw {
+		ev, ok := item.(map[string]interface{})
+		if !ok {
+			t.Fatalf("expected event object, got %T", item)
+		}
+		if ev["kind"] != appcore.EventReplacementInvite {
+			continue
+		}
+		payload, ok := ev["payload"].(map[string]interface{})
+		if !ok {
+			t.Fatalf("expected replacement payload, got %T", ev["payload"])
+		}
+		key, _ := payload["invite_key"].(string)
+		return key
+	}
+	return ""
+}
+
+func waitForHTTPCondition(t *testing.T, timeout time.Duration, cond func() bool, msg string) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if cond() {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatalf("timeout waiting: %s", msg)
+}
+
 func createAndStart(t *testing.T, srv http.Handler) string {
 	t.Helper()
 	sid := createSession(t, srv)
@@ -397,6 +457,105 @@ func TestJoinOnlineIncludesNegotiatedProtocolVersion(t *testing.T) {
 	}
 	if network["negotiated_protocol_version"] != float64(2) {
 		t.Fatalf("negotiated_protocol_version = %v, want 2", network["negotiated_protocol_version"])
+	}
+}
+
+func TestOnlineHostJoinStartMatchAndChatContract(t *testing.T) {
+	srv := newAPIServer()
+	hostSID := createSession(t, srv)
+	clientSID := createSession(t, srv)
+
+	hostRes := postAction(t, srv, "startOnlineHost", hostSID, map[string]interface{}{
+		"name":           "Host",
+		"numPlayers":     2,
+		"transport_mode": "tcp_tls",
+	})
+	if !hostRes["ok"].(bool) {
+		t.Fatalf("startOnlineHost failed: %v", hostRes["error"])
+	}
+	session := hostRes["session"].(map[string]interface{})
+	key := session["inviteKey"].(string)
+	if key == "" {
+		t.Fatal("expected visible invite key")
+	}
+
+	joinRes := postAction(t, srv, "joinOnline", clientSID, map[string]interface{}{
+		"name": "Guest",
+		"key":  key,
+		"role": "auto",
+	})
+	if !joinRes["ok"].(bool) {
+		t.Fatalf("joinOnline failed: %v", joinRes["error"])
+	}
+	if joinRes["mode"] != appcore.ModeClientLobby {
+		t.Fatalf("client mode after join = %v, want %q", joinRes["mode"], appcore.ModeClientLobby)
+	}
+
+	waitForHTTPCondition(t, 2*time.Second, func() bool {
+		res := postAction(t, srv, "pollEvents", hostSID, nil)
+		session := res["session"].(map[string]interface{})
+		slots, ok := session["slots"].([]interface{})
+		return ok && len(slots) == 2 && slots[0] == "Host" && slots[1] == "Guest"
+	}, "host lobby should show joined guest through the runtime session snapshot")
+
+	startRes := postAction(t, srv, "startOnlineMatch", hostSID, nil)
+	if !startRes["ok"].(bool) {
+		t.Fatalf("startOnlineMatch failed: %v", startRes["error"])
+	}
+	if startRes["mode"] != appcore.ModeHostMatch {
+		t.Fatalf("host mode after match start = %v, want %q", startRes["mode"], appcore.ModeHostMatch)
+	}
+	if !containsKind(eventKinds(t, startRes), appcore.EventMatchStarted) {
+		t.Fatalf("host events after start did not include %q", appcore.EventMatchStarted)
+	}
+
+	waitForHTTPCondition(t, 2*time.Second, func() bool {
+		res := postAction(t, srv, "pollEvents", clientSID, nil)
+		if res["mode"] != appcore.ModeClientMatch {
+			return false
+		}
+		bundle := parseBundle(t, res)
+		if bundle["match"] == nil {
+			return false
+		}
+		ui := bundle["ui"].(map[string]interface{})
+		actions := ui["actions"].(map[string]interface{})
+		return actions["can_close_session"] == true
+	}, "client should receive match state and runtime-derived UI actions")
+
+	chatRes := postAction(t, srv, "sendChat", clientSID, map[string]interface{}{
+		"message": "boa mao",
+	})
+	if !chatRes["ok"].(bool) {
+		t.Fatalf("sendChat failed: %v", chatRes["error"])
+	}
+	waitForHTTPCondition(t, 2*time.Second, func() bool {
+		res := postAction(t, srv, "pollEvents", hostSID, nil)
+		return eventsContainText(t, res, "boa mao")
+	}, "host should receive client chat through online match events")
+
+	closeRes := postAction(t, srv, "closeSession", clientSID, nil)
+	if !closeRes["ok"].(bool) {
+		t.Fatalf("closeSession failed: %v", closeRes["error"])
+	}
+	waitForHTTPCondition(t, 2*time.Second, func() bool {
+		res := postAction(t, srv, "pollEvents", hostSID, nil)
+		session := res["session"].(map[string]interface{})
+		connected, ok := session["connected"].([]interface{})
+		return ok && len(connected) == 2 && connected[0] == true && connected[1] == false
+	}, "host should observe disconnected guest seat")
+
+	replacementRes := postAction(t, srv, "requestReplacementInvite", hostSID, map[string]interface{}{
+		"slot": 1,
+	})
+	if !replacementRes["ok"].(bool) {
+		t.Fatalf("requestReplacementInvite failed: %v", replacementRes["error"])
+	}
+	if !containsKind(eventKinds(t, replacementRes), appcore.EventReplacementInvite) {
+		t.Fatalf("replacement events did not include %q", appcore.EventReplacementInvite)
+	}
+	if replacementInviteKey(t, replacementRes) == "" {
+		t.Fatal("expected replacement invite event to include invite key")
 	}
 }
 

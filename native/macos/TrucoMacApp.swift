@@ -10,6 +10,7 @@ struct TrucoMacApp: App {
             ContentView()
                 .environmentObject(store)
                 .preferredColorScheme(darkMode ? .dark : .light)
+                .frame(minWidth: 720, minHeight: 540)
         }
         .commands {
             CommandGroup(replacing: .newItem) {

@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
+using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text.Json;
+using TrucoWinUI.Contracts;
 using TrucoWinUI.Models;
 
 namespace TrucoWinUI.Services;
@@ -15,9 +17,16 @@ public sealed class TrucoCoreService : IDisposable
 
     private IntPtr _handle;
 
+    static TrucoCoreService()
+    {
+        NativeLibrary.SetDllImportResolver(typeof(TrucoCoreService).Assembly, ResolveNativeLibrary);
+    }
+
     public TrucoCoreService()
     {
-        NativeDependencyValidator.EnsurePresent();
+        string libraryPath = TrucoCoreLibraryLocator.ResolveLibraryPath();
+        NativeDependencyValidator.EnsurePresent(libraryPath);
+        EnsureCompatibleVersions(GetVersions());
         _handle = NativeMethods.TrucoCoreCreate();
     }
 
@@ -48,19 +57,21 @@ public sealed class TrucoCoreService : IDisposable
             ?? new CoreVersions();
     }
 
-    public AppError? SetLocale(string locale) => Dispatch("set_locale", new { locale });
+    public AppError? SetLocale(string locale) => Dispatch(RuntimeContract.SetLocale, new { locale });
 
-    public AppError? NewHand() => Dispatch("new_hand", null);
+    public AppError? NewHand() => Dispatch(RuntimeContract.NewHand, null);
+
+    public AppError? Tick(int maxSteps = 12) => Dispatch(RuntimeContract.Tick, new { max_steps = maxSteps });
 
     public AppError? StartOfflineGame(IReadOnlyList<string> playerNames, IReadOnlyList<bool> cpuFlags)
-        => Dispatch("new_offline_game", new
+        => Dispatch(RuntimeContract.NewOfflineGame, new
         {
             player_names = playerNames,
             cpu_flags = cpuFlags,
         });
 
     public AppError? CreateHostSession(string hostName, int numPlayers, string? bindAddr, string? relayUrl, string? transportMode)
-        => Dispatch("create_host_session", new
+        => Dispatch(RuntimeContract.CreateHostSession, new
         {
             bind_addr = bindAddr ?? string.Empty,
             host_name = hostName,
@@ -69,26 +80,26 @@ public sealed class TrucoCoreService : IDisposable
             transport_mode = transportMode ?? string.Empty,
         });
 
-    public AppError? StartHostedMatch() => Dispatch("start_hosted_match", null);
+    public AppError? StartHostedMatch() => Dispatch(RuntimeContract.StartHostedMatch, null);
 
     public AppError? JoinSession(string key, string playerName, string desiredRole)
-        => Dispatch("join_session", new
+        => Dispatch(RuntimeContract.JoinSession, new
         {
             key,
             player_name = playerName,
             desired_role = desiredRole,
         });
 
-    public AppError? SendChat(string text) => Dispatch("send_chat", new { text });
+    public AppError? SendChat(string text) => Dispatch(RuntimeContract.SendChat, new { text });
 
-    public AppError? VoteHost(int candidateSeat) => Dispatch("vote_host", new { candidate_seat = candidateSeat });
+    public AppError? VoteHost(int candidateSeat) => Dispatch(RuntimeContract.VoteHost, new { candidate_seat = candidateSeat });
 
     public AppError? RequestReplacementInvite(int targetSeat)
-        => Dispatch("request_replacement_invite", new { target_seat = targetSeat });
+        => Dispatch(RuntimeContract.RequestReplacementInvite, new { target_seat = targetSeat });
 
-    public AppError? CloseSession() => Dispatch("close_session", null);
+    public AppError? CloseSession() => Dispatch(RuntimeContract.CloseSession, null);
 
-    public AppError? ResetSession() => Dispatch("reset", null);
+    public AppError? ResetSession() => CloseSession();
 
     public AppError? PlayCard(int cardIndex, bool faceDown = false) => DispatchGameAction("play", cardIndex, faceDown);
 
@@ -108,7 +119,36 @@ public sealed class TrucoCoreService : IDisposable
     }
 
     private AppError? DispatchGameAction(string action, int cardIndex, bool faceDown = false)
-        => Dispatch("game_action", new { action, card_index = cardIndex, face_down = faceDown });
+        => Dispatch(RuntimeContract.GameAction, new { action, card_index = cardIndex, face_down = faceDown });
+
+    private static IntPtr ResolveNativeLibrary(string libraryName, Assembly assembly, DllImportSearchPath? searchPath)
+    {
+        if (!IsCoreLibraryName(libraryName))
+        {
+            return IntPtr.Zero;
+        }
+
+        string libraryPath = TrucoCoreLibraryLocator.ResolveLibraryPath();
+        NativeDependencyValidator.EnsurePresent(libraryPath);
+        return NativeLibrary.Load(libraryPath);
+    }
+
+    private static bool IsCoreLibraryName(string libraryName)
+        => string.Equals(libraryName, "truco-core-ffi", StringComparison.OrdinalIgnoreCase)
+           || string.Equals(libraryName, "truco-core-ffi.dll", StringComparison.OrdinalIgnoreCase);
+
+    private static void EnsureCompatibleVersions(CoreVersions versions)
+    {
+        if (versions.CoreApiVersion != RuntimeContract.CoreApiVersion ||
+            versions.ProtocolVersion != RuntimeContract.ProtocolVersion ||
+            versions.SnapshotSchemaVersion != RuntimeContract.SnapshotSchemaVersion)
+        {
+            throw new InvalidOperationException(
+                "Incompatible Truco core runtime. " +
+                $"Expected core API {RuntimeContract.CoreApiVersion}, protocol {RuntimeContract.ProtocolVersion}, snapshot {RuntimeContract.SnapshotSchemaVersion}; " +
+                $"got core API {versions.CoreApiVersion}, protocol {versions.ProtocolVersion}, snapshot {versions.SnapshotSchemaVersion}.");
+        }
+    }
 
     private AppError? Dispatch(string kind, object? payload)
     {
@@ -149,6 +189,9 @@ public sealed class TrucoCoreService : IDisposable
 
         [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
         public static extern IntPtr TrucoCoreCreate();
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Ansi)]
+        public static extern IntPtr TrucoCoreCreateWithConfigJSON([MarshalAs(UnmanagedType.LPUTF8Str)] string payload);
 
         [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
         public static extern void TrucoCoreDestroy(IntPtr handle);

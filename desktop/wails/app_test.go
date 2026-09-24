@@ -345,6 +345,18 @@ func waitForPlayableFirstTrick(t *testing.T, app *App) {
 		if snapshot.Match != nil && snapshot.Match.CurrentHand.Round == 1 && snapshot.UI.Actions.CanPlayCard {
 			return
 		}
+		if snapshot.UI.Actions.CanAccept {
+			if err := app.AcceptTruco(); err != nil {
+				t.Fatalf("AcceptTruco while waiting for playable first trick: %v", err)
+			}
+			continue
+		}
+		if snapshot.UI.Actions.CanRefuse {
+			if err := app.RefuseTruco(); err != nil {
+				t.Fatalf("RefuseTruco while waiting for playable first trick: %v", err)
+			}
+			continue
+		}
 		if err := app.Tick(12); err != nil {
 			t.Fatalf("Tick: %v", err)
 		}

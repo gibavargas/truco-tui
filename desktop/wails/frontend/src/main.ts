@@ -21,6 +21,13 @@ import type {
   RuntimeUpdate,
   SnapshotBundle,
 } from "./types";
+import {
+  activeTransportLabel,
+  connectionPathLabel,
+  fallbackReasonLabel,
+  requestedTransportLabel,
+  seatProtocolLabel,
+} from "./ui/network-copy";
 import { copyText, invoke, onRuntimeUpdate, snapshot } from "./wails";
 
 type ClientAction = "refresh" | "toggle-diagnostics";
@@ -123,6 +130,10 @@ root.addEventListener("click", (event) => {
     event.preventDefault();
     setPanelTab(panelTab.dataset.panelTab || "");
   }
+});
+
+root.addEventListener("keydown", (event) => {
+  handlePanelTabKeydown(event);
 });
 
 root.addEventListener("change", (event) => {
@@ -289,6 +300,7 @@ function render(): void {
 
 interface FocusState {
   selector: string;
+  focusKey: string;
   value?: string;
   selectionStart: number | null;
   selectionEnd: number | null;
@@ -296,27 +308,31 @@ interface FocusState {
 
 function captureFocusState(): FocusState | null {
   const active = document.activeElement;
-  if (!(active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement || active instanceof HTMLSelectElement)) {
+  if (!(active instanceof HTMLElement) || !root.contains(active)) {
     return null;
   }
-  if (!root.contains(active)) {
-    return null;
-  }
-  const key = active.id || active.name || active.getAttribute("data-focus-key");
+  const key = active.getAttribute("data-focus-key") || active.id || ("name" in active ? active.getAttribute("name") : "");
   if (!key) {
     return null;
   }
   const formId = active.closest("form")?.getAttribute("data-form-id");
-  const selector = formId && active.name
-    ? `form[data-form-id="${CSS.escape(formId)}"] [name="${CSS.escape(active.name)}"]`
-    : active.id
-      ? `#${CSS.escape(active.id)}`
-      : `[name="${CSS.escape(active.name || key)}"]`;
+  const selector = active.getAttribute("data-focus-key")
+    ? `[data-focus-key="${CSS.escape(active.getAttribute("data-focus-key") || "")}"]`
+    : formId && active.getAttribute("name")
+      ? `form[data-form-id="${CSS.escape(formId)}"] [name="${CSS.escape(active.getAttribute("name") || "")}"]`
+      : active.id
+        ? `#${CSS.escape(active.id)}`
+        : "";
+  if (!selector) {
+    return null;
+  }
+  const isTextControl = active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement || active instanceof HTMLSelectElement;
   return {
     selector,
-    value: active.value,
-    selectionStart: "selectionStart" in active ? active.selectionStart : null,
-    selectionEnd: "selectionEnd" in active ? active.selectionEnd : null,
+    focusKey: key,
+    value: isTextControl ? active.value : undefined,
+    selectionStart: active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement ? active.selectionStart : null,
+    selectionEnd: active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement ? active.selectionEnd : null,
   };
 }
 
@@ -324,11 +340,15 @@ function restoreFocusState(stateToRestore: FocusState | null): void {
   if (!stateToRestore) {
     return;
   }
-  const next = root.querySelector<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>(stateToRestore.selector);
+  const next = root.querySelector<HTMLElement>(stateToRestore.selector);
   if (!next) {
     return;
   }
-  if (stateToRestore.value !== undefined && next.value !== stateToRestore.value) {
+  if (
+    stateToRestore.value !== undefined &&
+    (next instanceof HTMLInputElement || next instanceof HTMLTextAreaElement || next instanceof HTMLSelectElement) &&
+    next.value !== stateToRestore.value
+  ) {
     next.value = stateToRestore.value;
   }
   next.focus({ preventScroll: true });
@@ -341,12 +361,69 @@ function restoreFocusState(stateToRestore: FocusState | null): void {
   }
 }
 
+function handlePanelTabKeydown(event: KeyboardEvent): void {
+  const tab = (event.target as HTMLElement | null)?.closest<HTMLButtonElement>("[data-panel-tab][role=\"tab\"]");
+  if (!tab) {
+    return;
+  }
+  const list = tab.closest<HTMLElement>("[role=\"tablist\"]");
+  if (!list) {
+    return;
+  }
+  const tabs = Array.from(list.querySelectorAll<HTMLButtonElement>("[data-panel-tab][role=\"tab\"]"));
+  if (tabs.length < 2) {
+    return;
+  }
+  const currentIndex = tabs.indexOf(tab);
+  if (currentIndex < 0) {
+    return;
+  }
+
+  let nextIndex = currentIndex;
+  switch (event.key) {
+    case "ArrowRight":
+    case "ArrowDown":
+      nextIndex = (currentIndex + 1) % tabs.length;
+      break;
+    case "ArrowLeft":
+    case "ArrowUp":
+      nextIndex = (currentIndex - 1 + tabs.length) % tabs.length;
+      break;
+    case "Home":
+      nextIndex = 0;
+      break;
+    case "End":
+      nextIndex = tabs.length - 1;
+      break;
+    default:
+      return;
+  }
+
+  event.preventDefault();
+  activatePanelTab(tabs[nextIndex]);
+}
+
+function activatePanelTab(tab: HTMLButtonElement): void {
+  const panelTab = tab.dataset.panelTab;
+  const focusKey = tab.dataset.focusKey;
+  if (!panelTab) {
+    return;
+  }
+  setPanelTab(panelTab);
+  if (!focusKey) {
+    return;
+  }
+  window.requestAnimationFrame(() => {
+    root.querySelector<HTMLElement>(`[data-focus-key="${CSS.escape(focusKey)}"]`)?.focus({ preventScroll: true });
+  });
+}
+
 function renderApp(): string {
   return `
     <div class="page-shell">
       <div class="page-aura page-aura-left"></div>
       <div class="page-aura page-aura-right"></div>
-      <main class="app-shell">
+      <main class="app-shell" aria-busy="${state.busyForm ? "true" : "false"}">
         <header class="hero-card">
           <div class="hero-copy">
             <p class="eyebrow">${escapeHtml(t("app_kicker"))}</p>
@@ -364,8 +441,8 @@ function renderApp(): string {
               </select>
             </form>
             <div class="desktop-action-row">
-              <button class="ghost-button" type="button" data-client-action="refresh">${escapeHtml(t("header_resync"))}</button>
-              <button class="ghost-button strong" type="button" data-client-action="toggle-diagnostics">
+              <button class="ghost-button" type="button" data-client-action="refresh" data-focus-key="client:refresh">${escapeHtml(t("header_resync"))}</button>
+              <button class="ghost-button strong" type="button" data-client-action="toggle-diagnostics" data-focus-key="client:toggle-diagnostics" aria-controls="diagnostics-panel" aria-expanded="${state.diagnosticsOpen ? "true" : "false"}" aria-pressed="${state.diagnosticsOpen ? "true" : "false"}">
                 ${escapeHtml(state.diagnosticsOpen ? t("header_hide_diagnostics") : t("header_diagnostics"))}
               </button>
             </div>
@@ -412,8 +489,8 @@ function renderRuntimeBanner(): string {
     <section class="${classes.join(" ")}" role="${state.lastRenderError || state.lastRefreshState === "error" ? "alert" : "status"}" aria-live="${state.lastRenderError || state.lastRefreshState === "error" ? "assertive" : "polite"}" data-pretext-block="lock-height">
       <div class="runtime-banner-copy">${escapeHtml(message)}</div>
       <div class="runtime-banner-actions">
-        <button class="ghost-button strong" type="button" data-client-action="refresh">${escapeHtml(t("header_resync"))}</button>
-        <button class="ghost-button" type="button" data-client-action="toggle-diagnostics">
+        <button class="ghost-button strong" type="button" data-client-action="refresh" data-focus-key="banner:refresh">${escapeHtml(t("header_resync"))}</button>
+        <button class="ghost-button" type="button" data-client-action="toggle-diagnostics" data-focus-key="banner:toggle-diagnostics" aria-controls="diagnostics-panel" aria-expanded="${state.diagnosticsOpen ? "true" : "false"}" aria-pressed="${state.diagnosticsOpen ? "true" : "false"}">
           ${escapeHtml(state.diagnosticsOpen ? t("header_hide_diagnostics") : t("header_diagnostics"))}
         </button>
       </div>
@@ -697,16 +774,19 @@ function renderDiagnostics(): string {
   const bundle = state.bundle;
   const error = bundle.connection.last_error;
   const eventLog = bundle.diagnostics.event_log || [];
+  const network = bundle.connection.network;
+  const seatProtocols = seatProtocolLabel(network);
+  const fallback = fallbackReasonLabel(network, t);
 
   return `
-    <section class="surface-card diagnostics-card">
+    <section class="surface-card diagnostics-card" id="diagnostics-panel" role="region" aria-labelledby="diagnostics-title">
       <div class="card-head">
         <div>
           <p class="eyebrow">${escapeHtml(t("header_diagnostics"))}</p>
-          <h3>${escapeHtml(t("diagnostics_title"))}</h3>
+          <h3 id="diagnostics-title">${escapeHtml(t("diagnostics_title"))}</h3>
         </div>
         <div class="desktop-action-row">
-          <button class="ghost-button" type="button" data-client-action="refresh">${escapeHtml(t("header_resync"))}</button>
+          <button class="ghost-button" type="button" data-client-action="refresh" data-focus-key="diagnostics:refresh">${escapeHtml(t("header_resync"))}</button>
           <form data-api-action="tick" data-form-id="tick">
             <input type="hidden" name="maxSteps" value="12">
             <button class="ghost-button strong" type="submit"${busyAttr("tick")}>${buttonLabel("tick", t("diagnostics_force_tick"))}</button>
@@ -717,15 +797,19 @@ function renderDiagnostics(): string {
         ${renderMetric(t("diagnostics_versions"), `core ${bundle.versions.core_api_version} · protocol ${bundle.versions.protocol_version} · schema ${bundle.versions.snapshot_schema_version}`)}
         ${renderMetric(t("connection_backlog"), String(bundle.diagnostics.event_backlog || 0))}
         ${renderMetric(t("connection_status"), bundle.connection.status)}
-        ${renderMetric(t("connection_transport"), bundle.connection.network?.transport || "-")}
+        ${renderMetric(t("connection_transport"), activeTransportLabel(network, t))}
+        ${renderMetric(t("connection_requested_transport"), requestedTransportLabel(network, t))}
+        ${renderMetric(t("connection_path"), connectionPathLabel(network, t))}
         ${renderMetric(t("diagnostics_mode"), state.lastMode || bundle.mode || "idle")}
         ${renderMetric(t("diagnostics_sequence"), String(state.lastSeenSequence))}
         ${renderMetric(t("diagnostics_last_action"), state.lastSubmittedAction ? describeAction(state.lastSubmittedAction) : "-")}
         ${renderMetric(t("diagnostics_refresh"), state.lastRefreshState)}
+        ${seatProtocols ? renderMetric(t("connection_protocol_seats"), seatProtocols) : ""}
         ${error ? renderMetric(t("event_error"), `${error.code}: ${error.message}`) : ""}
         ${state.lastRefreshError ? renderMetric(t("diagnostics_refresh_error"), state.lastRefreshError) : ""}
         ${state.lastRenderError ? renderMetric(t("diagnostics_render_error"), state.lastRenderError) : ""}
       </div>
+      ${fallback ? `<p class="supporting-copy diagnostics-summary">${escapeHtml(`${t("connection_fallback")}: ${fallback}`)}</p>` : ""}
       <div class="diagnostics-log-shell">
         <strong>${escapeHtml(t("diagnostics_event_log"))}</strong>
         <pre class="diagnostics-log" data-pretext-block="lock-height" data-pretext-whitespace="pre-wrap">${escapeHtml(eventLog.length > 0 ? eventLog.slice(-16).join("\n") : t("diagnostics_none"))}</pre>
@@ -970,6 +1054,7 @@ function transportOptions(active: string): string {
   return [
     ["", t("transport_auto")],
     ["tcp_tls", t("transport_direct")],
+    ["tailnet_tsnet_v1", "Tailnet"],
     ["relay_quic_v2", t("transport_relay")],
   ]
     .map(([value, label]) => `<option value="${value}"${active === value ? " selected" : ""}>${escapeHtml(label)}</option>`)

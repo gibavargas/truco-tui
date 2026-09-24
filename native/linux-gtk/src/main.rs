@@ -24,6 +24,7 @@ struct AppState {
     pub core: Option<TrucoCore>,
     pub window: window::TrucoWindow,
     pub last_snapshot_str: String,
+    pub current_invite_key: Option<String>,
     pub locale: Locale,
 }
 
@@ -42,6 +43,7 @@ fn main() {
             core: core.clone().ok(),
             window: window.clone(),
             last_snapshot_str: String::new(),
+            current_invite_key: None,
             locale,
         }));
 
@@ -93,18 +95,17 @@ fn connect_shell_actions(state: &Rc<RefCell<AppState>>) {
     let copy_state = state.clone();
     window.btn_copy_invite().connect_clicked(move |_| {
         let state_ref = copy_state.borrow();
-        if let Some(display) = gdk::Display::default() {
-            let clipboard = display.clipboard();
-            let key = state_ref
-                .window
-                .lbl_invite_key_display()
-                .label()
-                .replace("Chave: ", "")
-                .replace("Key: ", "");
-            if !key.trim().is_empty() && !key.contains("(Convidado)") {
+        if let Some(key) = state_ref.current_invite_key.as_deref() {
+            if let Some(display) = gdk::Display::default() {
+                let clipboard = display.clipboard();
                 clipboard.set_text(&key);
                 push_toast(&state_ref.window, text(state_ref.locale, "copied"));
             }
+        } else {
+            push_toast(
+                &state_ref.window,
+                text(state_ref.locale, "copy-key-missing"),
+            );
         }
     });
 
@@ -146,15 +147,18 @@ fn connect_primary_actions(state: &Rc<RefCell<AppState>>) {
             (
                 vec![
                     player_name,
-                    "CPU-Direita".to_string(),
-                    "CPU-Parceiro".to_string(),
-                    "CPU-Esquerda".to_string(),
+                    text(state_ref.locale, "cpu-right").to_string(),
+                    text(state_ref.locale, "cpu-partner").to_string(),
+                    text(state_ref.locale, "cpu-left").to_string(),
                 ],
                 vec![false, true, true, true],
             )
         } else {
             (
-                vec![player_name, "CPU-Oponente".to_string()],
+                vec![
+                    player_name,
+                    text(state_ref.locale, "cpu-opponent").to_string(),
+                ],
                 vec![false, true],
             )
         };
@@ -194,12 +198,17 @@ fn connect_primary_actions(state: &Rc<RefCell<AppState>>) {
         } else {
             Some(relay_url_value.trim())
         };
+        let transport_mode =
+            selected_transport_mode(state_ref.window.dd_transport_mode().selected());
         let intent = AppIntent::with_payload(
             "create_host_session",
             CreateHostPayload {
                 host_name: &host_name,
                 num_players,
                 relay_url,
+                transport_mode: Some(transport_mode),
+                coordinator_url: None,
+                tailnet_control_url: None,
             },
         );
         let fallback_error = text(state_ref.locale, "connection-error").to_string();
@@ -215,7 +224,10 @@ fn connect_primary_actions(state: &Rc<RefCell<AppState>>) {
         );
         let key = state_ref.window.entry_invite_key().text().to_string();
         if key.trim().is_empty() {
-            show_banner(&state_ref.window, "Informe a chave de convite.");
+            show_banner(
+                &state_ref.window,
+                text(state_ref.locale, "join-key-required"),
+            );
             return;
         }
         let desired_role = match state_ref.window.dd_desired_role().selected() {
@@ -274,6 +286,24 @@ fn connect_primary_actions(state: &Rc<RefCell<AppState>>) {
         .entry_chat()
         .connect_activate(move |_| send_chat(&chat_state_enter));
 
+    let join_enter_state = state.clone();
+    window.entry_invite_key().connect_activate(move |_| {
+        join_enter_state
+            .borrow()
+            .window
+            .btn_join_online()
+            .emit_clicked();
+    });
+
+    let host_enter_state = state.clone();
+    window.entry_relay_url().connect_activate(move |_| {
+        host_enter_state
+            .borrow()
+            .window
+            .btn_host_online()
+            .emit_clicked();
+    });
+
     let back_state = state.clone();
     window.btn_back_lobby().connect_clicked(move |_| {
         let state_ref = back_state.borrow();
@@ -314,6 +344,10 @@ fn bind_poll_loop(state: &Rc<RefCell<AppState>>) {
                             app.locale = Locale::from_code(locale_code);
                             apply_locale(&app.window, app.locale);
                         }
+                        app.current_invite_key = bundle
+                            .lobby
+                            .as_ref()
+                            .and_then(|lobby| lobby.invite_key.clone());
                         if let Some(conn) = bundle.connection.as_ref() {
                             if let Some(err) =
                                 conn.last_error.as_ref().and_then(|e| e.message.as_deref())
@@ -354,7 +388,7 @@ where
     T: serde::Serialize,
 {
     let Some(json) = to_json(intent) else {
-        show_banner(&state.window, "Falha ao serializar ação.");
+        show_banner(&state.window, text(state.locale, "serialize-error"));
         return;
     };
     let Some(core) = state.core.clone() else {
@@ -383,14 +417,19 @@ where
 }
 
 fn process_event(app: &mut AppState, ev: &AppEvent) {
-    let _ = ev.sequence;
-    let _ = &ev.timestamp;
-    if let Some(text_value) = ev.text() {
+    if let Some(text_value) = event_text(ev, app.locale) {
         let lbl = gtk::Label::new(Some(&text_value));
         lbl.set_halign(gtk::Align::Start);
         lbl.set_wrap(true);
+        lbl.set_xalign(0.0);
+        lbl.set_selectable(ev.kind == "replacement_invite");
+        lbl.add_css_class(match ev.kind.as_str() {
+            "error" => "event-error",
+            "system" | "replacement_invite" => "event-system",
+            _ => "event-chat",
+        });
         app.window.list_chat().append(&lbl);
-        if ev.kind == "error" || ev.kind == "system" {
+        if matches!(ev.kind.as_str(), "error" | "system" | "replacement_invite") {
             push_toast(&app.window, &text_value);
         }
         if let Some(adj) = app
@@ -434,11 +473,33 @@ fn disable_session_actions(window: &window::TrucoWindow) {
 fn apply_locale(window: &window::TrucoWindow, locale: Locale) {
     window.set_title(Some(text(locale, "app-title")));
     window
+        .lbl_header_title()
+        .set_label(&text(locale, "app-title").to_uppercase());
+    window
         .lbl_lobby_title()
         .set_label(text(locale, "app-title"));
     window
         .lbl_lobby_subtitle()
         .set_label(text(locale, "app-subtitle"));
+    window
+        .lbl_setup_title()
+        .set_label(text(locale, "setup-title"));
+    window.lbl_name_field().set_label(text(locale, "your-name"));
+    window
+        .lbl_players_field()
+        .set_label(text(locale, "players"));
+    window
+        .lbl_language_field()
+        .set_label(text(locale, "language"));
+    window
+        .lbl_relay_field()
+        .set_label(text(locale, "relay-url"));
+    window
+        .lbl_transport_field()
+        .set_label(text(locale, "transport-mode"));
+    window
+        .lbl_role_field()
+        .set_label(text(locale, "desired-role"));
     window
         .btn_start_demo()
         .set_label(text(locale, "play-offline"));
@@ -455,7 +516,94 @@ fn apply_locale(window: &window::TrucoWindow, locale: Locale) {
     window
         .btn_leave_online()
         .set_label(text(locale, "leave-room"));
+    window
+        .btn_leave_match()
+        .set_label(text(locale, "leave-match"));
+    window
+        .btn_back_lobby()
+        .set_label(text(locale, "back-to-lobby"));
     window.btn_send_chat().set_label(text(locale, "send"));
+    window.btn_banner_close().set_label(text(locale, "dismiss"));
+    window
+        .lbl_slots_title()
+        .set_label(text(locale, "seats-title"));
+    window
+        .lbl_chat_title()
+        .set_label(text(locale, "chat-title"));
+    window
+        .lbl_diagnostics_title()
+        .set_label(text(locale, "diagnostics-title"));
+
+    window
+        .entry_player_name()
+        .set_placeholder_text(Some(text(locale, "you")));
+    window
+        .entry_player_name()
+        .set_tooltip_text(Some(text(locale, "your-name")));
+    window
+        .entry_relay_url()
+        .set_placeholder_text(Some(text(locale, "relay-placeholder")));
+    window
+        .entry_relay_url()
+        .set_tooltip_text(Some(text(locale, "relay-url")));
+    window
+        .entry_invite_key()
+        .set_placeholder_text(Some(text(locale, "invite-placeholder")));
+    window
+        .entry_invite_key()
+        .set_tooltip_text(Some(text(locale, "invite-key")));
+    window
+        .entry_chat()
+        .set_placeholder_text(Some(text(locale, "chat-placeholder")));
+    window
+        .entry_chat()
+        .set_tooltip_text(Some(text(locale, "chat-title")));
+    window
+        .btn_copy_invite()
+        .set_tooltip_text(Some(text(locale, "copy-key")));
+    window
+        .btn_start_online_match()
+        .set_tooltip_text(Some(text(locale, "start-match")));
+    window
+        .btn_leave_online()
+        .set_tooltip_text(Some(text(locale, "leave-room")));
+    window
+        .btn_leave_match()
+        .set_tooltip_text(Some(text(locale, "leave-match")));
+
+    replace_dropdown_items(
+        &window.dd_num_players(),
+        &[
+            &format!("2 {}", text(locale, "players").to_lowercase()),
+            &format!("4 {}", text(locale, "players").to_lowercase()),
+        ],
+    );
+    replace_dropdown_items(
+        &window.dd_locale(),
+        &["Português (pt-BR)", "English (en-US)"],
+    );
+    replace_dropdown_items(
+        &window.dd_desired_role(),
+        &["Auto", text(locale, "partner"), text(locale, "opponent")],
+    );
+    replace_dropdown_items(
+        &window.dd_transport_mode(),
+        &[
+            text(locale, "transport-auto"),
+            text(locale, "transport-direct"),
+            text(locale, "transport-tailnet"),
+            text(locale, "transport-relay"),
+        ],
+    );
+}
+
+fn selected_transport_mode(selected: u32) -> &'static str {
+    match selected {
+        1 => "tcp_tls",
+        2 => "tailnet_tsnet_v1",
+        3 => "relay_quic_v2",
+        _ => "auto",
+    }
 }
 
 fn show_banner(window: &window::TrucoWindow, message: &str) {
@@ -475,6 +623,7 @@ fn push_toast(window: &window::TrucoWindow, message: &str) {
 
 fn set_status(window: &window::TrucoWindow, text_value: &str) {
     window.lbl_status_chip().set_label(text_value);
+    window.lbl_status_chip().set_tooltip_text(Some(text_value));
 }
 
 fn fallback_name(name: &str, locale: Locale) -> String {
@@ -482,7 +631,7 @@ fn fallback_name(name: &str, locale: Locale) -> String {
         if locale == Locale::EnUs {
             "You".to_string()
         } else {
-            "Voce".to_string()
+            "Você".to_string()
         }
     } else {
         name.trim().to_string()
@@ -533,6 +682,17 @@ fn dispatch_game_action_with_options(
     }
 }
 
+fn dispatch_new_hand(core: &TrucoCore) {
+    let intent = AppIntent::without_payload("new_hand");
+    if let Some(json) = to_json(&intent) {
+        match core.dispatch(&json) {
+            Ok(Some(err_json)) => eprintln!("new hand failed: {err_json}"),
+            Ok(None) => {}
+            Err(err) => eprintln!("new hand failed: {err}"),
+        }
+    }
+}
+
 fn clear_box(bx: &gtk::Box) {
     while let Some(child) = bx.first_child() {
         bx.remove(&child);
@@ -545,10 +705,230 @@ fn clear_listbox(lb: &gtk::ListBox) {
     }
 }
 
+fn replace_dropdown_items(dropdown: &gtk::DropDown, items: &[&str]) {
+    let selected = dropdown.selected();
+    let model = gtk::StringList::new(items);
+    dropdown.set_model(Some(&model));
+    let max_index = items.len().saturating_sub(1) as u32;
+    dropdown.set_selected(selected.min(max_index));
+}
+
 #[derive(Debug, Deserialize)]
 struct RuntimeError {
     code: Option<String>,
     message: Option<String>,
+}
+
+fn event_text(ev: &AppEvent, locale: Locale) -> Option<String> {
+    let stamp = ev.timestamp.get(11..19).unwrap_or("--:--:--").to_string();
+    match ev.kind.as_str() {
+        "chat" => {
+            let author = ev
+                .payload
+                .as_ref()
+                .and_then(|p| p.get("author"))
+                .and_then(|a| a.as_str())
+                .unwrap_or("?");
+            let msg = ev
+                .payload
+                .as_ref()
+                .and_then(|p| p.get("text"))
+                .and_then(|t| t.as_str())
+                .unwrap_or("");
+            Some(format!("[{stamp}] {author}: {msg}"))
+        }
+        "system" | "error" => ev
+            .payload
+            .as_ref()
+            .and_then(|p| p.get("text").or_else(|| p.get("message")))
+            .and_then(|t| t.as_str())
+            .map(|value| format!("[{stamp}] {value}")),
+        "replacement_invite" => ev
+            .payload
+            .as_ref()
+            .and_then(|p| p.get("invite_key"))
+            .and_then(|t| t.as_str())
+            .map(|key| format!("[{stamp}] {}: {key}", text(locale, "replacement-invite"))),
+        _ => None,
+    }
+}
+
+fn localized_status(bundle: &SnapshotBundle, mode: &str, locale: Locale) -> String {
+    if let Some(err) = bundle
+        .connection
+        .as_ref()
+        .and_then(|conn| conn.last_error.as_ref())
+        .and_then(|err| err.message.as_deref())
+    {
+        return err.to_string();
+    }
+
+    let base = bundle
+        .connection
+        .as_ref()
+        .and_then(|conn| conn.status.as_deref())
+        .map(|status| humanize_runtime_value(status, locale))
+        .unwrap_or_else(|| humanize_mode(mode, locale));
+
+    let mut parts = vec![base];
+    if let Some(network) = bundle
+        .connection
+        .as_ref()
+        .and_then(|conn| conn.network.as_ref())
+    {
+        if let Some(transport) = network.transport.as_deref() {
+            parts.push(format!(
+                "{} {}",
+                text(locale, "transport"),
+                humanize_runtime_value(transport, locale)
+            ));
+        }
+        if let Some(version) = network.negotiated_protocol_version {
+            parts.push(format!("{} v{version}", text(locale, "protocol")));
+        }
+    }
+
+    parts.join(" • ")
+}
+
+fn humanize_mode(mode: &str, locale: Locale) -> String {
+    match mode {
+        "host_lobby" => text(locale, "host-room").to_string(),
+        "client_lobby" => text(locale, "guest-room").to_string(),
+        "offline_match" | "host_match" | "client_match" => text(locale, "start-match").to_string(),
+        "idle" => text(locale, "table-ready").to_string(),
+        other => humanize_runtime_value(other, locale),
+    }
+}
+
+fn humanize_runtime_value(value: &str, locale: Locale) -> String {
+    let lowered = value.trim();
+    match (locale, lowered) {
+        (_, "") => text(locale, "not-available").to_string(),
+        (_, "auto") => "auto".to_string(),
+        (Locale::PtBr, "connected") => "Conectado".to_string(),
+        (Locale::EnUs, "connected") => "Connected".to_string(),
+        (Locale::PtBr, "idle") => "Pronto".to_string(),
+        (Locale::EnUs, "idle") => "Idle".to_string(),
+        (Locale::PtBr, "tcp_tls") => "direto".to_string(),
+        (Locale::EnUs, "tcp_tls") => "direct".to_string(),
+        (Locale::PtBr, "relay_quic_v2") => "relay".to_string(),
+        (Locale::EnUs, "relay_quic_v2") => "relay".to_string(),
+        (_, other) => other
+            .split('_')
+            .map(|part| {
+                let mut chars = part.chars();
+                match chars.next() {
+                    Some(first) => {
+                        let mut word = first.to_uppercase().collect::<String>();
+                        word.push_str(chars.as_str());
+                        word
+                    }
+                    None => String::new(),
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(" "),
+    }
+}
+
+fn diagnostics_summary(bundle: &SnapshotBundle, locale: Locale) -> String {
+    let backlog = bundle
+        .diagnostics
+        .as_ref()
+        .and_then(|diag| diag.event_backlog)
+        .unwrap_or(0);
+    let mut parts = vec![format!("{} {backlog}", text(locale, "backlog"))];
+
+    if let Some(network) = bundle
+        .connection
+        .as_ref()
+        .and_then(|conn| conn.network.as_ref())
+    {
+        if let Some(transport) = network.transport.as_deref() {
+            parts.push(format!(
+                "{} {}",
+                text(locale, "transport"),
+                humanize_runtime_value(transport, locale)
+            ));
+        }
+        if let Some(version) = network.negotiated_protocol_version {
+            parts.push(format!("{} v{version}", text(locale, "protocol")));
+        }
+        if let Some(reason) = network
+            .fallback_reason
+            .as_deref()
+            .filter(|value| !value.is_empty())
+        {
+            parts.push(format!("{} {}", text(locale, "fallback"), reason));
+        }
+        if let Some(status) = network
+            .coordinator_status
+            .as_deref()
+            .filter(|value| !value.is_empty())
+        {
+            parts.push(format!(
+                "{} {}",
+                text(locale, "coordinator"),
+                humanize_runtime_value(status, locale)
+            ));
+        }
+    }
+
+    parts.join(" • ")
+}
+
+fn diagnostics_log(bundle: &SnapshotBundle, locale: Locale) -> String {
+    let entries = bundle
+        .diagnostics
+        .as_ref()
+        .and_then(|diag| diag.event_log.as_ref())
+        .map(|entries| entries.iter().rev().take(6).cloned().collect::<Vec<_>>())
+        .unwrap_or_default();
+    if entries.is_empty() {
+        text(locale, "diagnostics-empty").to_string()
+    } else {
+        entries.into_iter().rev().collect::<Vec<_>>().join("\n")
+    }
+}
+
+fn dispatch_inline_intent<T>(
+    window: &window::TrucoWindow,
+    core: &TrucoCore,
+    locale: Locale,
+    intent: &AppIntent<T>,
+    success_message: Option<&str>,
+    fallback_error: Option<&str>,
+) where
+    T: serde::Serialize,
+{
+    let Some(json) = to_json(intent) else {
+        show_banner(window, text(locale, "serialize-error"));
+        return;
+    };
+
+    match core.dispatch(&json) {
+        Ok(Some(response)) => {
+            let message = parse_runtime_error(&response)
+                .or(fallback_error.map(str::to_string))
+                .unwrap_or(response);
+            show_banner(window, &message);
+            set_status(window, &message);
+        }
+        Ok(None) => {
+            hide_banner(window);
+            if let Some(message) = success_message {
+                push_toast(window, message);
+            }
+        }
+        Err(err) => {
+            let message = fallback_error
+                .map(str::to_string)
+                .unwrap_or_else(|| err.to_string());
+            show_banner(window, &message);
+            set_status(window, &message);
+        }
+    }
 }
 
 fn update_ui(
@@ -564,13 +944,7 @@ fn update_ui(
         .and_then(|ui| ui.actions.as_ref())
         .map(|actions| actions.can_close_session)
         .unwrap_or(false);
-    let status_text = bundle
-        .connection
-        .as_ref()
-        .and_then(|c| c.status.as_ref())
-        .cloned()
-        .unwrap_or_else(|| mode.to_string());
-    set_status(window, &status_text.replace('_', " "));
+    set_status(window, &localized_status(bundle, mode, locale));
     window.btn_leave_online().set_sensitive(can_close_session);
     window.btn_leave_match().set_sensitive(can_close_session);
 
@@ -582,7 +956,12 @@ fn update_ui(
         window.main_stack().set_visible_child_name("game");
         if let Some(ref snap) = bundle.game {
             let actions = bundle.ui.as_ref().and_then(|ui| ui.actions.as_ref());
-            update_game_ui(window, snap, actions, core, locale);
+            let slots = bundle
+                .ui
+                .as_ref()
+                .and_then(|ui| ui.lobby_slots.as_deref())
+                .unwrap_or(&[]);
+            update_game_ui(window, snap, actions, core, locale, mode, slots);
         }
     } else if mode == "host_lobby" || mode == "client_lobby" {
         window.main_stack().set_visible_child_name("online_lobby");
@@ -602,141 +981,238 @@ fn update_lobby_ui(
     window
         .lbl_online_status()
         .set_label(if mode == "host_lobby" {
-            text(locale, "online-room")
+            text(locale, "host-room")
         } else {
-            "Connected"
+            text(locale, "guest-room")
         });
+    window
+        .lbl_diagnostics_summary()
+        .set_label(&diagnostics_summary(bundle, locale));
+    window
+        .lbl_diagnostics_log()
+        .set_label(&diagnostics_log(bundle, locale));
 
     if let Some(lobby) = &bundle.lobby {
-        if let Some(key) = &lobby.invite_key {
-            window
-                .lbl_invite_key_display()
-                .set_label(&format!("Chave: {key}"));
-            window.btn_copy_invite().set_sensitive(true);
-        } else {
-            window
-                .lbl_invite_key_display()
-                .set_label("Chave: (Convidado)");
-            window.btn_copy_invite().set_sensitive(false);
-        }
-
-        clear_listbox(&window.list_slots());
         let slot_states = bundle
             .ui
             .as_ref()
             .and_then(|ui| ui.lobby_slots.as_ref())
             .cloned()
             .unwrap_or_default();
+        let occupied = if !slot_states.is_empty() {
+            slot_states.iter().filter(|slot| slot.is_occupied).count()
+        } else {
+            lobby
+                .slots
+                .as_ref()
+                .map(|slots| slots.iter().filter(|name| !name.is_empty()).count())
+                .unwrap_or(0)
+        };
+        let needed = lobby
+            .num_players
+            .map(|count| count.max(1) as usize)
+            .or_else(|| {
+                if slot_states.is_empty() {
+                    lobby.slots.as_ref().map(|slots| slots.len().max(1))
+                } else {
+                    Some(slot_states.len().max(1))
+                }
+            })
+            .unwrap_or(1);
+
+        if let Some(key) = &lobby.invite_key {
+            window
+                .lbl_invite_key_display()
+                .set_label(&format!("{}: {key}", text(locale, "invite-key")));
+            window.btn_copy_invite().set_sensitive(true);
+        } else {
+            window.lbl_invite_key_display().set_label(&format!(
+                "{}: ({})",
+                text(locale, "invite-key"),
+                text(locale, "guest-key")
+            ));
+            window.btn_copy_invite().set_sensitive(false);
+        }
+        window.lbl_online_meta().set_label(&format!(
+            "{} {occupied}/{needed} • {}",
+            text(locale, "occupancy"),
+            diagnostics_summary(bundle, locale)
+        ));
+
+        clear_listbox(&window.list_slots());
 
         if !slot_states.is_empty() {
             for slot in &slot_states {
-                let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-                row.set_halign(gtk::Align::Fill);
-                row.set_hexpand(true);
-
-                let display_name = slot
-                    .name
-                    .as_deref()
-                    .filter(|name| !name.is_empty())
-                    .unwrap_or("Aguardando...");
-                let mut display = display_name.to_string();
-                if slot.is_host {
-                    display.push_str(" [host]");
-                }
-                if slot.is_occupied && !slot.is_connected && !slot.is_local {
-                    display.push_str(" [offline]");
-                }
-                let lbl = gtk::Label::new(Some(&display));
-                lbl.set_hexpand(true);
-                lbl.set_xalign(0.0);
-                row.append(&lbl);
-
-                if slot.is_local {
-                    let me_lbl = gtk::Label::new(Some(text(locale, "you")));
-                    me_lbl.add_css_class("ladder-active");
-                    row.append(&me_lbl);
-                } else {
-                    if slot.can_request_replacement {
-                        let btn_invite = gtk::Button::with_label("Convite");
-                        btn_invite.add_css_class("pill-button");
-                        let core_inv = core.clone();
-                        let target_seat = slot.seat as usize;
-                        btn_invite.connect_clicked(move |_| {
-                            let intent = AppIntent::with_payload(
-                                "request_replacement_invite",
-                                ReplacementInvitePayload { target_seat },
-                            );
-                            if let Some(json) = to_json(&intent) {
-                                let _ = core_inv.dispatch(&json);
-                            }
-                        });
-                        row.append(&btn_invite);
-                    }
-
-                    if slot.can_vote_host {
-                        let btn_vote = gtk::Button::with_label("Votar Host");
-                        btn_vote.add_css_class("pill-button");
-                        let core_vote = core.clone();
-                        let candidate_seat = slot.seat as usize;
-                        btn_vote.connect_clicked(move |_| {
-                            let intent = AppIntent::with_payload(
-                                "vote_host",
-                                HostVotePayload { candidate_seat },
-                            );
-                            if let Some(json) = to_json(&intent) {
-                                let _ = core_vote.dispatch(&json);
-                            }
-                        });
-                        row.append(&btn_vote);
-                    }
-                }
-
-                let lb_row = gtk::ListBoxRow::new();
-                lb_row.set_child(Some(&row));
-                window.list_slots().append(&lb_row);
+                append_slot_state_row(window, core, slot, locale);
             }
         } else if let Some(slots) = &lobby.slots {
             for (i, name) in slots.iter().enumerate() {
-                let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-                row.set_halign(gtk::Align::Fill);
-                row.set_hexpand(true);
                 let connected = lobby
                     .connected_seats
                     .as_ref()
                     .and_then(|m| m.get(&i.to_string()).copied())
                     .unwrap_or(false);
-                let mut display = if name.is_empty() {
-                    "Aguardando...".to_string()
+                let display = if name.is_empty() {
+                    text(locale, "waiting-seat").to_string()
                 } else {
                     name.clone()
                 };
+                let mut meta = Vec::new();
                 if i as i32 == lobby.host_seat.unwrap_or(0) {
-                    display.push_str(" [host]");
+                    meta.push(text(locale, "host-tag").to_string());
                 }
                 if !name.is_empty() && !connected {
-                    display.push_str(" [offline]");
+                    meta.push(text(locale, "offline-tag").to_string());
                 }
-                let lbl = gtk::Label::new(Some(&display));
-                lbl.set_hexpand(true);
-                lbl.set_xalign(0.0);
-                row.append(&lbl);
-
                 if Some(i as i32) == lobby.assigned_seat {
-                    let me_lbl = gtk::Label::new(Some(text(locale, "you")));
-                    me_lbl.add_css_class("ladder-active");
-                    row.append(&me_lbl);
+                    meta.push(text(locale, "local-tag").to_string());
                 }
-
-                let lb_row = gtk::ListBoxRow::new();
-                lb_row.set_child(Some(&row));
-                window.list_slots().append(&lb_row);
+                append_basic_slot_row(window, i, &display, &meta.join(" • "));
             }
         }
+
+        let can_start = mode == "host_lobby" && occupied >= needed;
+        window
+            .btn_start_online_match()
+            .set_visible(mode == "host_lobby");
+        window.btn_start_online_match().set_sensitive(can_start);
+        window.btn_start_online_match().set_label(&format!(
+            "{} · {occupied}/{needed}",
+            text(locale, "start-match")
+        ));
+        window
+            .btn_start_online_match()
+            .set_tooltip_text(Some(if can_start {
+                text(locale, "start-match")
+            } else {
+                text(locale, "occupancy")
+            }));
+        return;
     }
 
     window
         .btn_start_online_match()
         .set_visible(mode == "host_lobby");
+    window.btn_start_online_match().set_sensitive(false);
+    window
+        .lbl_online_meta()
+        .set_label(&diagnostics_summary(bundle, locale));
+}
+
+fn append_slot_state_row(
+    window: &window::TrucoWindow,
+    core: &TrucoCore,
+    slot: &models::LobbySlotState,
+    locale: Locale,
+) {
+    let display = slot
+        .name
+        .as_deref()
+        .filter(|name| !name.is_empty())
+        .unwrap_or(text(locale, "waiting-seat"));
+    let mut meta = Vec::new();
+    if slot.is_host {
+        meta.push(text(locale, "host-tag").to_string());
+    }
+    if slot.is_occupied && !slot.is_connected && !slot.is_local {
+        meta.push(text(locale, "offline-tag").to_string());
+    }
+    if slot.is_local {
+        meta.push(text(locale, "local-tag").to_string());
+    }
+    if let Some(status) = slot.status.as_deref().filter(|value| !value.is_empty()) {
+        meta.push(humanize_runtime_value(status, locale));
+    }
+
+    let row = build_slot_row(slot.seat as usize, display, &meta.join(" • "));
+
+    if slot.can_request_replacement && !slot.is_local {
+        let btn_invite = gtk::Button::with_label(text(locale, "replacement-invite"));
+        btn_invite.add_css_class("pill-button");
+        btn_invite.set_tooltip_text(Some(text(locale, "replacement-tip")));
+        let window_clone = window.clone();
+        let core_inv = core.clone();
+        let target_seat = slot.seat as usize;
+        btn_invite.connect_clicked(move |_| {
+            let intent = AppIntent::with_payload(
+                "request_replacement_invite",
+                ReplacementInvitePayload { target_seat },
+            );
+            dispatch_inline_intent(
+                &window_clone,
+                &core_inv,
+                locale,
+                &intent,
+                Some(text(locale, "replacement-created")),
+                Some(text(locale, "connection-error")),
+            );
+        });
+        row.append(&btn_invite);
+    }
+
+    if slot.can_vote_host && !slot.is_local {
+        let btn_vote = gtk::Button::with_label(text(locale, "vote-host"));
+        btn_vote.add_css_class("pill-button");
+        btn_vote.set_tooltip_text(Some(text(locale, "vote-host-tip")));
+        let window_clone = window.clone();
+        let core_vote = core.clone();
+        let candidate_seat = slot.seat as usize;
+        btn_vote.connect_clicked(move |_| {
+            let intent = AppIntent::with_payload("vote_host", HostVotePayload { candidate_seat });
+            dispatch_inline_intent(
+                &window_clone,
+                &core_vote,
+                locale,
+                &intent,
+                Some(text(locale, "host-vote-sent")),
+                Some(text(locale, "connection-error")),
+            );
+        });
+        row.append(&btn_vote);
+    }
+
+    let lb_row = gtk::ListBoxRow::new();
+    lb_row.set_child(Some(&row));
+    window.list_slots().append(&lb_row);
+}
+
+fn append_basic_slot_row(
+    window: &window::TrucoWindow,
+    seat_index: usize,
+    display: &str,
+    meta: &str,
+) {
+    let row = build_slot_row(seat_index, display, meta);
+    let lb_row = gtk::ListBoxRow::new();
+    lb_row.set_child(Some(&row));
+    window.list_slots().append(&lb_row);
+}
+
+fn build_slot_row(seat_index: usize, display: &str, meta: &str) -> gtk::Box {
+    let row = gtk::Box::new(gtk::Orientation::Horizontal, 10);
+    row.set_halign(gtk::Align::Fill);
+    row.set_hexpand(true);
+    row.add_css_class("slot-row");
+
+    let details = gtk::Box::new(gtk::Orientation::Vertical, 4);
+    details.set_hexpand(true);
+
+    let name_lbl = gtk::Label::new(Some(&format!("#{} {}", seat_index + 1, display)));
+    name_lbl.set_hexpand(true);
+    name_lbl.set_xalign(0.0);
+    name_lbl.add_css_class("slot-name");
+    details.append(&name_lbl);
+
+    if !meta.is_empty() {
+        let meta_lbl = gtk::Label::new(Some(meta));
+        meta_lbl.set_xalign(0.0);
+        meta_lbl.set_wrap(true);
+        meta_lbl.add_css_class("slot-meta");
+        details.append(&meta_lbl);
+    }
+
+    row.append(&details);
+    row
 }
 
 fn update_game_ui(
@@ -745,6 +1221,8 @@ fn update_game_ui(
     actions: Option<&ActionSnapshot>,
     core: &TrucoCore,
     locale: Locale,
+    mode: &str,
+    slots: &[models::LobbySlotState],
 ) {
     let local_idx = actions
         .map(|a| a.local_player_id)
@@ -763,17 +1241,9 @@ fn update_game_ui(
     if snapshot.match_finished == Some(true) {
         window.game_over_overlay().set_visible(true);
         if snapshot.winner_team == Some(my_team) {
-            window.lbl_winner().set_label(if locale == Locale::EnUs {
-                "VICTORY!"
-            } else {
-                "VITORIA!"
-            });
+            window.lbl_winner().set_label(text(locale, "victory"));
         } else {
-            window.lbl_winner().set_label(if locale == Locale::EnUs {
-                "DEFEAT"
-            } else {
-                "DERROTA"
-            });
+            window.lbl_winner().set_label(text(locale, "defeat"));
         }
     } else {
         window.game_over_overlay().set_visible(false);
@@ -822,7 +1292,7 @@ fn update_game_ui(
     let score_us = gtk::Label::new(None);
     score_us.set_markup(&format!(
         "<span size='large'><b>{}</b></span>\n<span size='28000'><b>{}</b></span>",
-        if locale == Locale::EnUs { "US" } else { "NOS" },
+        text(locale, "us"),
         us
     ));
     score_us.set_justify(gtk::Justification::Center);
@@ -834,11 +1304,7 @@ fn update_game_ui(
     let stake_lbl = gtk::Label::new(None);
     stake_lbl.set_markup(&format!(
         "<span size='large'><b>{}</b></span>\n<span size='28000' color='#ffcc00'><b>{}</b></span>",
-        if locale == Locale::EnUs {
-            "STAKE"
-        } else {
-            "VALE"
-        },
+        text(locale, "stake"),
         stake
     ));
     stake_lbl.set_justify(gtk::Justification::Center);
@@ -872,15 +1338,8 @@ fn update_game_ui(
     if let Some(tp) = snapshot.turn_player {
         if let Some(players) = &snapshot.players {
             if let Some(turn_p) = players.iter().find(|p| p.id == tp) {
-                let turn_lbl = gtk::Label::new(Some(&format!(
-                    "{} {}",
-                    if locale == Locale::EnUs {
-                        "Turn:"
-                    } else {
-                        "Vez:"
-                    },
-                    turn_p.name
-                )));
+                let turn_lbl =
+                    gtk::Label::new(Some(&format!("{} {}", text(locale, "turn"), turn_p.name)));
                 turn_lbl.add_css_class("turn-pill");
                 mid_box.append(&turn_lbl);
             }
@@ -890,11 +1349,7 @@ fn update_game_ui(
     let score_them = gtk::Label::new(None);
     score_them.set_markup(&format!(
         "<span size='large'><b>{}</b></span>\n<span size='28000'><b>{}</b></span>",
-        if locale == Locale::EnUs {
-            "THEM"
-        } else {
-            "ELES"
-        },
+        text(locale, "them"),
         them
     ));
     score_them.set_justify(gtk::Justification::Center);
@@ -924,6 +1379,7 @@ fn update_game_ui(
                 my_team,
                 &top_piles,
                 snapshot,
+                locale,
             );
         }
 
@@ -939,6 +1395,7 @@ fn update_game_ui(
                     my_team,
                     &right_piles,
                     snapshot,
+                    locale,
                 );
             }
             let left_id = (local_idx + 3) % 4;
@@ -952,6 +1409,7 @@ fn update_game_ui(
                     my_team,
                     &left_piles,
                     snapshot,
+                    locale,
                 );
             }
         }
@@ -959,9 +1417,9 @@ fn update_game_ui(
 
     let center_box = window.center_box();
     clear_box(&center_box);
-        if let Some(hand) = &snapshot.current_hand {
+    if let Some(hand) = &snapshot.current_hand {
         let vira_stack = gtk::Box::new(gtk::Orientation::Vertical, 8);
-        vira_stack.append(&gtk::Label::new(Some("VIRA")));
+        vira_stack.append(&gtk::Label::new(Some(text(locale, "vira"))));
         if let Some(vira) = &hand.vira {
             vira_stack.append(&create_card_widget(Some(vira)));
         }
@@ -988,7 +1446,7 @@ fn update_game_ui(
         center_box.append(&played_box);
 
         let manilha_stack = gtk::Box::new(gtk::Orientation::Vertical, 8);
-        manilha_stack.append(&gtk::Label::new(Some("MANILHA")));
+        manilha_stack.append(&gtk::Label::new(Some(text(locale, "manilha"))));
         if let Some(m) = &hand.manilha {
             let m_lbl = gtk::Label::new(None);
             m_lbl.set_size_request(86, 124);
@@ -1004,26 +1462,35 @@ fn update_game_ui(
     clear_box(&bottom_box);
 
     let match_over = snapshot.match_finished.unwrap_or(false);
-    let can_play = actions
-        .map(|a| a.can_play_card)
-        .unwrap_or(snapshot.turn_player == Some(local_idx) && snapshot.pending_raise_for.unwrap_or(-1) == -1);
+    let can_play = actions.map(|a| a.can_play_card).unwrap_or(
+        snapshot.turn_player == Some(local_idx) && snapshot.pending_raise_for.unwrap_or(-1) == -1,
+    );
     let can_raise = actions.map(|a| a.can_ask_or_raise).unwrap_or(false);
     let must_respond = actions
         .map(|a| a.must_respond)
         .unwrap_or(snapshot.pending_raise_for.unwrap_or(-1) == my_team);
     let can_accept = actions.map(|a| a.can_accept).unwrap_or(must_respond);
     let can_refuse = actions.map(|a| a.can_refuse).unwrap_or(must_respond);
+    let can_start_new_hand = !match_over && (mode == "offline_match" || mode == "host_match");
 
     if !match_over {
         let action_box = gtk::Box::new(gtk::Orientation::Horizontal, 16);
         action_box.set_halign(gtk::Align::Center);
 
+        if can_start_new_hand {
+            let btn_new_hand = gtk::Button::with_label(text(locale, "new-hand"));
+            btn_new_hand.add_css_class("pill-button");
+            let core_n = core.clone();
+            btn_new_hand.connect_clicked(move |_| dispatch_new_hand(&core_n));
+            action_box.append(&btn_new_hand);
+        }
+
         if must_respond {
             if can_accept {
                 let btn_accept = gtk::Button::with_label(if locale == Locale::EnUs {
-                    "ACCEPT"
+                    text(locale, "accept")
                 } else {
-                    "ACEITAR"
+                    text(locale, "accept")
                 });
                 btn_accept.add_css_class("btn-accept");
                 let core_a = core.clone();
@@ -1047,9 +1514,9 @@ fn update_game_ui(
 
             if can_refuse {
                 let btn_refuse = gtk::Button::with_label(if locale == Locale::EnUs {
-                    "FOLD"
+                    text(locale, "fold")
                 } else {
-                    "CORRER"
+                    text(locale, "fold")
                 });
                 btn_refuse.add_css_class("btn-refuse");
                 let core_f = core.clone();
@@ -1072,11 +1539,13 @@ fn update_game_ui(
         bottom_box.append(&action_box);
     }
 
+    append_match_slot_actions(window, &bottom_box, core, locale, mode, slots);
+
     if can_play && !match_over {
         let lbl = gtk::Label::new(Some(if locale == Locale::EnUs {
-            "YOUR TURN"
+            text(locale, "your-turn")
         } else {
-            "SUA VEZ"
+            text(locale, "your-turn")
         }));
         lbl.add_css_class("turn-pill");
         bottom_box.append(&lbl);
@@ -1085,11 +1554,7 @@ fn update_game_ui(
     if let Some(logs) = &snapshot.logs {
         let updates = gtk::Box::new(gtk::Orientation::Vertical, 4);
         updates.set_halign(gtk::Align::Center);
-        let title = gtk::Label::new(Some(if locale == Locale::EnUs {
-            "Updates"
-        } else {
-            "Atualizações"
-        }));
+        let title = gtk::Label::new(Some(text(locale, "updates")));
         title.add_css_class("section-title");
         updates.append(&title);
         for line in logs.iter().rev().take(3).rev() {
@@ -1106,7 +1571,8 @@ fn update_game_ui(
             let name_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
             name_row.set_halign(gtk::Align::Center);
             name_row.append(&gtk::Label::new(Some(&me.name.to_uppercase())));
-            let team_lbl = gtk::Label::new(Some(&format!("Team {}", me.team + 1)));
+            let team_lbl =
+                gtk::Label::new(Some(&format!("{} {}", text(locale, "team"), me.team + 1)));
             team_lbl.add_css_class(if me.team == 0 {
                 "team-badge-us"
             } else {
@@ -1117,7 +1583,7 @@ fn update_game_ui(
 
             let my_piles = trick_piles_for_player(snapshot, me.id);
             if !my_piles.is_empty() {
-                bottom_box.append(&monte_piles_widget(&my_piles, gtk::Align::Center));
+                bottom_box.append(&monte_piles_widget(&my_piles, gtk::Align::Center, locale));
             }
 
             let my_hand = gtk::Box::new(gtk::Orientation::Horizontal, 16);
@@ -1141,13 +1607,18 @@ fn update_game_ui(
                         {
                             let core_down = core.clone();
                             let face_down = gtk::Button::with_label(if locale == Locale::EnUs {
-                                "Face down"
+                                text(locale, "face-down")
                             } else {
-                                "Virada"
+                                text(locale, "face-down")
                             });
                             face_down.add_css_class("pill-button");
                             face_down.connect_clicked(move |_| {
-                                dispatch_game_action_with_options(&core_down, "play", Some(idx), true)
+                                dispatch_game_action_with_options(
+                                    &core_down,
+                                    "play",
+                                    Some(idx),
+                                    true,
+                                )
                             });
                             let card_stack = gtk::Box::new(gtk::Orientation::Vertical, 4);
                             card_stack.append(&card_widget);
@@ -1166,6 +1637,103 @@ fn update_game_ui(
     }
 }
 
+fn append_match_slot_actions(
+    window: &window::TrucoWindow,
+    bottom_box: &gtk::Box,
+    core: &TrucoCore,
+    locale: Locale,
+    mode: &str,
+    slots: &[models::LobbySlotState],
+) {
+    if mode != "host_match" && mode != "client_match" {
+        return;
+    }
+    let actionable: Vec<&models::LobbySlotState> = slots
+        .iter()
+        .filter(|slot| !slot.is_local && (slot.can_vote_host || slot.can_request_replacement))
+        .collect();
+    if actionable.is_empty() {
+        return;
+    }
+
+    let group = gtk::Box::new(gtk::Orientation::Vertical, 8);
+    group.set_halign(gtk::Align::Center);
+    let title = gtk::Label::new(Some(text(locale, "seats-title")));
+    title.add_css_class("section-title");
+    group.append(&title);
+
+    for slot in actionable {
+        let display = slot
+            .name
+            .as_deref()
+            .filter(|name| !name.is_empty())
+            .unwrap_or(text(locale, "waiting-seat"));
+        let meta = slot
+            .status
+            .as_deref()
+            .filter(|value| !value.is_empty())
+            .map(|status| humanize_runtime_value(status, locale))
+            .unwrap_or_else(|| {
+                if slot.is_connected {
+                    text(locale, "online-room").to_string()
+                } else {
+                    text(locale, "offline-tag").to_string()
+                }
+            });
+        let row = build_slot_row(slot.seat as usize, display, &meta);
+
+        if slot.can_request_replacement {
+            let btn_invite = gtk::Button::with_label(text(locale, "replacement-invite"));
+            btn_invite.add_css_class("pill-button");
+            btn_invite.set_tooltip_text(Some(text(locale, "replacement-tip")));
+            let window_clone = window.clone();
+            let core_inv = core.clone();
+            let target_seat = slot.seat as usize;
+            btn_invite.connect_clicked(move |_| {
+                let intent = AppIntent::with_payload(
+                    "request_replacement_invite",
+                    ReplacementInvitePayload { target_seat },
+                );
+                dispatch_inline_intent(
+                    &window_clone,
+                    &core_inv,
+                    locale,
+                    &intent,
+                    Some(text(locale, "replacement-created")),
+                    Some(text(locale, "connection-error")),
+                );
+            });
+            row.append(&btn_invite);
+        }
+
+        if slot.can_vote_host {
+            let btn_vote = gtk::Button::with_label(text(locale, "vote-host"));
+            btn_vote.add_css_class("pill-button");
+            btn_vote.set_tooltip_text(Some(text(locale, "vote-host-tip")));
+            let window_clone = window.clone();
+            let core_vote = core.clone();
+            let candidate_seat = slot.seat as usize;
+            btn_vote.connect_clicked(move |_| {
+                let intent =
+                    AppIntent::with_payload("vote_host", HostVotePayload { candidate_seat });
+                dispatch_inline_intent(
+                    &window_clone,
+                    &core_vote,
+                    locale,
+                    &intent,
+                    Some(text(locale, "host-vote-sent")),
+                    Some(text(locale, "connection-error")),
+                );
+            });
+            row.append(&btn_vote);
+        }
+
+        group.append(&row);
+    }
+
+    bottom_box.append(&group);
+}
+
 fn render_opponent(
     container: &gtk::Box,
     player: &models::Player,
@@ -1174,6 +1742,7 @@ fn render_opponent(
     my_team: i32,
     trick_piles: &[models::TrickPile],
     snap: &GameSnapshot,
+    locale: Locale,
 ) {
     let badge = role_badge_for(player.id, snap);
     let mut name_text = String::new();
@@ -1204,7 +1773,11 @@ fn render_opponent(
     });
     container.append(&name_lbl);
 
-    let team_lbl = gtk::Label::new(Some(&format!("Team {}", player.team + 1)));
+    let team_lbl = gtk::Label::new(Some(&format!(
+        "{} {}",
+        text(locale, "team"),
+        player.team + 1
+    )));
     team_lbl.add_css_class(if player.team == 0 {
         "team-badge-us"
     } else {
@@ -1213,13 +1786,9 @@ fn render_opponent(
     container.append(&team_lbl);
 
     let relation_lbl = gtk::Label::new(Some(if player.team == my_team {
-        if player.id == snap.current_player_idx.unwrap_or(-1) {
-            "Você"
-        } else {
-            "Parceiro"
-        }
+        text(locale, "partner")
     } else {
-        "Adversário"
+        text(locale, "opponent")
     }));
     relation_lbl.add_css_class("team-role-pill");
     container.append(&relation_lbl);
@@ -1239,12 +1808,12 @@ fn render_opponent(
     container.append(&hand_box);
 
     if !trick_piles.is_empty() {
-        container.append(&monte_piles_widget(trick_piles, gtk::Align::Center));
+        container.append(&monte_piles_widget(trick_piles, gtk::Align::Center, locale));
     }
 }
 
-fn monte_piles_widget(piles: &[models::TrickPile], align: gtk::Align) -> gtk::Box {
-    let label = gtk::Label::new(Some("MONTE"));
+fn monte_piles_widget(piles: &[models::TrickPile], align: gtk::Align, locale: Locale) -> gtk::Box {
+    let label = gtk::Label::new(Some(text(locale, "pile")));
     label.add_css_class("team-role-pill");
     let stacks = gtk::Box::new(gtk::Orientation::Horizontal, 8);
     stacks.set_halign(gtk::Align::Center);
@@ -1253,12 +1822,22 @@ fn monte_piles_widget(piles: &[models::TrickPile], align: gtk::Align) -> gtk::Bo
         let pile_box = gtk::Box::new(gtk::Orientation::Vertical, 4);
         pile_box.set_halign(gtk::Align::Center);
 
-        let round_lbl = gtk::Label::new(Some(&format!("Vaza {}", pile.round.unwrap_or(0).max(1))));
+        let round_lbl = gtk::Label::new(Some(&format!(
+            "{} {}",
+            text(locale, "trick"),
+            pile.round.unwrap_or(0).max(1)
+        )));
         round_lbl.add_css_class("team-role-pill");
         pile_box.append(&round_lbl);
 
         let stack = gtk::Box::new(gtk::Orientation::Horizontal, -10);
-        let shown = pile.cards.as_ref().map(|c| c.len()).unwrap_or(0).max(1).min(4);
+        let shown = pile
+            .cards
+            .as_ref()
+            .map(|c| c.len())
+            .unwrap_or(0)
+            .max(1)
+            .min(4);
         for _ in 0..shown {
             let card = create_card_widget(None);
             card.set_size_request(28, 40);
@@ -1331,6 +1910,7 @@ fn create_card_widget(card_opt: Option<&models::Card>) -> gtk::Box {
 
     if let Some(card) = card_opt {
         container.add_css_class("card");
+        container.set_tooltip_text(Some(&format!("{} de {}", card.rank, card.suit)));
         if card.is_red() {
             container.add_css_class("card-red");
         }

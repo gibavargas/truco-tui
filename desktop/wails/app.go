@@ -283,10 +283,14 @@ func normalizeDesiredRole(value string) string {
 
 func normalizeTransportMode(value string) string {
 	switch strings.TrimSpace(value) {
+	case "auto":
+		return "auto"
 	case "tcp_tls":
 		return "tcp_tls"
 	case "relay_quic_v2":
 		return "relay_quic_v2"
+	case "tailnet_tsnet_v1":
+		return "tailnet_tsnet_v1"
 	default:
 		return ""
 	}

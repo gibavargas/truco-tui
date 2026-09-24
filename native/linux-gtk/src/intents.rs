@@ -49,6 +49,12 @@ pub struct CreateHostPayload<'a> {
     pub num_players: i32,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub relay_url: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub transport_mode: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub coordinator_url: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tailnet_control_url: Option<&'a str>,
 }
 
 #[derive(Serialize)]

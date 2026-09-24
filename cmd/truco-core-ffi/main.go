@@ -23,13 +23,24 @@ var (
 func main() {}
 
 func createRuntimeHandle() uintptr {
-	rt := appcore.NewRuntime()
+	id, _ := createRuntimeHandleWithConfig("")
+	return id
+}
+
+func createRuntimeHandleWithConfig(payload string) (uintptr, error) {
+	var config appcore.RuntimeConfig
+	if payload != "" {
+		if err := json.Unmarshal([]byte(payload), &config); err != nil {
+			return 0, err
+		}
+	}
+	rt := appcore.NewRuntimeWithConfig(config)
 	handleMu.Lock()
 	id := nextHandle
 	nextHandle++
 	runtimes[id] = rt
 	handleMu.Unlock()
-	return id
+	return id, nil
 }
 
 func destroyRuntimeHandle(handle uintptr) {
@@ -98,6 +109,19 @@ func consumeCString(ptr *C.char) string {
 //export TrucoCoreCreate
 func TrucoCoreCreate() C.uintptr_t {
 	return C.uintptr_t(createRuntimeHandle())
+}
+
+//export TrucoCoreCreateWithConfigJSON
+func TrucoCoreCreateWithConfigJSON(payload *C.char) C.uintptr_t {
+	configJSON := ""
+	if payload != nil {
+		configJSON = C.GoString(payload)
+	}
+	id, err := createRuntimeHandleWithConfig(configJSON)
+	if err != nil {
+		return 0
+	}
+	return C.uintptr_t(id)
 }
 
 //export TrucoCoreDestroy

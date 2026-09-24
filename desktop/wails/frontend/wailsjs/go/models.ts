@@ -60,6 +60,16 @@ export namespace appcore {
 	}
 	export class NetworkSnapshot {
 	    transport?: string;
+	    requested_transport?: string;
+	    direct_path_known?: boolean;
+	    direct_path?: boolean;
+	    relay_fallback?: boolean;
+	    coordinator_status?: string;
+	    coordinator_url?: string;
+	    tailnet_node?: string;
+	    tailnet_authority?: string;
+	    tailnet_service_port?: number;
+	    fallback_reason?: string;
 	    supported_protocol_versions?: number[];
 	    negotiated_protocol_version?: number;
 	    seat_protocol_versions?: Record<number, number>;
@@ -72,6 +82,16 @@ export namespace appcore {
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.transport = source["transport"];
+	        this.requested_transport = source["requested_transport"];
+	        this.direct_path_known = source["direct_path_known"];
+	        this.direct_path = source["direct_path"];
+	        this.relay_fallback = source["relay_fallback"];
+	        this.coordinator_status = source["coordinator_status"];
+	        this.coordinator_url = source["coordinator_url"];
+	        this.tailnet_node = source["tailnet_node"];
+	        this.tailnet_authority = source["tailnet_authority"];
+	        this.tailnet_service_port = source["tailnet_service_port"];
+	        this.fallback_reason = source["fallback_reason"];
 	        this.supported_protocol_versions = source["supported_protocol_versions"];
 	        this.negotiated_protocol_version = source["negotiated_protocol_version"];
 	        this.seat_protocol_versions = source["seat_protocol_versions"];
@@ -551,4 +571,3 @@ export namespace truco {
 	}
 
 }
-
