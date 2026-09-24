@@ -7,12 +7,20 @@ SRCS = src/Card.cpp src/GameState.cpp src/Strategy.cpp src/AIEngine.cpp src/truc
 OBJS = $(SRCS:.cpp=.o)
 TARGET = libtruco_ai.so
 
+# macOS dyld ignores LC_RPATH for bare-filename deps: record @rpath so
+# dependents (CGO rpath flags) can resolve the library at runtime.
+ifeq ($(shell uname),Darwin)
+LINKFLAGS = -Wl,-install_name,@rpath/$(TARGET)
+else
+LINKFLAGS =
+endif
+
 .PHONY: all clean
 
 all: $(TARGET)
 
 $(TARGET): $(OBJS)
-	$(CXX) -shared $(CXXFLAGS) -o $@ $(OBJS)
+	$(CXX) -shared $(CXXFLAGS) $(LINKFLAGS) -o $@ $(OBJS)
 
 %.o: %.cpp
 	$(CXX) $(CXXFLAGS) -c $< -o $@

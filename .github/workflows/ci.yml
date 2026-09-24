@@ -24,6 +24,9 @@ jobs:
       - name: Download Modules
         run: go mod download
 
+      - name: Build C++ AI engine
+        run: make -C native/ai-engine
+
       - name: Verify go.sum Integrity
         run: go mod verify
 

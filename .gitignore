@@ -6,13 +6,42 @@ native/ai-engine/libtruco_ai.so
 httpapi
 truco-api
 
+# Binaries / native build output
+bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+native/**/bin/
+native/**/obj/
+native/**/target/
+
+# Test binary / coverage
+*.test
+*.out
+*.profraw
+
+# Go workspace file
+go.work
+
 # Node
 browser-edition/node_modules/
 browser-edition/dist/
 
+# Wails generated output
+desktop/wails/node_modules/
+desktop/wails/frontend/dist/
+desktop/wails/build/*
+!desktop/wails/build/appicon.png
+
 # OS
 .DS_Store
 Thumbs.db
+
+# IDE
+.vscode/
+.idea/
 
 # Local Codex/Claude workspace files
 .claude/
@@ -29,7 +58,4 @@ scripts/polymarket/state.json
 kika-daemon-go*.bak*
 src/kika-daemon-go
 src/*.bak*
-# Build artifacts
-bin/
-*.exe
 scripts/kika-daemon-go/config.yaml
