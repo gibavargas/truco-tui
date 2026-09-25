@@ -8,6 +8,7 @@ import (
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/subtle"
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
@@ -227,7 +228,7 @@ func (s *relayServer) handleMintJoinTicket(w http.ResponseWriter, r *http.Reques
 		writeJSON(w, http.StatusTooManyRequests, map[string]any{"error": "rate_limited"})
 		return
 	}
-	if req.HostAdminToken != sess.AdminToken {
+	if subtle.ConstantTimeCompare([]byte(req.HostAdminToken), []byte(sess.AdminToken)) != 1 {
 		s.metrics.authFailures.Add(1)
 		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "auth_failed"})
 		return
@@ -342,7 +343,7 @@ func (s *relayServer) handlePublishAuthority(w http.ResponseWriter, r *http.Requ
 		writeJSON(w, http.StatusGone, map[string]any{"error": "session_expired"})
 		return
 	}
-	if req.HostAdminToken != sess.AdminToken {
+	if subtle.ConstantTimeCompare([]byte(req.HostAdminToken), []byte(sess.AdminToken)) != 1 {
 		s.metrics.authFailures.Add(1)
 		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "auth_failed"})
 		return
@@ -564,10 +565,10 @@ func (s *relayServer) handleHostRegister(conn quic.Connection, stream quic.Strea
 		return errors.New("session expired")
 	}
 	mem, ok := sess.Members[h.PeerID]
-	if !ok || mem.Credential != h.Credential || mem.ExpiresAt.Before(now) {
+	if !ok || subtle.ConstantTimeCompare([]byte(mem.Credential), []byte(h.Credential)) != 1 || mem.ExpiresAt.Before(now) {
 		return errors.New("auth_failed")
 	}
-	if h.PeerID != sess.AuthorityPeerID {
+	if subtle.ConstantTimeCompare([]byte(h.PeerID), []byte(sess.AuthorityPeerID)) != 1 {
 		return errors.New("not authority")
 	}
 	s.authorityConns[h.SessionID] = conn
@@ -592,11 +593,11 @@ func (s *relayServer) handleTCPHostRegister(conn net.Conn, h netrelayHeartbeatTu
 		return errors.New("session expired")
 	}
 	mem, ok := sess.Members[h.PeerID]
-	if !ok || mem.Credential != h.Credential || mem.ExpiresAt.Before(now) {
+	if !ok || subtle.ConstantTimeCompare([]byte(mem.Credential), []byte(h.Credential)) != 1 || mem.ExpiresAt.Before(now) {
 		s.mu.Unlock()
 		return errors.New("auth_failed")
 	}
-	if h.PeerID != sess.AuthorityPeerID {
+	if subtle.ConstantTimeCompare([]byte(h.PeerID), []byte(sess.AuthorityPeerID)) != 1 {
 		s.mu.Unlock()
 		return errors.New("not authority")
 	}
@@ -623,12 +624,12 @@ func (s *relayServer) handleTCPTunnelAccept(conn net.Conn, h netrelayHeartbeatTu
 		return
 	}
 	mem, ok := sess.Members[h.PeerID]
-	if !ok || mem.Credential != h.Credential || mem.ExpiresAt.Before(now) {
+	if !ok || subtle.ConstantTimeCompare([]byte(mem.Credential), []byte(h.Credential)) != 1 || mem.ExpiresAt.Before(now) {
 		s.metrics.authFailures.Add(1)
 		s.mu.Unlock()
 		return
 	}
-	if h.PeerID != sess.AuthorityPeerID {
+	if subtle.ConstantTimeCompare([]byte(h.PeerID), []byte(sess.AuthorityPeerID)) != 1 {
 		s.mu.Unlock()
 		return
 	}
@@ -665,7 +666,7 @@ func (s *relayServer) handlePeerTunnel(downstreamReader io.Reader, downstream io
 		return errors.New("session expired")
 	}
 	mem, ok := sess.Members[h.PeerID]
-	if !ok || mem.Credential != h.Credential || mem.ExpiresAt.Before(now) {
+	if !ok || subtle.ConstantTimeCompare([]byte(mem.Credential), []byte(h.Credential)) != 1 || mem.ExpiresAt.Before(now) {
 		s.mu.Unlock()
 		s.metrics.tunnelsFailed.Add(1)
 		s.metrics.authFailures.Add(1)
