@@ -8,6 +8,7 @@ import (
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/subtle"
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
@@ -227,7 +228,7 @@ func (s *relayServer) handleMintJoinTicket(w http.ResponseWriter, r *http.Reques
 		writeJSON(w, http.StatusTooManyRequests, map[string]any{"error": "rate_limited"})
 		return
 	}
-	if req.HostAdminToken != sess.AdminToken {
+	if subtle.ConstantTimeCompare([]byte(req.HostAdminToken), []byte(sess.AdminToken)) != 1 {
 		s.metrics.authFailures.Add(1)
 		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "auth_failed"})
 		return
@@ -342,7 +343,7 @@ func (s *relayServer) handlePublishAuthority(w http.ResponseWriter, r *http.Requ
 		writeJSON(w, http.StatusGone, map[string]any{"error": "session_expired"})
 		return
 	}
-	if req.HostAdminToken != sess.AdminToken {
+	if subtle.ConstantTimeCompare([]byte(req.HostAdminToken), []byte(sess.AdminToken)) != 1 {
 		s.metrics.authFailures.Add(1)
 		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "auth_failed"})
 		return
