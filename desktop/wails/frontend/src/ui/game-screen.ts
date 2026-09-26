@@ -401,7 +401,7 @@ function renderGamePanel(
       return `
         <section class="game10-panel panel-region" id="game-panel-chat" role="tabpanel" tabindex="0" aria-labelledby="game-tab-chat" aria-label="${escapeHtml(t("lobby_chat"))}">
           <pre class="event-feed compact" role="log" aria-live="polite" data-pretext-block="lock-height" data-pretext-whitespace="pre-wrap">${escapeHtml(renderEventFeed((match.Logs || []).slice(-4)))}</pre>
-          <form class="chat-form" data-api-action="sendChat" data-form-id="sendChat"><input name="message" type="text" autocomplete="off" placeholder="${escapeHtml(t("chat_placeholder"))}"><button class="secondary-button" type="submit"${busyAttr("sendChat")}>${buttonLabel("sendChat", t("lobby_chat"))}</button></form>
+          <form class="chat-form" data-api-action="sendChat" data-form-id="sendChat"><input name="message" type="text" autocomplete="off" placeholder="${escapeHtml(t("chat_placeholder"))}" aria-label="${escapeHtml(t("chat_placeholder"))}"><button class="secondary-button" type="submit"${busyAttr("sendChat")}>${buttonLabel("sendChat", t("lobby_chat"))}</button></form>
         </section>
       `;
     default:
