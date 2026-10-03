@@ -1,1 +1,5 @@
 ## 2025-03-11 - Playing Card Accessibility\n**Learning:** When rendering custom CSS-based playing cards that use repeated characters and decorative unicode symbols for the suit, screen readers will read out confusing, nonsensical strings like '4 ♦ ♦ 4 ♦'. To fix this, mark the entire card container with `role="img"` and an `aria-label` containing the readable label (e.g. '4 de Ouros'), while setting `aria-hidden="true"` on all the child elements containing the visual symbols and duplicating caption texts. \n**Action:** Use this `role="img"` with `aria-label` pattern anytime visual text/unicode combinations act purely as decorative graphical elements rather than meaningful flowing text.
+
+## 2026-10-03 - Adding ARIA labels to compact UI input fields
+**Learning:** When input fields lack a visually associated `<label>` element, screen readers cannot properly announce the field's purpose. This commonly happens in compact chat UIs relying only on placeholder text.
+**Action:** Always add an `aria-label` attribute containing the localized string to provide an accessible name for the input without disrupting the visual design.
