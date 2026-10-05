@@ -138,8 +138,8 @@ export function renderGameScreen(params: GameScreenParams): string {
               <!-- Center area: Deck & Vira -->
               <div class="game10-table-center-deck">
                 <div class="game10-card-deck-stack">
-                  <div class="card-back small game10-deck-card-1"></div>
-                  <div class="card-back small game10-deck-card-2"></div>
+                  <div class="card-back small game10-deck-card-1" aria-hidden="true"></div>
+                  <div class="card-back small game10-deck-card-2" aria-hidden="true"></div>
                 </div>
                 <div class="game10-table-vira-card">
                   <span class="game10-vira-label">${escapeHtml(t("game_vira"))}</span>
@@ -245,7 +245,7 @@ function renderTablePlayedCards(
     const position = positions.get(played.PlayerID) || "top";
     return `
       <div class="game10-table-played-card game10-played-on-${position} game10-played-card-enter">
-        ${played.FaceDown ? `<span class="card-back small"></span>` : renderCard(played.Card, "small")}
+        ${played.FaceDown ? `<span class="card-back small" aria-hidden="true"></span>` : renderCard(played.Card, "small")}
         <span class="game10-played-card-owner">${escapeHtml(playerName(match, played.PlayerID).split(" ")[0])}</span>
       </div>
     `;
@@ -285,7 +285,7 @@ function renderPlayerSeats(
         </div>
         ${!isLocal ? `
           <div class="player-cards">
-            ${player.Hand.map(() => `<span class="card-back tiny"></span>`).join("")}
+            ${player.Hand.map(() => `<span class="card-back tiny" aria-hidden="true"></span>`).join("")}
           </div>
         ` : ""}
       </div>
@@ -306,7 +306,7 @@ function renderPlayableCard(
   cardLabel: (card: Card) => string,
 ): string {
   if (!canPlay) {
-    return `<div class="game10-hand-card game10-hand-card-locked" role="listitem">${renderCard(card)}<span class="card-caption">${escapeHtml(cardLabel(card))}</span></div>`;
+    return `<div class="game10-hand-card game10-hand-card-locked" role="listitem">${renderCard(card)}<span class="card-caption" aria-hidden="true">${escapeHtml(cardLabel(card))}</span></div>`;
   }
 
   return `
@@ -315,7 +315,7 @@ function renderPlayableCard(
         <input type="hidden" name="cardIndex" value="${index}">
         <button class="card-button game10-card-button" type="submit" aria-label="${escapeHtml(`${t("game_play")} ${cardLabel(card)}`)}"${busyAttr(`play-${index}`)}>${renderCard(card)}</button>
       </form>
-      <span class="card-caption">${escapeHtml(cardLabel(card))}</span>
+      <span class="card-caption" aria-hidden="true">${escapeHtml(cardLabel(card))}</span>
       ${canFaceDown ? `<form data-api-action="play" data-form-id="play-down-${index}"><input type="hidden" name="cardIndex" value="${index}"><input type="hidden" name="faceDown" value="true"><button class="ghost-button game10-face-down" type="submit" aria-label="${escapeHtml(`${t("game_face_down")} ${cardLabel(card)}`)}"${busyAttr(`play-down-${index}`)}>${buttonLabel(`play-down-${index}`, t("game_face_down"))}</button></form>` : ""}
     </div>
   `;
