@@ -432,6 +432,9 @@ func (s *relayServer) healthz(w http.ResponseWriter, r *http.Request) {
 
 func (s *relayServer) metricsHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("X-Frame-Options", "DENY")
+	w.Header().Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
 	fmt.Fprintf(w, "truco_relay_sessions_created %d\n", s.metrics.sessionsCreated.Load())
 	fmt.Fprintf(w, "truco_relay_joins_total %d\n", s.metrics.joinsTotal.Load())
 	fmt.Fprintf(w, "truco_relay_authority_publishes_total %d\n", s.metrics.authorityPublishes.Load())
@@ -956,6 +959,9 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 		}
 	}
 	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("X-Frame-Options", "DENY")
+	w.Header().Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(v)
 }
