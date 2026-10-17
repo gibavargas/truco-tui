@@ -1300,11 +1300,13 @@ input:focus {
   will-change: transform;
 }
 
-.play-card-playable .card-button:hover {
+.play-card-playable .card-button:hover,
+.play-card-playable .card-button:focus-visible {
   transform: translateY(-0.45rem);
 }
 
-.play-card .card-button:hover .card-face {
+.play-card .card-button:hover .card-face,
+.play-card .card-button:focus-visible .card-face {
   box-shadow: 0 14px 28px rgba(9, 42, 17, 0.35);
   border-color: var(--orange);
 }
@@ -2710,7 +2712,8 @@ input:focus {
     margin-left: 0;
   }
 
-  .play-card-playable .card-button:hover {
+  .play-card-playable .card-button:hover,
+  .play-card-playable .card-button:focus-visible {
     transform: rotate(calc((var(--card-index) - ((var(--card-total) - 1) / 2)) * 6deg)) translateY(-0.45rem);
   }
 
