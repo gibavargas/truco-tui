@@ -13,7 +13,7 @@ truco-<type>-<client>-<platform>-<arch>[-<variant>]
 Where:
 
 - `<type>`: `tui` or `gui`
-- `<client>`: consumer identifier such as `core` or `winui`
+- `<client>`: consumer identifier such as `core`, `wails`, or `winui`
 - `<platform>`: target OS such as `linux`, `darwin`, or `windows`
 - `<arch>`: target architecture such as `amd64` or `arm64`
 - `<variant>`: optional qualifier such as `portable`
@@ -28,6 +28,7 @@ Shared native libraries used by desktop clients are currently built into `bin/` 
 - macOS: `bin/libtruco_core.dylib`
 - Linux: `bin/libtruco_core.so`
 - Windows: `bin/truco-core-ffi.dll`
+- C++ AI engine: `native/ai-engine/libtruco_ai.so` (built by `make -C native/ai-engine`, not an installable artifact)
 
 ## Current Examples
 
@@ -39,7 +40,6 @@ Shared native libraries used by desktop clients are currently built into `bin/` 
 | Linux Wails desktop | `bin/gui/wails/truco-gui-wails-linux-amd64` | Built via `make wails-build-linux` |
 | Windows Wails desktop | `bin/gui/wails/truco-gui-wails-windows-amd64.exe` | Built via `make wails-build-windows` |
 | Windows TUI ARM64 portable | `bin/tui/truco-tui-core-windows-arm64-portable.exe` | Produced by the Windows packaging flow |
-| WPF portable bundle | `bin/gui/wpf/truco-gui-wpf-windows-amd64-portable` | Legacy Windows GUI portable output |
 | WinUI portable bundle | `bin/gui/winui/truco-gui-winui-windows-amd64-portable` | Portable Windows GUI output |
 
 ## Guidance

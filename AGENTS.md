@@ -7,6 +7,7 @@
 - Browser edition: Go HTTP API in `browser-edition/cmd/httpapi` plus the TypeScript static client in `browser-edition/web`.
 
 ## Preferred Commands
+- Build the C++ AI engine first (required by every CGO-enabled Go build/test; `CGO_ENABLED=0` falls back to the Go heuristic): `make -C native/ai-engine`
 - Run TUI: `make run` or `go run ./cmd/truco`
 - Build host-platform TUI: `make build`
 - Run relay locally: `make relay`
