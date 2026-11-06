@@ -4,6 +4,7 @@ Use this checklist before cutting a release or sharing build artifacts outside l
 
 ## Validation
 
+- Run `make -C native/ai-engine` (the CGO runtime links `libtruco_ai`; `CGO_ENABLED=0` builds use the Go fallback)
 - Run `go mod verify`
 - Run `go vet ./...`
 - Run `go test ./...`
@@ -25,7 +26,6 @@ Use this checklist before cutting a release or sharing build artifacts outside l
 - Linux FFI and GTK app: `make linux-gtk`
 - Windows FFI: `make ffi-windows`
 - Windows WinUI portable bundle: `native\windows-winui\build-portable.bat`
-- Windows WPF portable bundle, compatibility only: `native\windows-wpf\build-portable.bat`
 
 ## Output Review
 
@@ -43,6 +43,7 @@ Use this checklist before cutting a release or sharing build artifacts outside l
 - Offline matches can be finished and reset back to `idle` without stale busy state
 - Host/join direct online session works through lobby, match start, gameplay, and leave/reset
 - Relay-backed session creation and join work through lobby, match start, gameplay, and leave/reset
+- Relay TCP fallback works with UDP blocked: run `RELAY_URL=... RELAY_TCP_ADDR=... go run ./scripts/e2e-tcp-smoke` against the real relay binary
 - Chat works in lobby and match
 - Host transfer vote works and updates visible host ownership
 - Replacement invite flow works after a real disconnect and replacement join

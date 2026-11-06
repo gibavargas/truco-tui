@@ -10,7 +10,9 @@ The repository contains:
 
 - A terminal client built with Bubble Tea and Lip Gloss.
 - A browser client backed by a Go HTTP API.
-- Native desktop shells for macOS, Linux GTK, Windows WinUI, and a legacy Windows WPF client.
+- A Wails desktop app (`desktop/wails`), the supported desktop direction for Windows and Linux.
+- Native desktop shells for macOS (supported) plus deprecated Linux GTK and Windows WinUI clients.
+- A C++ CPU strategy engine (`native/ai-engine`) linked into the Go runtime through CGO.
 - A relay service for restrictive NAT and firewall scenarios.
 
 The shared runtime in `internal/appcore` owns game rules, online session orchestration, snapshots, and event flow. Every non-TUI client integrates with that runtime directly or through a thin transport layer.
@@ -19,7 +21,7 @@ The shared runtime in `internal/appcore` owns game rules, online session orchest
 
 - `cmd/truco`: terminal client entrypoint.
 - `cmd/truco-core-ffi`: C ABI bridge used by native desktop clients.
-- `cmd/truco-relay`: HTTPS + QUIC relay service.
+- `cmd/truco-relay`: HTTPS control plane + QUIC and TLS-over-TCP data plane relay service.
 - `browser-edition/`: browser UI, Go HTTP API, and packaging script.
 - `docs/`: parity and binary naming contracts.
 - `internal/appcore`: runtime API, snapshots, and events.
@@ -28,13 +30,23 @@ The shared runtime in `internal/appcore` owns game rules, online session orchest
 - `internal/netquic`: QUIC helpers.
 - `internal/truco`: game rules, deck model, and CPU behavior.
 - `internal/ui`: Bubble Tea TUI implementation.
-- `native/`: native desktop clients.
+- `native/`: native desktop clients and the C++ AI engine (`native/ai-engine`).
+- `desktop/wails`: Wails desktop app (Go adapter + TypeScript UI).
+- `scripts/`: artifact validation, icon generation, and the relay TCP smoke test (`scripts/e2e-tcp-smoke`).
 
 ## Requirements
 
 - Go 1.24+
-- Node.js 20+ for the browser edition build
+- Node.js 20+ for the browser and Wails frontend builds
+- A C++17 compiler (`g++` or `clang++`) with `make` and CGO enabled to get the C++ CPU engine (`libtruco_ai`). Builds with `CGO_ENABLED=0` (including cross-compiles) still work and fall back to the pure-Go CPU heuristic (`internal/truco/cpu_nocgo.go`)
 - Platform-specific toolchains only when building native clients
+- Wails CLI v2 only when building the Wails desktop app
+
+With CGO enabled (the default on host builds), build the C++ AI engine once before any `go run`, `go build`, `go vet`, or `go test`, and again whenever `native/ai-engine` changes:
+
+```bash
+make -C native/ai-engine
+```
 
 ## Main Commands
 
@@ -116,6 +128,15 @@ Build the Linux Flatpak bundle:
 make flatpak-linux
 ```
 
+Build the Wails desktop app (see [desktop/wails/README.md](desktop/wails/README.md)):
+
+```bash
+make wails-build            # host platform
+make wails-build-linux      # linux/amd64
+make wails-build-windows    # windows/amd64
+make verify-wails           # typecheck, frontend tests, Go adapter tests, dry-run builds
+```
+
 ## Binary Naming
 
 All produced binaries follow [docs/BINARY_NAMING.md](docs/BINARY_NAMING.md).
@@ -144,6 +165,7 @@ Environment variables:
 
 - `TRUCO_RELAY_HTTP_ADDR`: control-plane HTTPS address. Default: `127.0.0.1:9443`
 - `TRUCO_RELAY_QUIC_ADDR`: QUIC tunnel address. Default: `127.0.0.1:9444`
+- `TRUCO_RELAY_TCP_ADDR`: TLS-over-TCP tunnel address, used as fallback when UDP is blocked. Default: `:9445`
 - `TRUCO_RELAY_TLS_CERT_FILE`: TLS certificate path for production
 - `TRUCO_RELAY_TLS_KEY_FILE`: TLS key path for production
 
@@ -152,6 +174,8 @@ Relay protocol notes:
 - Online transport uses protocol version 2.
 - Relay invites use short-lived `relay_join_ticket` values.
 - Clients validate TLS 1.3 and may enforce SPKI pinning.
+- The data plane dials QUIC first and falls back to TLS-over-TCP per connection; host and peer may use different transports in the same session. Relay responses advertise `tcp_addr` (additive; older relays omit it and clients derive `host:9445`).
+- Smoke-test the TCP path against a running relay with `RELAY_URL=... RELAY_TCP_ADDR=... go run ./scripts/e2e-tcp-smoke`.
 - Expired relay sessions, members, and tickets are cleaned up automatically.
 
 Operational endpoints:
@@ -189,7 +213,9 @@ Online chat commands:
 - `docs/BINARY_NAMING.md`: artifact naming and output locations
 - `docs/RELEASE_CHECKLIST.md`: pre-release validation and smoke checks
 - `browser-edition/README.md`: browser client workflow
+- `desktop/wails/README.md`: Wails desktop app workflow
 - `native/README.md`: native client overview
+- `progress.md`: current project status
 
 ## FAQ
 
@@ -199,7 +225,7 @@ Acesse [truco.jvguidi.com.br](https://truco.jvguidi.com.br) no navegador. Escolh
 
 ### Preciso instalar algo para jogar?
 
-Não. O jogo roda direto no navegador. Para a versão terminal, instale Go 1.24+ e execute `go run ./cmd/truco`.
+Não. O jogo roda direto no navegador. Para a versão terminal, instale Go 1.24+ e um compilador C++, rode `make -C native/ai-engine` e depois `go run ./cmd/truco`.
 
 ### O Truco Paulista tem multiplayer?
 
@@ -211,4 +237,4 @@ Baralho de 40 cartas (sem 8, 9 e 10), manilha dinâmica do vira, ranking Paulist
 
 ### Tem versão para desktop?
 
-Sim. Há clientes nativos para macOS, Linux GTK e Windows. Veja a seção [Main Commands](#main-commands) para instruções de build de cada plataforma.
+Sim. Há o app desktop em Wails (Windows e Linux) e o cliente nativo para macOS; os clientes Linux GTK e Windows WinUI estão descontinuados. Veja a seção [Main Commands](#main-commands) para instruções de build de cada plataforma.

@@ -5,16 +5,16 @@ from `cmd/truco-core-ffi`.
 
 Supported variants:
 
-- `macos`: supported native macOS client.
-
-Deprecated variants:
-
-- `windows-winui`: deprecated in favor of the Wails desktop app.
-- `linux-gtk`: deprecated in favor of the Wails desktop app.
-
 - `macos`: SwiftUI app for macOS.
+
+Deprecated variants (superseded by the Wails desktop app in `desktop/wails`):
+
 - `linux-gtk`: Rust + GTK4/libadwaita legacy shell for Linux.
 - `windows-winui`: WinUI 3 + MVVM Toolkit legacy shell for Windows.
+
+Shared native code:
+
+- `ai-engine`: C++17 CPU strategy engine (`libtruco_ai`). It is linked into the Go runtime via CGO (`internal/truco/cpu_cpp.go`), so build it with `make -C native/ai-engine` before building or testing any CGO-enabled Go target. Builds with `CGO_ENABLED=0` use the pure-Go fallback in `internal/truco/cpu_nocgo.go`.
 
 Each client is intentionally thin:
 
