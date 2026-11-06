@@ -225,7 +225,6 @@ func (g *Game) StartNewHand() {
 func (g *Game) startHandLocked(dealer int) {
 	deck := NewDeck()
 	deck.Shuffle(g.rng)
-	g.lastTrickCards = nil
 	g.trickPiles = nil
 
 	for i := range g.players {
@@ -334,6 +333,9 @@ func (g *Game) playCard(playerID, handIndex int, faceDown bool) error {
 	}
 
 	card := g.players[pi].Hand[handIndex]
+	if g.hand.Round == 1 && len(g.hand.RoundCards) == 0 {
+		g.lastTrickCards = nil
+	}
 	g.players[pi].Hand = append(g.players[pi].Hand[:handIndex], g.players[pi].Hand[handIndex+1:]...)
 	g.hand.RoundCards = append(g.hand.RoundCards, PlayedCard{PlayerID: playerID, Card: card, FaceDown: faceDown})
 	if faceDown {

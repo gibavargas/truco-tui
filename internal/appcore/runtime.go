@@ -37,9 +37,10 @@ type Runtime struct {
 	events    []AppEvent
 	eventLog  []string
 
-	match   *truco.Snapshot
-	lobby   *LobbySnapshot
-	network *NetworkSnapshot
+	match              *truco.Snapshot
+	lobby              *LobbySnapshot
+	network            *NetworkSnapshot
+	nextCPUActionAfter time.Time
 }
 
 func NewRuntime() *Runtime {
@@ -546,8 +547,34 @@ func (r *Runtime) requestReplacementInviteLocked(targetSeat int) error {
 }
 
 func (r *Runtime) setMatchLocked(s truco.Snapshot) {
+	prev := r.match
 	r.match = &s
+	r.scheduleNextCPUPaceLocked(prev, &s)
 	r.queueEventLocked(EventMatchUpdated, s)
+}
+
+func (r *Runtime) scheduleNextCPUPaceLocked(prev, next *truco.Snapshot) {
+	now := time.Now()
+	if next == nil {
+		r.nextCPUActionAfter = time.Time{}
+		return
+	}
+	if prev == nil {
+		r.nextCPUActionAfter = now.Add(1000 * time.Millisecond)
+		return
+	}
+	prevPoints := prev.MatchPoints[0] + prev.MatchPoints[1]
+	nextPoints := next.MatchPoints[0] + next.MatchPoints[1]
+	switch {
+	case nextPoints > prevPoints:
+		r.nextCPUActionAfter = now.Add(2200 * time.Millisecond)
+	case next.LastTrickSeq > prev.LastTrickSeq:
+		r.nextCPUActionAfter = now.Add(1650 * time.Millisecond)
+	case next.PendingRaiseFor >= 0 && (next.PendingRaiseFor != prev.PendingRaiseFor || next.PendingRaiseTo != prev.PendingRaiseTo):
+		r.nextCPUActionAfter = now.Add(1150 * time.Millisecond)
+	default:
+		r.nextCPUActionAfter = now.Add(900 * time.Millisecond)
+	}
 }
 
 func (r *Runtime) updateHostLobbyLocked() {
@@ -930,7 +957,7 @@ func (r *Runtime) handleClientFailover(gen uint64, client *netp2p.ClientSession)
 }
 
 func (r *Runtime) runGameTicker(gen uint64) {
-	tk := time.NewTicker(850 * time.Millisecond)
+	tk := time.NewTicker(150 * time.Millisecond)
 	defer tk.Stop()
 	for range tk.C {
 		r.mu.Lock()
@@ -940,6 +967,10 @@ func (r *Runtime) runGameTicker(gen uint64) {
 		}
 		if r.mode == ModeHostMatch {
 			r.syncProvisionalCPUsLocked()
+		}
+		if time.Now().Before(r.nextCPUActionAfter) {
+			r.mu.Unlock()
+			continue
 		}
 		changed, err := r.stepCPUIfNeededLocked()
 		if err != nil {

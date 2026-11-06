@@ -13,6 +13,37 @@ import type {
 
 type ViewName = "setup" | "lobby" | "game";
 
+interface TrickRevealState {
+  seq: number;
+  cards: PlayedCard[];
+  winner: number;
+  team: number;
+  tie: boolean;
+  round: number;
+  manilha: string;
+  until: number;
+  holdMatch: MatchSnapshot | null;
+}
+
+interface PendingHandBanner {
+  title: string;
+  sub: string;
+  kind: string;
+  durationMs: number;
+  confettiMs: number;
+}
+
+interface UIFxState {
+  animatedCardKeys: Set<string>;
+  animatedViraKey: string;
+  trucoCall: { id: number; text: string; sub: string; until: number } | null;
+  lastRaiseSignal: string;
+  announcement: { id: number; title: string; sub: string; kind: string; until: number } | null;
+  confetti: { id: number; strength: number; until: number } | null;
+  trickReveal: TrickRevealState | null;
+  pendingHandBanner: PendingHandBanner | null;
+}
+
 interface AppState {
   sessionId: string;
   locale: LocaleCode;
@@ -23,24 +54,13 @@ interface AppState {
   error: string;
   busyForm: string;
   initialized: boolean;
-  renderSig: string;
+  viewSig: string;
+  fxSig: string;
+  lastRenderedView: ViewName | "";
   lastMatchSig: string;
   lastMatchChangeAt: number;
+  drawerOpen: boolean;
   uiFx: UIFxState;
-}
-
-interface UIFxState {
-  dealtCardKeys: Set<string>;
-  playedCardKeys: Set<string>;
-  flippedCardKeys: Set<string>;
-  shakeUntil: number;
-  pulseUntil: number;
-  confettiUntil: number;
-  confettiStrength: number;
-  trucoCall: { text: string; until: number } | null;
-  lastRaiseSignal: string;
-  lastViraKey: string;
-  announcement: { title: string; sub: string; kind: string; until: number } | null;
 }
 
 const SESSION_KEY = "truco-browser-session-id";
@@ -48,13 +68,47 @@ const LOCALE_KEY = "truco-browser-locale";
 const PLAYER_KEY = "truco-browser-player-name";
 const RELAY_KEY = "truco-browser-relay-url";
 const EVENT_LIMIT = 80;
-const rootElement = document.querySelector<HTMLElement>("#app");
 
+const NORMAL_RANK_POWER: Record<string, number> = {
+  "4": 1,
+  "5": 2,
+  "6": 3,
+  "7": 4,
+  Q: 5,
+  J: 6,
+  K: 7,
+  A: 8,
+  "2": 9,
+  "3": 10,
+};
+
+const MANILHA_SUIT_POWER: Record<string, number> = {
+  Ouros: 1,
+  Espadas: 2,
+  Copas: 3,
+  Paus: 4,
+};
+
+const rootElement = document.querySelector<HTMLElement>("#app");
 if (!rootElement) {
   throw new Error("missing #app root");
 }
-
 const root: HTMLElement = rootElement;
+
+root.innerHTML = `
+  <div id="view-layer" class="page-shell"></div>
+  <div id="fx-layer" class="fx-root"></div>
+`;
+
+const viewLayer = root.querySelector<HTMLElement>("#view-layer")!;
+const fxLayer = root.querySelector<HTMLElement>("#fx-layer")!;
+
+let fxSeq = 0;
+let refreshTimer = 0;
+let resizeTimer = 0;
+let fxTimer = 0;
+let shakeTimeout = 0;
+let pulseTimeout = 0;
 
 const state: AppState = {
   sessionId: sessionStorage.getItem(SESSION_KEY) || "",
@@ -66,28 +120,25 @@ const state: AppState = {
   error: "",
   busyForm: "",
   initialized: false,
-  renderSig: "",
+  viewSig: "",
+  fxSig: "",
+  lastRenderedView: "",
   lastMatchSig: "",
   lastMatchChangeAt: 0,
+  drawerOpen: false,
   uiFx: {
-    dealtCardKeys: new Set<string>(),
-    playedCardKeys: new Set<string>(),
-    flippedCardKeys: new Set<string>(),
-    shakeUntil: 0,
-    pulseUntil: 0,
-    confettiUntil: 0,
-    confettiStrength: 1,
+    animatedCardKeys: new Set<string>(),
+    animatedViraKey: "",
     trucoCall: null,
     lastRaiseSignal: "",
-    lastViraKey: "",
     announcement: null,
+    confetti: null,
+    trickReveal: null,
+    pendingHandBanner: null,
   },
 };
 
 const preparedCache = new Map<string, ReturnType<typeof prepare>>();
-let refreshTimer = 0;
-let resizeTimer = 0;
-let fxTimer = 0;
 
 root.addEventListener("submit", (event) => {
   const form = (event.target as HTMLElement | null)?.closest<HTMLFormElement>("form[data-api-action]");
@@ -107,10 +158,48 @@ root.addEventListener("click", (event) => {
   const copyButton = target.closest<HTMLElement>("[data-copy-text]");
   if (copyButton) {
     void copyInvite(copyButton);
+    return;
+  }
+
+  const drawerToggle = target.closest<HTMLElement>("[data-toggle-drawer]");
+  if (drawerToggle) {
+    state.drawerOpen = !state.drawerOpen;
+    render();
+    return;
+  }
+
+  const dismissBanner = target.closest<HTMLElement>("[data-dismiss-error]");
+  if (dismissBanner) {
+    state.error = "";
+    render();
+  }
+});
+
+root.addEventListener("input", (event) => {
+  const input = event.target as HTMLInputElement | null;
+  if (!input) {
+    return;
+  }
+  if (input.name === "name" || input.dataset.syncPlayerName === "true") {
+    const val = input.value;
+    state.playerName = val;
+    if (val.trim() !== "") {
+      localStorage.setItem(PLAYER_KEY, val.trim());
+    }
+    for (const other of root.querySelectorAll<HTMLInputElement>('input[name="name"], input[data-sync-player-name="true"]')) {
+      if (other !== input && other.value !== val) {
+        other.value = val;
+      }
+    }
   }
 });
 
 root.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && state.drawerOpen) {
+    state.drawerOpen = false;
+    render();
+    return;
+  }
   if (event.key !== "Enter" && event.key !== " ") {
     return;
   }
@@ -207,6 +296,9 @@ async function submitForm(form: HTMLFormElement): Promise<void> {
     return;
   }
 
+  // If the user explicitly interacts during a visual trick hold, flush it immediately
+  flushPendingVisualHold();
+
   const viewBeforeSubmit = currentView();
   let viewChanged = false;
   const payload = formPayload(form);
@@ -247,14 +339,13 @@ async function submitForm(form: HTMLFormElement): Promise<void> {
 }
 
 async function syncAfterAction(action: string): Promise<void> {
-  switch (action) {
-    case "pollEvents":
-      return;
-    case "setLocale":
-      await syncSnapshot({ withEvents: currentView() !== "setup" });
-      return;
-    default:
-      await syncSnapshot({ withEvents: isOnlineMode() });
+  // Most actions already return the updated SnapshotBundle directly in their POST response.
+  // Only poll events separately when in online mode for actions that don't drain events.
+  if (action === "pollEvents" || action === "setLocale" || action === "reset") {
+    return;
+  }
+  if (isOnlineMode() && (action === "play" || action === "truco" || action === "accept" || action === "refuse")) {
+    await syncSnapshot({ withEvents: true });
   }
 }
 
@@ -280,12 +371,17 @@ async function sendRequest(
     headers["X-Session-ID"] = state.sessionId;
   }
 
-  const response = await fetch(`/api/${action}`, {
-    method: "POST",
-    headers,
-    body: body ? JSON.stringify(body) : undefined,
-    credentials: "same-origin",
-  });
+  let response: Response;
+  try {
+    response = await fetch(`/api/${action}`, {
+      method: "POST",
+      headers,
+      body: body ? JSON.stringify(body) : undefined,
+      credentials: "same-origin",
+    });
+  } catch {
+    throw new Error(t("error_fetch"));
+  }
 
   const result = normalizeApiResult(await response.json());
   if (response.ok) {
@@ -672,38 +768,67 @@ function clearSession(): void {
   state.events = [];
   state.lastMatchSig = "";
   state.lastMatchChangeAt = 0;
+  state.drawerOpen = false;
+  state.uiFx.trickReveal = null;
+  state.uiFx.pendingHandBanner = null;
+  state.uiFx.announcement = null;
+  state.uiFx.trucoCall = null;
+  state.uiFx.confetti = null;
+  state.uiFx.animatedCardKeys.clear();
 }
 
-function clearTransientFx(): void {
-  state.uiFx.dealtCardKeys.clear();
-  state.uiFx.playedCardKeys.clear();
-  state.uiFx.flippedCardKeys.clear();
+function flushPendingVisualHold(): void {
+  if (state.uiFx.trickReveal) {
+    state.uiFx.trickReveal = null;
+  }
+  if (state.uiFx.pendingHandBanner) {
+    const banner = state.uiFx.pendingHandBanner;
+    state.uiFx.pendingHandBanner = null;
+    showAnnouncement(banner.title, banner.sub, banner.kind, banner.durationMs);
+    if (banner.confettiMs > 0) {
+      triggerConfetti(banner.confettiMs, 1);
+    }
+  }
 }
 
 function scheduleFxRefresh(): void {
   window.clearTimeout(fxTimer);
   const now = Date.now();
-  if (state.uiFx.confettiUntil <= now) {
-    state.uiFx.confettiStrength = 1;
+
+  if (state.uiFx.trickReveal && state.uiFx.trickReveal.until <= now) {
+    state.uiFx.trickReveal = null;
+    if (state.uiFx.pendingHandBanner) {
+      const banner = state.uiFx.pendingHandBanner;
+      state.uiFx.pendingHandBanner = null;
+      showAnnouncement(banner.title, banner.sub, banner.kind, banner.durationMs);
+      if (banner.confettiMs > 0) {
+        triggerConfetti(banner.confettiMs, 1);
+      }
+    }
   }
+
   if (state.uiFx.trucoCall && state.uiFx.trucoCall.until <= now) {
     state.uiFx.trucoCall = null;
   }
   if (state.uiFx.announcement && state.uiFx.announcement.until <= now) {
     state.uiFx.announcement = null;
   }
+  if (state.uiFx.confetti && state.uiFx.confetti.until <= now) {
+    state.uiFx.confetti = null;
+  }
+
   const deadlines = [
-    state.uiFx.shakeUntil,
-    state.uiFx.pulseUntil,
-    state.uiFx.confettiUntil,
+    state.uiFx.trickReveal?.until || 0,
     state.uiFx.trucoCall?.until || 0,
     state.uiFx.announcement?.until || 0,
+    state.uiFx.confetti?.until || 0,
   ].filter((time) => time > now);
+
   if (deadlines.length === 0) {
     return;
   }
   const nextExpiry = Math.min(...deadlines);
-  fxTimer = window.setTimeout(() => render(), Math.max(16, nextExpiry - now + 24));
+  fxTimer = window.setTimeout(() => render(), Math.max(24, nextExpiry - now + 20));
 }
 
 function currentView(): ViewName {
@@ -722,6 +847,19 @@ function isOnlineMode(): boolean {
   return mode.startsWith("host_") || mode.startsWith("client_");
 }
 
+function activeDisplayMatch(): MatchSnapshot | undefined {
+  const liveMatch = state.bundle?.match;
+  if (!liveMatch) {
+    return undefined;
+  }
+  const now = Date.now();
+  const reveal = state.uiFx.trickReveal;
+  if (reveal && reveal.until > now && reveal.holdMatch) {
+    return reveal.holdMatch;
+  }
+  return liveMatch;
+}
+
 function animateScoreChange(container: HTMLElement, team: string, prevScoreStr: string | undefined | null): void {
   const el = container.querySelector<HTMLElement>(`[data-team="${team}"] [data-score]`);
   if (!el) return;
@@ -732,34 +870,49 @@ function animateScoreChange(container: HTMLElement, team: string, prevScoreStr: 
 }
 
 function render(): void {
-  const focusState = captureFocusState();
-  const detailsState = captureDetailsState();
-  const prevUsScore = root.querySelector('[data-team="us"] [data-score]')?.getAttribute("data-score");
-  const prevThemScore = root.querySelector('[data-team="them"] [data-score]')?.getAttribute("data-score");
-  root.innerHTML = renderApp();
-  // Animate score changes
-  animateScoreChange(root, "us", prevUsScore);
-  animateScoreChange(root, "them", prevThemScore);
-  restoreFocusState(focusState);
-  restoreDetailsState(detailsState);
-  state.renderSig = computeRenderSignature();
-  syncRefreshLoop();
-  syncMeasuredBlocks();
-  scrollEventFeeds();
   scheduleFxRefresh();
-  clearTransientFx();
+
+  const view = currentView();
+  const nextViewSig = computeViewSignature();
+  const nextFxSig = computeFxSignature();
+
+  if (nextViewSig !== state.viewSig) {
+    const focusState = captureFocusState();
+    const detailsState = captureDetailsState();
+    const prevUsScore = viewLayer.querySelector('[data-team="us"] [data-score]')?.getAttribute("data-score");
+    const prevThemScore = viewLayer.querySelector('[data-team="them"] [data-score]')?.getAttribute("data-score");
+
+    viewLayer.className = `page-shell page-shell-${view}`;
+    viewLayer.innerHTML = renderAppContent();
+
+    animateScoreChange(viewLayer, "us", prevUsScore);
+    animateScoreChange(viewLayer, "them", prevThemScore);
+    restoreFocusState(focusState);
+    restoreDetailsState(detailsState);
+    state.viewSig = nextViewSig;
+    state.lastRenderedView = view;
+    syncMeasuredBlocks();
+    scrollEventFeeds();
+  }
+
+  if (nextFxSig !== state.fxSig) {
+    fxLayer.innerHTML = renderFxLayers();
+    state.fxSig = nextFxSig;
+  }
+
+  syncRefreshLoop();
 }
 
 function captureDetailsState(): Record<string, boolean> {
   const open: Record<string, boolean> = {};
-  for (const details of root.querySelectorAll<HTMLDetailsElement>("details[data-details-key]")) {
+  for (const details of viewLayer.querySelectorAll<HTMLDetailsElement>("details[data-details-key]")) {
     open[details.dataset.detailsKey || ""] = details.open;
   }
   return open;
 }
 
 function restoreDetailsState(open: Record<string, boolean>): void {
-  for (const details of root.querySelectorAll<HTMLDetailsElement>("details[data-details-key]")) {
+  for (const details of viewLayer.querySelectorAll<HTMLDetailsElement>("details[data-details-key]")) {
     const key = details.dataset.detailsKey || "";
     if (key in open) {
       details.open = open[key];
@@ -768,7 +921,7 @@ function restoreDetailsState(open: Record<string, boolean>): void {
 }
 
 function scrollEventFeeds(): void {
-  for (const feed of root.querySelectorAll<HTMLElement>(".event-feed")) {
+  for (const feed of viewLayer.querySelectorAll<HTMLElement>(".event-feed")) {
     feed.scrollTop = feed.scrollHeight;
   }
 }
@@ -785,7 +938,7 @@ function captureFocusState(): FocusState | null {
   if (!(active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement || active instanceof HTMLSelectElement)) {
     return null;
   }
-  if (!root.contains(active)) {
+  if (!viewLayer.contains(active)) {
     return null;
   }
   const key = active.id || active.name || active.getAttribute("data-focus-key");
@@ -796,8 +949,8 @@ function captureFocusState(): FocusState | null {
   const selector = formId && active.name
     ? `form[data-form-id="${CSS.escape(formId)}"] [name="${CSS.escape(active.name)}"]`
     : active.id
-    ? `#${CSS.escape(active.id)}`
-    : `[name="${CSS.escape(active.name || key)}"]`;
+      ? `#${CSS.escape(active.id)}`
+      : `[name="${CSS.escape(active.name || key)}"]`;
   return {
     selector,
     value: active.value,
@@ -810,7 +963,7 @@ function restoreFocusState(stateToRestore: FocusState | null): void {
   if (!stateToRestore) {
     return;
   }
-  const next = root.querySelector<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>(stateToRestore.selector);
+  const next = viewLayer.querySelector<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>(stateToRestore.selector);
   if (!next) {
     return;
   }
@@ -827,29 +980,24 @@ function restoreFocusState(stateToRestore: FocusState | null): void {
   }
 }
 
-function renderApp(): string {
+function renderAppContent(): string {
   const locale = state.locale;
   const busy = state.busyForm !== "";
   const view = currentView();
-  const now = Date.now();
-  const shellClasses = [
-    "page-shell",
-    `page-shell-${view}`,
-    now < state.uiFx.shakeUntil ? "fx-shake" : "",
-    now < state.uiFx.pulseUntil ? "fx-pulse" : "",
-  ].filter(Boolean).join(" ");
   const banner = state.error
-    ? `<section class="runtime-banner" role="alert" aria-live="assertive" data-pretext-block="lock-height">${escapeHtml(state.error)}</section>`
+    ? `<section class="runtime-banner" role="alert" aria-live="assertive">
+        <span>${escapeHtml(state.error)}</span>
+        <button type="button" class="banner-dismiss" data-dismiss-error="true" aria-label="Fechar">×</button>
+      </section>`
     : "";
   const chrome = view === "game" ? "" : `
         <header class="hero-card">
           <div class="hero-copy">
-            <p class="eyebrow">${escapeHtml(t("app_kicker"))}</p>
             <div class="hero-title-row">
               <h1>${escapeHtml(t("title_main"))}</h1>
               <span class="hero-stamp">${escapeHtml(t("app_stamp"))}</span>
             </div>
-            <p class="hero-subtitle" data-pretext-block="lock-height">${escapeHtml(t("title_sub"))}</p>
+            <p class="hero-subtitle">${escapeHtml(t("title_sub"))}</p>
           </div>
           <form class="locale-card" data-api-action="setLocale" data-form-id="setLocale">
             <label for="locale-select">${escapeHtml(t("locale_label"))}</label>
@@ -860,16 +1008,11 @@ function renderApp(): string {
         </header>`;
 
   return `
-    <div class="${shellClasses}">
-      <div class="page-aura page-aura-left"></div>
-      <div class="page-aura page-aura-right"></div>
-      <main class="app-shell app-shell-${view}">
-        ${chrome}
-        ${banner}
-        ${renderView()}
-      </main>
-      ${renderFxLayers()}
-    </div>
+    <main class="app-shell app-shell-${view}">
+      ${chrome}
+      ${banner}
+      ${renderView()}
+    </main>
   `;
 }
 
@@ -889,63 +1032,42 @@ function renderView(): string {
 }
 
 function renderSetup(): string {
+  const defaultName = state.playerName || t("name_placeholder");
   return `
     <section class="setup-shell">
-      <article class="surface-card intro-card">
-        <div class="card-head card-head-roomy">
-          <div>
-            <p class="eyebrow">${escapeHtml(t("setup_title"))}</p>
-            <h2>${escapeHtml(t("setup_title"))}</h2>
-          </div>
-          <span class="section-pill">${escapeHtml(t("app_stamp"))}</span>
-        </div>
-        <p class="lede" data-pretext-block="lock-height">${escapeHtml(t("setup_intro"))}</p>
-        <p class="supporting-copy">${escapeHtml(t("setup_help"))}</p>
-        <div class="rules-card">
-          <div class="rules-grid">
-            <div class="rules-item">
-              <strong>${escapeHtml(t("setup_rules_title"))}</strong>
-              <p>${escapeHtml(t("setup_rules_body"))}</p>
-            </div>
-            <div class="rules-item">
-              <strong>${escapeHtml(t("setup_rules_manilha"))}</strong>
-              <p><code>${escapeHtml(t("setup_rules_manilha_detail"))}</code></p>
-            </div>
-          </div>
-        </div>
-      </article>
       <div class="setup-stack">
         <article class="surface-card form-card primary-form-card">
-          <div class="card-head card-head-roomy">
+          <div class="card-head">
             <div>
               <span class="section-pill">${escapeHtml(t("setup_mode_offline"))}</span>
-              <h3>${escapeHtml(t("setup_offline_title"))}</h3>
+              <h2>${escapeHtml(t("setup_offline_title"))}</h2>
               <p>${escapeHtml(t("setup_offline_note"))}</p>
             </div>
             <strong class="form-emphasis">${escapeHtml(t("setup_offline_caption"))}</strong>
           </div>
-          <form data-api-action="startGame" data-form-id="startGame">
+          <form class="setup-main-form" data-api-action="startGame" data-form-id="startGame">
             <div class="field-grid">
               <label>
                 <span>${escapeHtml(t("setup_name"))}</span>
-                <input name="name" type="text" value="${escapeHtml(state.playerName || t("name_placeholder"))}" autocomplete="off">
+                <input name="name" type="text" value="${escapeHtml(defaultName)}" autocomplete="off" data-sync-player-name="true">
               </label>
               <label>
                 <span>${escapeHtml(t("setup_players"))}</span>
                 <select name="numPlayers">
-                  <option value="2">2</option>
-                  <option value="4">4</option>
+                  <option value="2">${escapeHtml(t("setup_players_2"))}</option>
+                  <option value="4">${escapeHtml(t("setup_players_4"))}</option>
                 </select>
               </label>
             </div>
-            <button class="primary-button" type="submit"${busyAttr("startGame")}>${buttonLabel("startGame", t("setup_start"))}</button>
+            <button class="primary-button setup-cta" type="submit"${busyAttr("startGame")}>${buttonLabel("startGame", t("setup_start"))}</button>
           </form>
         </article>
+
         <article class="surface-card form-card online-form-card">
-          <div class="card-head card-head-roomy">
+          <div class="card-head">
             <div>
               <span class="section-pill section-pill-hot">${escapeHtml(t("setup_mode_online"))}</span>
-              <h3>${escapeHtml(t("setup_online_title"))}</h3>
+              <h2>${escapeHtml(t("setup_online_title"))}</h2>
               <p>${escapeHtml(t("setup_online_note"))}</p>
             </div>
             <strong class="form-emphasis">${escapeHtml(t("setup_online_caption"))}</strong>
@@ -956,19 +1078,19 @@ function renderSetup(): string {
               <div class="field-grid">
                 <label>
                   <span>${escapeHtml(t("setup_name"))}</span>
-                  <input name="name" type="text" value="${escapeHtml(state.playerName || t("name_placeholder"))}" autocomplete="off">
+                  <input name="name" type="text" value="${escapeHtml(defaultName)}" autocomplete="off" data-sync-player-name="true">
                 </label>
                 <label>
                   <span>${escapeHtml(t("setup_players"))}</span>
                   <select name="numPlayers">
-                    <option value="2">2</option>
-                    <option value="4">4</option>
+                    <option value="2">${escapeHtml(t("setup_players_2"))}</option>
+                    <option value="4">${escapeHtml(t("setup_players_4"))}</option>
                   </select>
                 </label>
               </div>
               <details class="details-advanced" data-details-key="advanced-relay">
                 <summary>${escapeHtml(t("setup_advanced"))}</summary>
-                <div>
+                <div class="advanced-fields">
                   <label>
                     <span>${escapeHtml(t("setup_relay"))}</span>
                     <input name="relay_url" type="text" value="${escapeHtml(state.relayURL)}" placeholder="${escapeHtml(t("relay_placeholder"))}" autocomplete="off" title="${escapeHtml(t("setup_relay_hint"))}">
@@ -986,115 +1108,111 @@ function renderSetup(): string {
               </details>
               <button class="secondary-button" type="submit"${busyAttr("startOnlineHost")}>${buttonLabel("startOnlineHost", t("setup_host"))}</button>
             </form>
+
             <form class="mode-form" data-api-action="joinOnline" data-form-id="joinOnline">
               <div class="mini-head">${escapeHtml(t("setup_join"))}</div>
               <div class="field-grid">
                 <label>
                   <span>${escapeHtml(t("setup_name"))}</span>
-                  <input name="name" type="text" value="${escapeHtml(state.playerName || t("name_placeholder"))}" autocomplete="off">
+                  <input name="name" type="text" value="${escapeHtml(defaultName)}" autocomplete="off" data-sync-player-name="true">
                 </label>
                 <label>
-                  <span>${escapeHtml(t("setup_invite"))}</span>
-                  <input name="key" type="text" autocomplete="off">
+                  <span>${escapeHtml(t("setup_role"))}</span>
+                  <select name="role">
+                    <option value="auto">${escapeHtml(t("role_auto"))}</option>
+                    <option value="partner">${escapeHtml(t("role_partner"))}</option>
+                    <option value="opponent">${escapeHtml(t("role_opponent"))}</option>
+                  </select>
                 </label>
               </div>
               <label>
-                <span>${escapeHtml(t("setup_role"))}</span>
-                <select name="role">
-                  <option value="auto">${escapeHtml(t("role_auto"))}</option>
-                  <option value="partner">${escapeHtml(t("role_partner"))}</option>
-                  <option value="opponent">${escapeHtml(t("role_opponent"))}</option>
-                </select>
+                <span>${escapeHtml(t("setup_invite"))}</span>
+                <input name="key" type="text" autocomplete="off" placeholder="${escapeHtml(t("setup_invite_placeholder"))}">
               </label>
               <button class="secondary-button strong" type="submit"${busyAttr("joinOnline")}>${buttonLabel("joinOnline", t("setup_join"))}</button>
             </form>
           </div>
-          <p class="supporting-copy inline-note">${escapeHtml(t("setup_online_support"))}</p>
         </article>
       </div>
-    </section>
-  `;
-}
 
-function renderSetupNote(title: string, copy: string): string {
-  return `
-    <div class="intro-note">
-      <strong>${escapeHtml(title)}</strong>
-      <p>${escapeHtml(copy)}</p>
-    </div>
+      <article class="surface-card rules-banner-card">
+        <div class="rules-grid">
+          <div class="rules-item">
+            <strong>${escapeHtml(t("setup_rules_title"))}</strong>
+            <p>${escapeHtml(t("setup_rules_body"))}</p>
+          </div>
+          <div class="rules-item">
+            <strong>${escapeHtml(t("setup_rules_manilha"))}</strong>
+            <p><code>${escapeHtml(t("setup_rules_manilha_detail"))}</code></p>
+            <strong class="rules-sub-head">${escapeHtml(t("setup_rules_power"))}</strong>
+            <p><code>${escapeHtml(t("setup_rules_power_detail"))}</code></p>
+          </div>
+        </div>
+      </article>
+    </section>
   `;
 }
 
 function renderLobby(): string {
   const bundle = requireBundle();
   const lobby = bundle.lobby;
-  const network = bundle.connection.network;
   const slots = bundle.ui.lobby_slots || [];
   const invite = lobby?.invite_key || "";
   const isHost = bundle.connection.is_host;
+  const statusLabel = formatConnectionStatus(bundle.connection.status);
 
   return `
     <section class="lobby-layout">
       <article class="surface-card invite-card lobby-lead-card">
-        <div class="card-head card-head-roomy">
+        <div class="card-head">
           <div>
-            <p class="eyebrow">${escapeHtml(t("lobby_title"))}</p>
+            <p class="eyebrow">${escapeHtml(isHost ? t("slot_host") : t("connection_online"))}</p>
             <h2>${escapeHtml(t("lobby_title"))}</h2>
             <p class="supporting-copy">${escapeHtml(t("invite_hint"))}</p>
           </div>
-          <span class="section-pill">${escapeHtml(isHost ? t("slot_host") : t("connection_online"))}</span>
+          <div class="lobby-top-actions">
+            ${isHost ? `<form data-api-action="startOnlineMatch" data-form-id="startOnlineMatch"><button class="primary-button" type="submit"${busyAttr("startOnlineMatch")}>${buttonLabel("startOnlineMatch", t("lobby_start"))}</button></form>` : ""}
+            <form data-api-action="closeSession" data-form-id="closeSession">
+              <button class="ghost-button danger" type="submit"${busyAttr("closeSession")}>${buttonLabel("closeSession", t("lobby_leave"))}</button>
+            </form>
+          </div>
         </div>
-        <div class="invite-code-row invite-code-row-wide">
-          <code class="invite-code"${invite ? ` data-copy-text="${escapeHtml(invite)}" role="button" tabindex="0" title="${escapeHtml(t("invite_click_copy"))}"` : ""}>${escapeHtml(invite || "----")}</code>
-          ${invite ? `<button type="button" class="ghost-button" data-copy-text="${escapeHtml(invite)}">${escapeHtml(t("invite_copy"))}</button>` : ""}
-          ${isHost ? `<form data-api-action="startOnlineMatch" data-form-id="startOnlineMatch"><button class="primary-button" type="submit"${busyAttr("startOnlineMatch")}>${buttonLabel("startOnlineMatch", t("lobby_start"))}</button></form>` : ""}
-        </div>
-        ${invite ? `<p class="supporting-copy invite-copy-hint">${escapeHtml(t("invite_click_copy"))}</p>` : ""}
+        ${invite ? `
+          <div class="invite-code-row invite-code-row-wide">
+            <code class="invite-code" data-copy-text="${escapeHtml(invite)}" role="button" tabindex="0" title="${escapeHtml(t("invite_click_copy"))}">${escapeHtml(invite)}</code>
+            <button type="button" class="secondary-button strong" data-copy-text="${escapeHtml(invite)}">${escapeHtml(t("invite_copy"))}</button>
+          </div>
+          <p class="supporting-copy invite-copy-hint">${escapeHtml(t("invite_click_copy"))}</p>
+        ` : ""}
         <div class="telemetry-strip">
-          ${renderMetric(t("connection_status"), bundle.connection.status)}
+          ${renderMetric(t("connection_status"), statusLabel)}
           ${renderMetric(t("connection_mode"), bundle.connection.is_online ? t("connection_online") : t("connection_offline"))}
+          ${bundle.lobby?.role ? renderMetric(t("connection_role"), formatRoleLabel(bundle.lobby.role)) : renderMetric(t("lobby_slots"), String(lobby?.num_players || slots.length))}
         </div>
       </article>
 
       <article class="surface-card seat-card">
         <div class="card-head">
           <h3>${escapeHtml(t("lobby_slots"))}</h3>
-          <span class="section-pill">${escapeHtml(String(lobby?.num_players || slots.length))}</span>
+          <span class="section-pill">${escapeHtml(`${slots.filter((s) => !s.is_empty).length} / ${lobby?.num_players || slots.length}`)}</span>
         </div>
         <div class="seat-list">
           ${slots.map((slot) => renderSeat(slot)).join("")}
         </div>
       </article>
 
-      <article class="surface-card telemetry-card">
-        <div class="telemetry-grid">
-          ${renderMetric(t("connection_status"), bundle.connection.status)}
-          ${renderMetric(t("connection_mode"), bundle.connection.is_online ? t("connection_online") : t("connection_offline"))}
-          ${bundle.lobby?.role ? renderMetric(t("connection_role"), bundle.lobby.role) : ""}
-        </div>
-      </article>
-
-      <article class="surface-card event-card">
-        <div class="card-head">
-          <h3>${escapeHtml(t("lobby_events"))}</h3>
-          <form data-api-action="pollEvents" data-form-id="pollEvents">
-            <button class="ghost-button" type="submit"${busyAttr("pollEvents")}>${buttonLabel("pollEvents", t("lobby_refresh"))}</button>
-          </form>
-        </div>
-        <pre class="event-feed" role="log" aria-live="polite" data-pretext-block="lock-height" data-pretext-whitespace="pre-wrap">${escapeHtml(renderEventFeed())}</pre>
-      </article>
-
       <div class="lobby-side-stack">
         <article class="surface-card chat-card">
           <div class="card-head">
             <h3>${escapeHtml(t("lobby_chat"))}</h3>
+            <form data-api-action="pollEvents" data-form-id="pollEvents">
+              <button class="ghost-button" type="submit"${busyAttr("pollEvents")}>${buttonLabel("pollEvents", t("lobby_refresh"))}</button>
+            </form>
           </div>
+          <pre class="event-feed" role="log" aria-live="polite">${escapeHtml(renderEventFeed())}</pre>
           <form class="chat-form" data-api-action="sendChat" data-form-id="sendChat">
             <input name="message" type="text" autocomplete="off" placeholder="${escapeHtml(t("chat_placeholder"))}">
-            <button class="secondary-button" type="submit"${busyAttr("sendChat")}>${buttonLabel("sendChat", t("lobby_chat"))}</button>
-          </form>
-          <form data-api-action="closeSession" data-form-id="closeSession">
-            <button class="ghost-button danger" type="submit"${busyAttr("closeSession")}>${buttonLabel("closeSession", t("lobby_leave"))}</button>
+            <button class="secondary-button" type="submit"${busyAttr("sendChat")}>${buttonLabel("sendChat", t("lobby_chat_send"))}</button>
           </form>
         </article>
       </div>
@@ -1103,11 +1221,13 @@ function renderLobby(): string {
 }
 
 function renderSeat(slot: LobbySlotState): string {
+  const teamLabel = slot.seat % 2 === 0 ? t("lobby_team_1") : t("lobby_team_2");
   const tags = [
+    teamLabel,
     slot.is_local ? t("slot_you") : "",
     slot.is_host ? t("slot_host") : "",
     slot.is_provisional_cpu ? t("slot_cpu") : "",
-    slot.is_connected ? t("slot_online") : t("slot_offline"),
+    !slot.is_empty ? (slot.is_connected ? t("slot_online") : t("slot_offline")) : "",
   ].filter(Boolean);
   const presence = slot.is_empty ? "empty" : slot.is_provisional_cpu ? "cpu" : slot.is_connected ? "online" : "offline";
 
@@ -1115,93 +1235,123 @@ function renderSeat(slot: LobbySlotState): string {
     <div class="seat-tile${slot.is_local ? " seat-tile-local" : ""}">
       <div class="seat-heading">
         <strong><i class="presence-dot presence-${presence}" aria-hidden="true"></i>${escapeHtml(slot.name || t("slot_empty"))}</strong>
-        <span>#${slot.seat + 1}</span>
+        <span class="seat-number">#${slot.seat + 1}</span>
       </div>
       <div class="tag-row">${tags.map((tag) => `<span>${escapeHtml(tag)}</span>`).join("")}</div>
-      <div class="seat-actions">
-        ${slot.can_vote_host ? `<form data-api-action="sendHostVote" data-form-id="sendHostVote-${slot.seat}"><input type="hidden" name="slot" value="${slot.seat}"><button class="ghost-button" type="submit"${busyAttr(`sendHostVote-${slot.seat}`)}>${buttonLabel(`sendHostVote-${slot.seat}`, t("action_vote_host"))}</button></form>` : ""}
-        ${slot.can_request_replacement ? `<form data-api-action="requestReplacementInvite" data-form-id="replacement-${slot.seat}"><input type="hidden" name="slot" value="${slot.seat}"><button class="ghost-button strong" type="submit"${busyAttr(`replacement-${slot.seat}`)}>${buttonLabel(`replacement-${slot.seat}`, t("action_replacement_invite"))}</button></form>` : ""}
-      </div>
+      ${slot.can_vote_host || slot.can_request_replacement ? `
+        <div class="seat-actions">
+          ${slot.can_vote_host ? `<form data-api-action="sendHostVote" data-form-id="sendHostVote-${slot.seat}"><input type="hidden" name="slot" value="${slot.seat}"><button class="ghost-button" type="submit"${busyAttr(`sendHostVote-${slot.seat}`)}>${buttonLabel(`sendHostVote-${slot.seat}`, t("action_vote_host"))}</button></form>` : ""}
+          ${slot.can_request_replacement ? `<form data-api-action="requestReplacementInvite" data-form-id="replacement-${slot.seat}"><input type="hidden" name="slot" value="${slot.seat}"><button class="ghost-button strong" type="submit"${busyAttr(`replacement-${slot.seat}`)}>${buttonLabel(`replacement-${slot.seat}`, t("action_replacement_invite"))}</button></form>` : ""}
+        </div>
+      ` : ""}
     </div>
   `;
 }
 
 function renderGame(): string {
   const bundle = requireBundle();
-  const match = bundle.match;
-  if (!match) {
+  const liveMatch = bundle.match;
+  const match = activeDisplayMatch();
+  if (!match || !liveMatch) {
     return renderSetup();
   }
 
+  const now = Date.now();
+  const trickHoldActive = state.uiFx.trickReveal !== null && state.uiFx.trickReveal.until > now;
   const localPlayer = match.Players.find((player) => player.ID === match.CurrentPlayerIdx) || match.Players[0];
   const localTeamId = localTeam(match);
-  const pendingFor = match.PendingRaiseFor;
-  const pendingTo = match.PendingRaiseTo || nextStake(match.CurrentHand.Stake);
-  const canRespond = bundle.ui.actions.can_accept;
-  const canRaise = bundle.ui.actions.can_ask_or_raise;
-  const canPlay = bundle.ui.actions.can_play_card;
-  const topLine = match.MatchFinished
-    ? t("status_match_end")
-    : pendingFor === localTeamId
-      ? t("status_pending_you", raiseLabel(pendingTo))
-      : pendingFor >= 0
-        ? t("status_pending_other", playerName(match, match.TurnPlayer), raiseLabel(pendingTo))
-        : match.TurnPlayer === match.CurrentPlayerIdx
-          ? t("status_your_turn")
-          : t("status_wait_turn", playerName(match, match.TurnPlayer));
   const opponentTeamId = localTeamId === 0 ? 1 : 0;
+  const pendingFor = trickHoldActive ? -1 : match.PendingRaiseFor;
+  const pendingTo = match.PendingRaiseTo || nextStake(match.CurrentHand.Stake);
+
+  // During a trick resolution hold, pause interactive card/raise actions so the user sees the trick finish cleanly
+  const canRespond = !trickHoldActive && bundle.ui.actions.can_accept;
+  const canRaise = !trickHoldActive && bundle.ui.actions.can_ask_or_raise;
+  const canPlay = !trickHoldActive && bundle.ui.actions.can_play_card;
+
+  const topLine = trickHoldActive && state.uiFx.trickReveal
+    ? formatTrickRevealHeadline(match, state.uiFx.trickReveal)
+    : match.MatchFinished
+      ? t("status_match_end")
+      : pendingFor === localTeamId
+        ? t("status_pending_you", raiseLabel(pendingTo))
+        : pendingFor >= 0
+          ? t("status_pending_other", playerName(match, match.TurnPlayer), raiseLabel(pendingTo))
+          : match.TurnPlayer === match.CurrentPlayerIdx
+            ? t("status_your_turn")
+            : t("status_wait_turn", playerName(match, match.TurnPlayer));
+
   const usScore = teamScore(match, localTeamId);
   const themScore = teamScore(match, opponentTeamId);
+  const currentStake = match.CurrentHand.Stake;
   const stakeLabel = pendingFor >= 0
-    ? `${t("game_pending_raise")} ${raiseLabel(pendingTo)}`
-    : `${t("game_stake")} ${match.CurrentHand.Stake}`;
+    ? `${t("game_pending_raise")} ${raiseLabel(pendingTo)} (${pendingTo})`
+    : currentStake === 1
+      ? t("game_hud_worth_1")
+      : t("game_hud_worth_n", currentStake);
+
   const tableTitle = isOnlineMode() ? t("game_title_online") : t("game_title_offline");
   const waitingOnOthers = !match.MatchFinished && !canPlay && !canRespond;
-  const handStatusClasses = ["hand-status", waitingOnOthers ? "hand-status-waiting" : "hand-status-action"].filter(Boolean).join(" ");
+  const handStatusClasses = [
+    "hand-status",
+    trickHoldActive ? "hand-status-reveal" : waitingOnOthers ? "hand-status-waiting" : "hand-status-action",
+  ].filter(Boolean).join(" ");
+
+  const enterBoardClass = state.lastRenderedView !== "game" ? " board-fade-in" : "";
+  const manilhaRank = match.CurrentHand.Manilha || "-";
+  const vira = match.CurrentHand.Vira;
 
   return `
     <section class="game-layout">
-      <article class="surface-card score-card">
-        <div class="score-block score-block-friendly" data-team="us">
-          <span>${escapeHtml(t("team_us"))}</span>
-          <strong data-score="${usScore}">${usScore}</strong>
-        </div>
-        <div class="score-center">
-          <span>${escapeHtml(t("game_round"))} ${Math.min(match.CurrentHand.Round, 3)}/3</span>
-          <strong>${escapeHtml(stakeLabel)}</strong>
-          <div class="trick-dots" aria-label="${escapeHtml(t("game_trick_track"))}">${renderTrickDots(match)}</div>
-          <span class="score-target">${escapeHtml(t("game_target"))}</span>
-        </div>
-        <div class="score-block" data-team="them">
-          <span>${escapeHtml(t("team_them"))}</span>
-          <strong data-score="${themScore}">${themScore}</strong>
-        </div>
-        <div class="score-progress">
-          <div class="score-progress-track">
-            <div class="score-progress-fill-us" style="width:${Math.min(usScore / 12 * 100, 100)}%"></div>
-            <div class="score-progress-fill-them" style="width:${Math.min(themScore / 12 * 100, 100)}%"></div>
-          </div>
-          <div class="score-progress-label">
-            <span><strong>${usScore}</strong> / 12</span>
-            <span>12 / <strong>${themScore}</strong></span>
+      <header class="game-topbar surface-card score-card">
+        <div class="topbar-left">
+          <div class="topbar-brand">
+            <span class="topbar-mode-pill">${escapeHtml(tableTitle)}</span>
+            ${vira && vira.Rank ? `
+              <div class="topbar-trump-pill" title="${escapeHtml(t("game_manilha_hint"))}: ${escapeHtml(t("game_manilha_detail"))}">
+                <span>${escapeHtml(t("game_vira"))}: <strong>${escapeHtml(vira.Rank)}${escapeHtml(suitSymbol(vira.Suit))}</strong></span>
+                <span class="trump-divider">·</span>
+                <span class="trump-highlight">★ ${escapeHtml(t("game_manilha"))}: <strong>${escapeHtml(manilhaRank)}</strong></span>
+              </div>
+            ` : ""}
           </div>
         </div>
-      </article>
+
+        <div class="topbar-scoreboard">
+          <div class="score-block score-block-friendly" data-team="us">
+            <span>${escapeHtml(t("team_us"))}</span>
+            <strong data-score="${usScore}">${usScore}</strong>
+          </div>
+          <div class="score-center">
+            <span class="score-round-tag">${escapeHtml(t("game_round"))} ${Math.min(match.CurrentHand.Round, 3)}/3 · ${escapeHtml(t("game_target"))}</span>
+            <strong class="score-stake-badge${pendingFor >= 0 ? " score-stake-pending" : ""}">${escapeHtml(stakeLabel)}</strong>
+            <div class="trick-dots" aria-label="${escapeHtml(t("game_trick_track"))}">${renderTrickDots(match)}</div>
+          </div>
+          <div class="score-block score-block-foe" data-team="them">
+            <span>${escapeHtml(t("team_them"))}</span>
+            <strong data-score="${themScore}">${themScore}</strong>
+          </div>
+        </div>
+
+        <div class="topbar-right">
+          <button type="button" class="ghost-button topbar-drawer-btn${state.drawerOpen ? " is-active" : ""}" data-toggle-drawer="true" aria-expanded="${state.drawerOpen ? "true" : "false"}">
+            ${escapeHtml(t("game_drawer_toggle"))}
+          </button>
+          <form data-api-action="closeSession" data-form-id="closeSession">
+            <button class="ghost-button danger topbar-leave-btn" type="submit"${busyAttr("closeSession")}>${buttonLabel("closeSession", isOnlineMode() ? t("lobby_leave") : t("game_leave"))}</button>
+          </form>
+        </div>
+      </header>
 
       <div class="game-main-column">
-        <article class="surface-card board-card">
-          <div class="card-head board-head">
-            <div>
-              <h2>${escapeHtml(tableTitle)}</h2>
-            </div>
-            <form data-api-action="closeSession" data-form-id="closeSession"><button class="ghost-button danger" type="submit"${busyAttr("closeSession")}>${buttonLabel("closeSession", isOnlineMode() ? t("lobby_leave") : t("game_leave"))}</button></form>
-          </div>
-          <div class="board-stage board-stage-${match.NumPlayers} board-fade-in">
-            ${renderPlayers(match)}
+        <article class="board-card">
+          <div class="board-stage board-stage-${match.NumPlayers}${enterBoardClass}">
             ${renderViraCorner(match)}
+            ${renderPlayers(match, trickHoldActive)}
+            ${renderLiveFeedTicker(match)}
             <div class="center-table">
               <div class="table-core">
-                <div class="round-pile">${renderRoundCards(match)}</div>
+                ${renderCenterTableArena(match)}
               </div>
             </div>
             ${renderTrickPiles(match)}
@@ -1209,86 +1359,133 @@ function renderGame(): string {
         </article>
 
         <article class="surface-card action-dock${canPlay || canRespond ? " action-dock-turn" : ""}">
-          <div class="card-head">
-            <div>
-              <p class="eyebrow">${escapeHtml(t("game_hand"))}</p>
-              <h3>${escapeHtml(localPlayer?.Name || t("game_you"))}</h3>
-            </div>
-            <span class="section-pill">${localPlayer?.Hand.length || 0}</span>
-          </div>
+          ${renderCallResponseBanner(match, localTeamId, canRespond, canRaise, bundle.ui.actions.can_accept, bundle.ui.actions.can_refuse, pendingFor, pendingTo)}
           <div class="action-dock-grid">
             <div class="hand-tray">
-              <div class="${handStatusClasses}" role="status" aria-live="polite">${waitingOnOthers ? `<i class="status-dot" aria-hidden="true"></i>` : ""}<span>${escapeHtml(topLine)}</span></div>
+              <div class="hand-tray-header">
+                <div class="hand-owner">
+                  <strong>${escapeHtml(localPlayer?.Name || t("game_you"))}</strong>
+                  <span class="team-chip team-chip-ally">${escapeHtml(t("team_us"))}</span>
+                </div>
+                <div class="${handStatusClasses}" role="status" aria-live="polite">
+                  ${waitingOnOthers && !trickHoldActive ? `<i class="status-dot" aria-hidden="true"></i>` : ""}
+                  <span>${escapeHtml(topLine)}</span>
+                </div>
+              </div>
               <div class="hand-row">
-                ${(localPlayer?.Hand || []).map((card, index, hand) => renderPlayableCard(card, index, hand.length, canPlay, match.CurrentHand.Round >= 2, match.CurrentHand.Manilha)).join("")}
+                ${(localPlayer?.Hand || []).map((card, index, hand) => renderPlayableCard(match, card, index, hand.length, canPlay, match.CurrentHand.Round >= 2, match.CurrentHand.Manilha)).join("")}
               </div>
             </div>
-            <div class="dock-controls">
-              <div class="card-head compact-head">
-                <h3>${escapeHtml(t("game_controls"))}</h3>
-                <span class="section-pill">${escapeHtml(match.MatchFinished ? t("game_wait") : t("game_turn"))}</span>
+            ${!canRespond && (canRaise || match.MatchFinished) ? `
+              <div class="dock-controls">
+                <div class="control-stack">
+                  ${renderTurnControls(canRaise, match.MatchFinished && !trickHoldActive, currentStake)}
+                </div>
               </div>
-              <div class="control-stack">
-                ${canRespond ? renderRespondControls(canRaise, bundle.ui.actions.can_accept, bundle.ui.actions.can_refuse, pendingTo) : renderTurnControls(canRaise, match.MatchFinished)}
-              </div>
-            </div>
+            ` : ""}
           </div>
         </article>
       </div>
 
-      <div class="game-side-column">
-        <article class="surface-card activity-card">
-          <div class="card-head">
-            <h3>${escapeHtml(t("game_activity"))}</h3>
-            <span class="section-pill">${escapeHtml(t("game_last_trick"))}</span>
-          </div>
-          <div class="activity-summary" data-pretext-block="lock-height">${escapeHtml(lastTrickCopy(match))}</div>
-          <pre class="event-feed compact" role="log" aria-live="polite" data-pretext-block="lock-height" data-pretext-whitespace="pre-wrap">${escapeHtml(renderEventFeed(match.Logs.slice(-4)))}</pre>
-        </article>
-        <article class="surface-card table-note-card">
-          <div class="card-head">
-            <h3>${escapeHtml(t("game_table_notes"))}</h3>
-            <span class="section-pill">${escapeHtml(t("game_round"))} ${Math.min(match.CurrentHand.Round, 3)}/3</span>
-          </div>
-          <div class="telemetry-grid table-note-grid">
-            ${renderMetric(t("game_vira"), cardLabel(match.CurrentHand.Vira))}
-            ${renderMetric(t("game_manilha"), match.CurrentHand.Manilha || "-")}
-            ${renderMetric(t("game_player_to_move"), playerName(match, match.TurnPlayer))}
-          </div>
-        </article>
-        ${isOnlineMode() ? renderNetworkPanel(bundle) : ""}
-      </div>
-      ${renderMobileGamePanel(bundle, match)}
-      ${match.MatchFinished ? renderOverlay(match, localTeamId) : ""}
+      ${renderGameSideDrawer(bundle, match)}
+      ${!trickHoldActive && liveMatch.MatchFinished ? renderOverlay(liveMatch, localTeamId) : ""}
     </section>
   `;
 }
 
-function renderMobileGamePanel(bundle: SnapshotBundle, match: MatchSnapshot): string {
-  const network = bundle.connection.network;
-  return `
-    <article class="surface-card mobile-game-panel">
-      <details data-details-key="mobile-game-panel">
-        <summary>${escapeHtml(t("game_activity"))}</summary>
-        <div class="telemetry-grid">
-          ${renderMetric(t("game_vira"), cardLabel(match.CurrentHand.Vira))}
-          ${renderMetric(t("game_manilha"), match.CurrentHand.Manilha || "-")}
-          ${renderMetric(t("game_player_to_move"), playerName(match, match.TurnPlayer))}
-          ${isOnlineMode() ? renderMetric(t("connection_status"), bundle.connection.status) : ""}
+function renderCallResponseBanner(
+  match: MatchSnapshot,
+  localTeamId: number,
+  canRespond: boolean,
+  canRaise: boolean,
+  canAccept: boolean,
+  canRefuse: boolean,
+  pendingFor: number,
+  pendingTo: number,
+): string {
+  if (pendingFor < 0 || match.MatchFinished) {
+    return "";
+  }
+  const requesterName = match.CurrentHand.RaiseRequester >= 0
+    ? playerName(match, match.CurrentHand.RaiseRequester)
+    : pendingFor === localTeamId
+      ? t("game_opponent")
+      : t("team_us");
+  const callName = raiseLabel(pendingTo);
+  const currentStake = match.CurrentHand.Stake;
+
+  if (canRespond && pendingFor === localTeamId) {
+    const nextLevel = nextStake(pendingTo);
+    const canEscalate = canRaise && nextLevel > pendingTo;
+    return `
+      <div class="call-banner call-banner-urgent" role="region" aria-live="assertive">
+        <div class="call-banner-copy">
+          <strong>🔥 ${escapeHtml(t("game_call_banner_title", requesterName, callName.toUpperCase()))}</strong>
+          <span>${escapeHtml(t("game_call_banner_sub", pendingTo, currentStake, currentStake > 1 ? "s" : ""))}</span>
         </div>
-        <pre class="event-feed compact" role="log" aria-live="polite" data-pretext-block="lock-height" data-pretext-whitespace="pre-wrap">${escapeHtml(renderEventFeed(match.Logs.slice(-6)))}</pre>
-        ${isOnlineMode() ? `
-          <form class="chat-form" data-api-action="sendChat" data-form-id="sendChatMobile">
-            <input name="message" type="text" autocomplete="off" placeholder="${escapeHtml(t("chat_placeholder"))}">
-            <button class="secondary-button" type="submit"${busyAttr("sendChatMobile")}>${buttonLabel("sendChatMobile", t("lobby_chat"))}</button>
-          </form>
-        ` : ""}
-      </details>
-    </article>
+        <div class="call-banner-actions">
+          ${canAccept ? `<form data-api-action="accept" data-form-id="accept"><button class="secondary-button call-btn-accept" type="submit"${busyAttr("accept")}>${buttonLabel("accept", t("game_accept_btn", pendingTo))}</button></form>` : ""}
+          ${canEscalate ? `<form data-api-action="truco" data-form-id="raise"><button class="primary-button call-btn-raise" type="submit"${busyAttr("raise")}>${buttonLabel("raise", t("game_ask_raise_btn", raiseLabel(nextLevel), nextLevel))}</button></form>` : ""}
+          ${canRefuse ? `<form data-api-action="refuse" data-form-id="refuse"><button class="ghost-button danger call-btn-refuse" type="submit"${busyAttr("refuse")}>${buttonLabel("refuse", t("game_refuse_btn", currentStake))}</button></form>` : ""}
+        </div>
+      </div>
+    `;
+  }
+
+  const responderName = playerName(match, match.TurnPlayer);
+  return `
+    <div class="call-banner call-banner-waiting" role="status" aria-live="polite">
+      <div class="call-banner-copy">
+        <strong>⏳ ${escapeHtml(t("game_call_waiting_title", callName.toUpperCase()))}</strong>
+        <span>${escapeHtml(t("game_call_waiting_sub", responderName, pendingTo))}</span>
+      </div>
+    </div>
   `;
 }
 
-function renderPlayers(match: MatchSnapshot): string {
+function renderLiveFeedTicker(match: MatchSnapshot): string {
+  const recentLogs = match.Logs.slice(-3).map((line) => localizeLogLine(line));
+  if (recentLogs.length === 0) {
+    return "";
+  }
+  return `
+    <aside class="table-live-ticker" aria-label="${escapeHtml(t("game_activity"))}">
+      ${recentLogs.map((line, idx) => `<div class="ticker-line${idx === recentLogs.length - 1 ? " ticker-line-latest" : ""}">${escapeHtml(line)}</div>`).join("")}
+    </aside>
+  `;
+}
+
+function renderGameSideDrawer(bundle: SnapshotBundle, match: MatchSnapshot): string {
+  if (!state.drawerOpen) {
+    return "";
+  }
+  const manilhaRank = match.CurrentHand.Manilha || "-";
+  return `
+    <aside class="game-drawer-backdrop" data-toggle-drawer="true">
+      <article class="surface-card game-drawer" onclick="event.stopPropagation()">
+        <div class="card-head">
+          <h3>${escapeHtml(t("game_activity"))}</h3>
+          <button type="button" class="ghost-button" data-toggle-drawer="true">×</button>
+        </div>
+        <div class="telemetry-grid table-note-grid">
+          ${renderMetric(t("game_vira"), cardLabel(match.CurrentHand.Vira))}
+          ${renderMetric(t("game_manilha"), `${manilhaRank} (♣ > ♥ > ♠ > ♦)`)}
+          ${renderMetric(t("game_player_to_move"), playerName(match, match.TurnPlayer))}
+        </div>
+        <div class="activity-summary">${escapeHtml(lastTrickCopy(match))}</div>
+        <pre class="event-feed compact" role="log" aria-live="polite">${escapeHtml(renderEventFeed(match.Logs.slice(-10)))}</pre>
+        ${isOnlineMode() ? `
+          <form class="chat-form" data-api-action="sendChat" data-form-id="sendChat">
+            <input name="message" type="text" autocomplete="off" placeholder="${escapeHtml(t("chat_placeholder"))}">
+            <button class="secondary-button" type="submit"${busyAttr("sendChat")}>${buttonLabel("sendChat", t("lobby_chat_send"))}</button>
+          </form>
+        ` : ""}
+      </article>
+    </aside>
+  `;
+}
+
+function renderPlayers(match: MatchSnapshot, trickHoldActive: boolean): string {
   const positions = seatPositions(match);
   const localTeamId = localTeam(match);
   return match.Players
@@ -1299,15 +1496,18 @@ function renderPlayers(match: MatchSnapshot): string {
       const relation = isAlly ? t("game_partner") : t("game_opponent");
       const teamClass = isAlly ? "team-ally" : "team-foe";
       const teamBadge = isAlly ? "🛡" : "⚔";
-      const isTurn = player.ID === match.TurnPlayer;
+      const isTurn = !trickHoldActive && !match.MatchFinished && player.ID === match.TurnPlayer;
 
       return `
         <div class="player-seat seat-${position} ${teamClass}${isTurn ? " seat-turn" : ""}">
           <div class="player-head">
-            <strong><span class="team-badge team-badge-${isAlly ? "ally" : "foe"}" aria-hidden="true">${teamBadge}</span>${escapeHtml(player.Name)}</strong>
+            <div class="player-title-row">
+              <strong><span class="team-badge team-badge-${isAlly ? "ally" : "foe"}" aria-hidden="true">${teamBadge}</span>${escapeHtml(player.Name)}</strong>
+              ${isTurn ? `<span class="turn-indicator-pill">${escapeHtml(t("game_turn_badge"))}</span>` : ""}
+            </div>
             <span class="team-label team-label-${isAlly ? "ally" : "foe"}">${escapeHtml(relation)}${player.CPU ? ` · ${escapeHtml(t("game_cpu"))}` : ""}</span>
           </div>
-          <div class="player-cards">
+          <div class="player-cards" aria-label="${player.Hand.length} cartas">
             ${player.Hand.map(() => `<span class="card-back tiny" aria-hidden="true"></span>`).join("")}
           </div>
         </div>
@@ -1316,45 +1516,147 @@ function renderPlayers(match: MatchSnapshot): string {
     .join("");
 }
 
-function renderRoundCards(match: MatchSnapshot): string {
+function renderCenterTableArena(match: MatchSnapshot): string {
+  const now = Date.now();
+  const reveal = state.uiFx.trickReveal;
+  const positions = seatPositions(match);
+
+  if (reveal && reveal.until > now && reveal.cards.length > 0) {
+    const headline = formatTrickRevealHeadline(match, reveal);
+    const cardsHtml = reveal.cards.map((played, index) => {
+      const seatPos = positions.get(played.PlayerID) || "top";
+      const isWinner = !reveal.tie && played.PlayerID === reveal.winner;
+      const animKey = `reveal:${reveal.seq}:${index}:${played.PlayerID}`;
+      const shouldEnter = index === reveal.cards.length - 1 && consumeCardAnimationKey(animKey);
+      const classes = [
+        "played-card",
+        `played-from-${seatPos}`,
+        "played-card-replay",
+        isWinner ? "played-card-winner" : "",
+        reveal.tie ? "played-card-tied" : "",
+        shouldEnter ? "played-card-enter" : "",
+      ].filter(Boolean).join(" ");
+
+      const statusBadge = isWinner
+        ? `<span class="played-card-status played-card-status-win">★ ${escapeHtml(t("trick_winner_card_badge"))}</span>`
+        : reveal.tie
+          ? `<span class="played-card-status played-card-status-tie">${escapeHtml(t("trick_tied_card_badge"))}</span>`
+          : "";
+
+      return `
+        <div class="${classes}">
+          <span class="played-card-owner">${escapeHtml(playerName(match, played.PlayerID))}</span>
+          ${played.FaceDown ? `<span class="card-back small" aria-hidden="true"></span>` : renderCard(played.Card, "small", played.Card.Rank === reveal.manilha)}
+          ${statusBadge}
+        </div>
+      `;
+    }).join("");
+
+    return `
+      <div class="arena-headline arena-headline-${reveal.tie ? "tie" : reveal.team === localTeam(match) ? "us" : "them"}">
+        ${escapeHtml(headline)}
+      </div>
+      <div class="round-pile round-pile-spatial">${cardsHtml}</div>
+    `;
+  }
+
   const roundCards = match.CurrentHand.RoundCards || [];
   if (roundCards.length === 0) {
-    const announcement = state.uiFx.announcement;
-    const replayActive = announcement !== null
-      && (announcement.kind === "trick" || announcement.kind === "tie")
-      && announcement.until > Date.now();
-    const lastCards = match.LastTrickCards || [];
-    if (replayActive && lastCards.length > 0) {
-      return lastCards.map((played) => {
-        const winner = !match.LastTrickTie && played.PlayerID === match.LastTrickWinner;
-        return `
-          <div class="played-card played-card-replay${winner ? " played-card-winner" : ""}">
-            <span>${escapeHtml(playerName(match, played.PlayerID))}</span>
-            ${played.FaceDown ? `<span class="card-back small" aria-hidden="true"></span>` : renderCard(played.Card, "small", played.Card.Rank === match.CurrentHand.Manilha)}
-          </div>
-        `;
-      }).join("");
-    }
-    return "";
+    const isMyTurn = match.TurnPlayer === match.CurrentPlayerIdx && match.PendingRaiseFor < 0;
+    const waitText = isMyTurn
+      ? t("game_table_waiting")
+      : t("game_table_waiting_other", playerName(match, match.TurnPlayer));
+    return `
+      <div class="round-pile round-pile-empty">
+        <div class="empty-felt-prompt">
+          <span class="empty-felt-card-slot" aria-hidden="true"></span>
+          <p>${escapeHtml(waitText)}</p>
+        </div>
+      </div>
+    `;
   }
-  return roundCards.map((played, index) => {
-    const key = roundCardKey(match.CurrentHand.Round, played, index);
+
+  const leadInfo = evaluateLeadingPlayedCard(roundCards, match.CurrentHand.Manilha);
+
+  const cardsHtml = roundCards.map((played, index) => {
+    const seatPos = positions.get(played.PlayerID) || "top";
+    const key = roundCardKey(match, played, index);
+    const shouldAnimate = consumeCardAnimationKey(key);
+    const isLeading = roundCards.length > 1 && !leadInfo.isTie && leadInfo.winnerIndex === index;
+    const isTiedLead = roundCards.length > 1 && leadInfo.isTie && leadInfo.tiedIndices.has(index);
+
     const classes = [
       "played-card",
-      state.uiFx.playedCardKeys.has(key) ? "played-card-enter" : "",
+      `played-from-${seatPos}`,
+      shouldAnimate ? "played-card-enter" : "",
+      isLeading ? "played-card-leading" : "",
     ].filter(Boolean).join(" ");
+
     const faceDownClasses = [
       "card-back",
       "small",
-      state.uiFx.flippedCardKeys.has(key) ? "card-back-flip-in" : "",
+      shouldAnimate && played.FaceDown ? "card-back-flip-in" : "",
     ].filter(Boolean).join(" ");
+
+    const statusBadge = isLeading
+      ? `<span class="played-card-status played-card-status-lead">${escapeHtml(t("trick_leading_card_badge"))}</span>`
+      : isTiedLead
+        ? `<span class="played-card-status played-card-status-tie">${escapeHtml(t("trick_tied_card_badge"))}</span>`
+        : "";
+
     return `
       <div class="${classes}">
-        <span>${escapeHtml(playerName(match, played.PlayerID))}</span>
+        <span class="played-card-owner">${escapeHtml(playerName(match, played.PlayerID))}</span>
         ${played.FaceDown ? `<span class="${faceDownClasses}" aria-hidden="true"></span>` : renderCard(played.Card, "small", played.Card.Rank === match.CurrentHand.Manilha)}
+        ${statusBadge}
       </div>
     `;
   }).join("");
+
+  return `<div class="round-pile round-pile-spatial">${cardsHtml}</div>`;
+}
+
+function evaluateLeadingPlayedCard(
+  roundCards: PlayedCard[],
+  manilha: string,
+): { winnerIndex: number; isTie: boolean; tiedIndices: Set<number> } {
+  let bestPower = -1;
+  let winnerIndex = -1;
+  let isTie = false;
+  const tiedIndices = new Set<number>();
+
+  roundCards.forEach((played, idx) => {
+    if (played.FaceDown || !played.Card.Rank) {
+      return;
+    }
+    const power = cardPower(played.Card, manilha);
+    if (power > bestPower) {
+      bestPower = power;
+      winnerIndex = idx;
+      isTie = false;
+      tiedIndices.clear();
+      tiedIndices.add(idx);
+    } else if (power === bestPower && bestPower > 0) {
+      isTie = true;
+      tiedIndices.add(idx);
+    }
+  });
+
+  return { winnerIndex, isTie, tiedIndices };
+}
+
+function cardPower(card: Card, manilha: string): number {
+  if (manilha && card.Rank === manilha) {
+    return 100 + (MANILHA_SUIT_POWER[card.Suit] || 0);
+  }
+  return NORMAL_RANK_POWER[card.Rank] || 0;
+}
+
+function formatTrickRevealHeadline(match: MatchSnapshot, reveal: TrickRevealState): string {
+  if (reveal.tie) {
+    return t("trick_tie", reveal.round);
+  }
+  return t("trick_win", playerName(match, reveal.winner), reveal.round);
 }
 
 function renderTrickDots(match: MatchSnapshot): string {
@@ -1380,16 +1682,21 @@ function renderViraCorner(match: MatchSnapshot): string {
     return "";
   }
   const manilha = match.CurrentHand.Manilha || "-";
-  const viraKey = `${vira.Rank}${vira.Suit || ""}`;
-  const isNewVira = state.uiFx.lastViraKey !== viraKey;
-  state.uiFx.lastViraKey = viraKey;
+  const viraKey = `${match.MatchPoints["0"] || 0}:${match.MatchPoints["1"] || 0}:${vira.Rank}:${vira.Suit}`;
+  const isNewVira = state.uiFx.animatedViraKey !== viraKey;
+  if (isNewVira) {
+    state.uiFx.animatedViraKey = viraKey;
+  }
   const revealClass = isNewVira ? " vira-card-reveal" : "";
   const shimmerClass = isNewVira ? " vira-shimmer" : "";
   return `
     <div class="table-vira-corner${shimmerClass}">
       <span class="table-vira-label">${escapeHtml(t("game_vira"))}</span>
-      <span class="vira-card-wrap${revealClass}">${renderCard(vira, "small")}</span>
-      <span class="manilha-badge" title="${escapeHtml(t("game_manilha_hint"))}: ${escapeHtml(t("game_manilha_detail"))}">${escapeHtml(t("game_manilha"))} · ${escapeHtml(manilha)}</span>
+      <div class="vira-deck-stack">
+        <span class="card-back small vira-deck-back" aria-hidden="true"></span>
+        <span class="vira-card-wrap${revealClass}">${renderCard(vira, "small")}</span>
+      </div>
+      <span class="manilha-badge" title="${escapeHtml(t("game_manilha_hint"))}: ${escapeHtml(t("game_manilha_detail"))}">★ ${escapeHtml(t("game_manilha"))} ${escapeHtml(manilha)}</span>
     </div>
   `;
 }
@@ -1398,8 +1705,11 @@ function renderTrickPiles(match: MatchSnapshot): string {
   const localTeamId = localTeam(match);
   const piles = match.TrickPiles || [];
   const renderSide = (team: number, side: string, label: string): string => {
-    const packets = piles
-      .filter((pile) => pile.Team === team && pile.Cards.length > 0)
+    const teamPiles = piles.filter((pile) => pile.Team === team && pile.Cards.length > 0);
+    if (teamPiles.length === 0) {
+      return "";
+    }
+    const packets = teamPiles
       .map((pile, pileIndex) => {
         const cards = pile.Cards.map((played, cardIndex) => {
           const face = played.FaceDown
@@ -1412,27 +1722,43 @@ function renderTrickPiles(match: MatchSnapshot): string {
       .join("");
     return `
       <div class="trick-pile-side trick-pile-${side}">
-        <span class="trick-pile-label">${escapeHtml(label)}</span>
+        <span class="trick-pile-label">${escapeHtml(label)} (${teamPiles.length})</span>
         <div class="trick-pile-stack">${packets}</div>
       </div>
     `;
   };
-  return renderSide(localTeamId, "us", t("team_us")) + renderSide(localTeamId === 0 ? 1 : 0, "them", t("team_them"));
+  return renderSide(localTeamId, "us", t("game_piles_us")) + renderSide(localTeamId === 0 ? 1 : 0, "them", t("game_piles_them"));
 }
 
-function renderPlayableCard(card: Card, index: number, total: number, canPlay: boolean, canFaceDown: boolean, manilhaRank: string): string {
-  const key = handCardKey(card, index);
+function renderPlayableCard(
+  match: MatchSnapshot,
+  card: Card,
+  index: number,
+  total: number,
+  canPlay: boolean,
+  canFaceDown: boolean,
+  manilhaRank: string,
+): string {
+  const key = handCardKey(match, card);
+  const shouldDealIn = consumeCardAnimationKey(key);
   const isManilha = manilhaRank !== "" && card.Rank === manilhaRank;
   const classes = [
     "play-card",
-    canPlay ? "play-card-playable" : "",
-    state.uiFx.dealtCardKeys.has(key) ? "deal-in" : "",
+    canPlay ? "play-card-playable" : "play-card-locked",
+    shouldDealIn ? "deal-in" : "",
   ].filter(Boolean).join(" ");
   const style = `style="--card-index:${index}; --card-total:${total};"`;
   const cardFace = renderCard(card, "regular", isManilha);
 
   if (!canPlay) {
-    return `<div class="${classes} lock-card" ${style}>${cardFace}<span class="card-caption" aria-hidden="true">${escapeHtml(cardLabel(card))}</span></div>`;
+    return `
+      <div class="${classes}" ${style}>
+        <div class="lock-card">${cardFace}</div>
+        <div class="play-card-actions">
+          <span class="card-caption">${escapeHtml(cardLabel(card))}</span>
+        </div>
+      </div>
+    `;
   }
 
   return `
@@ -1442,51 +1768,31 @@ function renderPlayableCard(card: Card, index: number, total: number, canPlay: b
         <button class="card-button" type="submit" aria-label="${escapeHtml(`${t("game_play")} ${cardLabel(card)}`)}"${busyAttr(`play-${index}`)}>${cardFace}</button>
       </form>
       <div class="play-card-actions">
-        <span class="card-caption" aria-hidden="true">${escapeHtml(cardLabel(card))}</span>
-        ${canFaceDown ? `<form data-api-action="play" data-form-id="play-down-${index}"><input type="hidden" name="cardIndex" value="${index}"><input type="hidden" name="faceDown" value="true"><button class="ghost-button" type="submit" aria-label="${escapeHtml(`${t("game_face_down")} ${cardLabel(card)}`)}"${busyAttr(`play-down-${index}`)}>${buttonLabel(`play-down-${index}`, t("game_face_down"))}</button></form>` : ""}
+        ${canFaceDown
+          ? `<form data-api-action="play" data-form-id="play-down-${index}"><input type="hidden" name="cardIndex" value="${index}"><input type="hidden" name="faceDown" value="true"><button class="face-down-pill-btn" type="submit" aria-label="${escapeHtml(`${t("game_face_down")} ${cardLabel(card)}`)}"${busyAttr(`play-down-${index}`)}>${buttonLabel(`play-down-${index}`, t("game_face_down"))}</button></form>`
+          : `<span class="card-caption">${escapeHtml(cardLabel(card))}</span>`}
       </div>
     </div>
   `;
 }
 
-function renderTurnControls(canRaise: boolean, matchFinished: boolean): string {
+function renderTurnControls(canRaise: boolean, matchFinished: boolean, currentStake: number): string {
   if (matchFinished) {
     return `<form data-api-action="reset" data-form-id="reset"><button class="primary-button" type="submit"${busyAttr("reset")}>${buttonLabel("reset", t("game_play_again"))}</button></form>`;
   }
 
+  if (!canRaise) {
+    return "";
+  }
+
+  const targetStake = nextStake(currentStake);
+  const label = t("game_ask_raise_btn", raiseLabel(targetStake), targetStake);
   return `
     <div class="control-group">
-      ${canRaise ? `<form data-api-action="truco" data-form-id="truco"><button class="primary-button" type="submit"${busyAttr("truco")}>${buttonLabel("truco", t("game_truco"))}</button></form>` : ""}
-    </div>
-  `;
-}
-
-function renderRespondControls(canRaise: boolean, canAccept: boolean, canRefuse: boolean, pendingTo: number): string {
-  return `
-    <div class="control-group">
-      ${canRaise ? `<form data-api-action="truco" data-form-id="raise"><button class="primary-button" type="submit"${busyAttr("raise")}>${buttonLabel("raise", `${t("game_raise")} ${raiseLabel(nextStake(pendingTo))}`)}</button></form>` : ""}
-      ${canAccept ? `<form data-api-action="accept" data-form-id="accept"><button class="secondary-button" type="submit"${busyAttr("accept")}>${buttonLabel("accept", t("game_accept"))}</button></form>` : ""}
-      ${canRefuse ? `<form data-api-action="refuse" data-form-id="refuse"><button class="ghost-button danger" type="submit"${busyAttr("refuse")}>${buttonLabel("refuse", t("game_refuse"))}</button></form>` : ""}
-    </div>
-  `;
-}
-
-function renderNetworkPanel(bundle: SnapshotBundle): string {
-  const network = bundle.connection.network;
-  return `
-    <article class="surface-card telemetry-card">
-      <div class="card-head">
-        <h3>${escapeHtml(t("game_network"))}</h3>
-      </div>
-      <div class="telemetry-grid">
-        ${renderMetric(t("connection_status"), bundle.connection.status)}
-        ${renderMetric(t("connection_mode"), bundle.connection.is_online ? t("connection_online") : t("connection_offline"))}
-      </div>
-      <form class="chat-form" data-api-action="sendChat" data-form-id="sendChat">
-        <input name="message" type="text" autocomplete="off" placeholder="${escapeHtml(t("chat_placeholder"))}">
-        <button class="secondary-button" type="submit"${busyAttr("sendChat")}>${buttonLabel("sendChat", t("lobby_chat"))}</button>
+      <form data-api-action="truco" data-form-id="truco">
+        <button class="primary-button truco-call-button" type="submit"${busyAttr("truco")}>🔥 ${buttonLabel("truco", label)}</button>
       </form>
-    </article>
+    </div>
   `;
 }
 
@@ -1499,6 +1805,7 @@ function renderOverlay(match: MatchSnapshot, localTeamId: number): string {
       <div class="overlay-card overlay-card-${youWon ? "win" : "loss"}" role="dialog" aria-modal="true" aria-live="assertive" aria-labelledby="match-result-title">
         <p class="eyebrow">${escapeHtml(t("status_match_end"))}</p>
         <h3 id="match-result-title">${escapeHtml(youWon ? t("overlay_win") : t("overlay_loss"))}</h3>
+        <p class="overlay-subtitle">${escapeHtml(youWon ? t("overlay_win_sub") : t("overlay_loss_sub"))}</p>
         <div class="overlay-final-score">
           <div class="overlay-score-block overlay-score-us">
             <span>${escapeHtml(t("team_us"))}</span>
@@ -1510,9 +1817,18 @@ function renderOverlay(match: MatchSnapshot, localTeamId: number): string {
             <strong>${themScore}</strong>
           </div>
         </div>
-        <form data-api-action="reset" data-form-id="reset">
-          <button class="primary-button" type="submit"${busyAttr("reset")}>${buttonLabel("reset", t("game_play_again"))}</button>
-        </form>
+        <div class="overlay-actions">
+          ${!isOnlineMode() ? `
+            <form data-api-action="startGame" data-form-id="rematchGame">
+              <input type="hidden" name="name" value="${escapeHtml(state.playerName || t("name_placeholder"))}">
+              <input type="hidden" name="numPlayers" value="${match.NumPlayers}">
+              <button class="primary-button" type="submit"${busyAttr("rematchGame")}>${buttonLabel("rematchGame", t("game_new_match_btn"))}</button>
+            </form>
+          ` : ""}
+          <form data-api-action="reset" data-form-id="reset">
+            <button class="${isOnlineMode() ? "primary-button" : "ghost-button"}" type="submit"${busyAttr("reset")}>${buttonLabel("reset", t("game_play_again"))}</button>
+          </form>
+        </div>
       </div>
     </div>
   `;
@@ -1525,14 +1841,17 @@ function renderFxLayers(): string {
   if (state.uiFx.trucoCall && state.uiFx.trucoCall.until > now) {
     layers.push(`
       <div class="truco-flash-overlay" aria-live="polite" aria-atomic="true">
-        <div class="truco-flash-text">${escapeHtml(state.uiFx.trucoCall.text)}</div>
+        <div class="truco-flash-card">
+          <div class="truco-flash-text">${escapeHtml(state.uiFx.trucoCall.text)}</div>
+          ${state.uiFx.trucoCall.sub ? `<div class="truco-flash-sub">${escapeHtml(state.uiFx.trucoCall.sub)}</div>` : ""}
+        </div>
       </div>
     `);
   }
 
   if (state.uiFx.announcement && state.uiFx.announcement.until > now && !state.bundle?.match?.MatchFinished) {
     const announcement = state.uiFx.announcement;
-    const remaining = Math.max(200, announcement.until - now);
+    const remaining = Math.max(400, announcement.until - now);
     layers.push(`
       <div class="announcement-layer" aria-live="polite" aria-atomic="true">
         <div class="announcement-card announcement-${escapeHtml(announcement.kind)}" style="animation-duration:${remaining}ms">
@@ -1543,8 +1862,9 @@ function renderFxLayers(): string {
     `);
   }
 
-  if (state.uiFx.confettiUntil > now) {
-    const pieces = Array.from({ length: state.uiFx.confettiStrength > 1 ? 52 : 30 }, (_, index) => `
+  if (state.uiFx.confetti && state.uiFx.confetti.until > now) {
+    const count = state.uiFx.confetti.strength > 1 ? 48 : 28;
+    const pieces = Array.from({ length: count }, (_, index) => `
       <span class="confetti-piece" style="--piece:${index}; --hue:${(index * 37) % 360}; --drift:${index % 2 === 0 ? 1 : -1};"></span>
     `).join("");
     layers.push(`<div class="confetti-layer" aria-hidden="true">${pieces}</div>`);
@@ -1668,7 +1988,7 @@ function syncRefreshLoop(): void {
   }
 
   const view = currentView();
-  const delay = view === "game" && !isOnlineMode() ? 450 : isOnlineMode() ? 900 : 0;
+  const delay = view === "game" && !isOnlineMode() ? 420 : isOnlineMode() ? 850 : 0;
   if (delay === 0) {
     return;
   }
@@ -1679,11 +1999,14 @@ function syncRefreshLoop(): void {
         syncRefreshLoop();
         return;
       }
-      const sigBefore = state.renderSig || computeRenderSignature();
+      // Do not poll new snapshots from the backend while a trick resolution hold is playing out on screen
+      if (state.uiFx.trickReveal && state.uiFx.trickReveal.until > Date.now()) {
+        syncRefreshLoop();
+        return;
+      }
+      const prevViewSig = state.viewSig;
+      const prevFxSig = state.fxSig;
       if (shouldNudgeCpu()) {
-        // Safety net: the runtime advances CPU turns on its own 850ms ticker,
-        // but if the table looks stuck on a CPU turn, force a tick. The
-        // endpoint doubles as a snapshot fetch.
         const result = await sendRequest("autoCpuLoopTick", undefined);
         if (result.ok) {
           updateStateFromResult(result);
@@ -1692,7 +2015,7 @@ function syncRefreshLoop(): void {
         await syncSnapshot({ withEvents: true });
       }
       state.error = "";
-      if (computeRenderSignature() !== sigBefore) {
+      if (computeViewSignature() !== prevViewSig || computeFxSignature() !== prevFxSig) {
         render();
       } else {
         syncRefreshLoop();
@@ -1721,22 +2044,40 @@ function shouldNudgeCpu(): boolean {
   if (!actor || !actor.CPU || actor.ID === localId) {
     return false;
   }
-  return Date.now() - state.lastMatchChangeAt > 2500;
+  return Date.now() - state.lastMatchChangeAt > 4200;
 }
 
-function computeRenderSignature(): string {
+function computeViewSignature(): string {
+  const now = Date.now();
+  const trickHoldActive = state.uiFx.trickReveal !== null && state.uiFx.trickReveal.until > now;
   return JSON.stringify([
-    state.bundle,
-    state.events,
+    state.bundle?.mode,
+    activeDisplayMatch(),
+    state.bundle?.lobby,
+    state.bundle?.ui,
+    state.bundle?.connection,
+    trickHoldActive ? state.uiFx.trickReveal?.seq : 0,
+    state.events.length,
     state.error,
     state.busyForm,
     state.locale,
     state.initialized,
+    state.drawerOpen,
+  ]);
+}
+
+function computeFxSignature(): string {
+  const now = Date.now();
+  return JSON.stringify([
+    state.uiFx.trucoCall && state.uiFx.trucoCall.until > now ? state.uiFx.trucoCall.id : 0,
+    state.uiFx.announcement && state.uiFx.announcement.until > now ? state.uiFx.announcement.id : 0,
+    state.uiFx.confetti && state.uiFx.confetti.until > now ? state.uiFx.confetti.id : 0,
+    state.bundle?.match?.MatchFinished === true,
   ]);
 }
 
 function syncMeasuredBlocks(): void {
-  const blocks = root.querySelectorAll<HTMLElement>("[data-pretext-block]");
+  const blocks = viewLayer.querySelectorAll<HTMLElement>("[data-pretext-block]");
   for (const block of blocks) {
     const width = block.clientWidth;
     if (width <= 0) {
@@ -1762,49 +2103,19 @@ function updateVisualFx(
   nextMatch: MatchSnapshot | undefined,
   newEvents: RuntimeEvent[],
 ): void {
-  if (newEvents.length > 0) {
-    triggerPulse(280);
-    if (newEvents.some((event) => isIntenseEvent(event))) {
-      triggerShake(420);
-      triggerPulse(520);
-    }
+  if (newEvents.some((event) => isIntenseEvent(event))) {
+    triggerShake(420);
+    triggerPulse(480);
   }
 
   if (!nextMatch) {
     return;
   }
 
-  const previousHand = playerHand(previousMatch, previousMatch?.CurrentPlayerIdx ?? -1);
-  const nextHand = playerHand(nextMatch, nextMatch.CurrentPlayerIdx);
-  const previousHandKeys = new Set(previousHand.map((card, index) => handCardKey(card, index)));
-  const nextHandKeys = nextHand.map((card, index) => handCardKey(card, index));
-  const dealtKeys = nextHandKeys.filter((key) => !previousHandKeys.has(key));
-  if (dealtKeys.length > 0) {
-    state.uiFx.dealtCardKeys = new Set(dealtKeys);
-  }
-
-  const previousRound = previousMatch?.CurrentHand.RoundCards || [];
   const nextRound = nextMatch.CurrentHand.RoundCards || [];
-  const previousRoundKeys = new Set(
-    previousRound.map((played, index) => roundCardKey(previousMatch?.CurrentHand.Round || 0, played, index)),
-  );
-  const playedKeys: string[] = [];
-  const flippedKeys: string[] = [];
-  nextRound.forEach((played, index) => {
-    const key = roundCardKey(nextMatch.CurrentHand.Round, played, index);
-    if (!previousRoundKeys.has(key)) {
-      playedKeys.push(key);
-      if (played.FaceDown) {
-        flippedKeys.push(key);
-      }
-    }
-  });
-  if (playedKeys.length > 0) {
-    state.uiFx.playedCardKeys = new Set(playedKeys);
-    triggerPulse(380);
-  }
-  if (flippedKeys.length > 0) {
-    state.uiFx.flippedCardKeys = new Set(flippedKeys);
+  const previousRound = previousMatch?.CurrentHand.RoundCards || [];
+  if (nextRound.length > previousRound.length) {
+    triggerPulse(340);
   }
 
   if (nextMatch.PendingRaiseFor >= 0) {
@@ -1813,61 +2124,128 @@ function updateVisualFx(
     const pendingChanged = previousMatch?.PendingRaiseFor !== nextMatch.PendingRaiseFor
       || previousMatch?.PendingRaiseTo !== nextMatch.PendingRaiseTo;
     if (pendingChanged && signal !== state.uiFx.lastRaiseSignal) {
-      showTrucoCallFlash(raiseLabel(pendingTo));
+      const requester = nextMatch.CurrentHand.RaiseRequester >= 0
+        ? playerName(nextMatch, nextMatch.CurrentHand.RaiseRequester)
+        : "";
+      showTrucoCallFlash(raiseLabel(pendingTo), requester);
       state.uiFx.lastRaiseSignal = signal;
     }
   }
 
-  if (previousMatch) {
-    announceTrickResult(previousMatch, nextMatch);
-    announceHandResult(previousMatch, nextMatch);
-  }
-
-  if (previousMatch && previousMatch.CurrentHand.WinnerTeam < 0 && nextMatch.CurrentHand.WinnerTeam >= 0) {
-    triggerConfetti(1800, 1);
-  }
-  if (previousMatch && !previousMatch.MatchFinished && nextMatch.MatchFinished) {
-    triggerConfetti(3000, 2);
-    triggerShake(580);
-    triggerPulse(900);
-  }
-}
-
-function announceTrickResult(previousMatch: MatchSnapshot, nextMatch: MatchSnapshot): void {
-  if (nextMatch.LastTrickSeq <= previousMatch.LastTrickSeq || nextMatch.LastTrickRound <= 0) {
+  if (!previousMatch) {
     return;
   }
-  if (nextMatch.LastTrickTie) {
-    showAnnouncement(t("trick_tie", nextMatch.LastTrickRound), "", "tie", 2500);
-    return;
-  }
-  showAnnouncement(
-    t("trick_win", playerName(nextMatch, nextMatch.LastTrickWinner), nextMatch.LastTrickRound),
-    "",
-    "trick",
-    2500,
-  );
-}
 
-function announceHandResult(previousMatch: MatchSnapshot, nextMatch: MatchSnapshot): void {
   const localTeamId = localTeam(nextMatch);
   const opponentTeamId = localTeamId === 0 ? 1 : 0;
-  const usBefore = teamScore(previousMatch, localTeamId);
-  const themBefore = teamScore(previousMatch, opponentTeamId);
-  const usDelta = teamScore(nextMatch, localTeamId) - usBefore;
-  const themDelta = teamScore(nextMatch, opponentTeamId) - themBefore;
-  if (usDelta <= 0 && themDelta <= 0) {
+  const usDelta = teamScore(nextMatch, localTeamId) - teamScore(previousMatch, localTeamId);
+  const themDelta = teamScore(nextMatch, opponentTeamId) - teamScore(previousMatch, opponentTeamId);
+  const handScored = usDelta > 0 || themDelta > 0;
+  const trickResolved = nextMatch.LastTrickSeq > previousMatch.LastTrickSeq && nextMatch.LastTrickCards.length > 0;
+
+  if (trickResolved) {
+    const holdMatch = handScored ? buildTrickHoldSnapshot(previousMatch, nextMatch) : null;
+    state.uiFx.trickReveal = {
+      seq: nextMatch.LastTrickSeq,
+      cards: nextMatch.LastTrickCards,
+      winner: nextMatch.LastTrickWinner,
+      team: nextMatch.LastTrickTeam,
+      tie: nextMatch.LastTrickTie,
+      round: nextMatch.LastTrickRound,
+      manilha: previousMatch.CurrentHand.Manilha,
+      until: Date.now() + 1500,
+      holdMatch,
+    };
+
+    if (handScored) {
+      const sub = nextMatch.MatchFinished
+        ? ""
+        : t("banner_new_hand", cardLabel(nextMatch.CurrentHand.Vira), nextMatch.CurrentHand.Manilha || "-");
+      state.uiFx.pendingHandBanner = {
+        title: usDelta > 0 ? t("banner_hand_us", usDelta) : t("banner_hand_them", themDelta),
+        sub,
+        kind: usDelta > 0 ? "hand-us" : "hand-them",
+        durationMs: 2800,
+        confettiMs: nextMatch.MatchFinished ? 3200 : usDelta > 0 ? 1600 : 0,
+      };
+    } else {
+      const trickTitle = nextMatch.LastTrickTie
+        ? t("trick_tie", nextMatch.LastTrickRound)
+        : t("trick_win", playerName(nextMatch, nextMatch.LastTrickWinner), nextMatch.LastTrickRound);
+      showAnnouncement(trickTitle, "", nextMatch.LastTrickTie ? "tie" : "trick", 1500);
+    }
     return;
   }
-  const sub = nextMatch.MatchFinished
-    ? ""
-    : t("banner_new_hand", cardLabel(nextMatch.CurrentHand.Vira), nextMatch.CurrentHand.Manilha || "-");
-  if (usDelta > 0) {
-    showAnnouncement(t("banner_hand_us", usDelta), sub, "hand-us", 3500);
-    triggerConfetti(1400, 1);
-  } else {
-    showAnnouncement(t("banner_hand_them", themDelta), sub, "hand-them", 3500);
+
+  if (handScored) {
+    // Hand ended without a trick resolution (someone folded to Truco)
+    const sub = nextMatch.MatchFinished
+      ? ""
+      : t("banner_new_hand", cardLabel(nextMatch.CurrentHand.Vira), nextMatch.CurrentHand.Manilha || "-");
+    if (usDelta > 0) {
+      showAnnouncement(t("banner_hand_us", usDelta), sub, "hand-us", 2800);
+      triggerConfetti(nextMatch.MatchFinished ? 3200 : 1600, nextMatch.MatchFinished ? 2 : 1);
+    } else {
+      showAnnouncement(t("banner_hand_them", themDelta), sub, "hand-them", 2800);
+    }
+  } else if (!previousMatch.MatchFinished && nextMatch.MatchFinished) {
+    triggerConfetti(3200, 2);
+    triggerShake(480);
   }
+}
+
+function buildTrickHoldSnapshot(previousMatch: MatchSnapshot, nextMatch: MatchSnapshot): MatchSnapshot {
+  const lastCards = nextMatch.LastTrickCards || [];
+  const finalPlayed = lastCards[lastCards.length - 1];
+  const players = previousMatch.Players.map((player) => {
+    if (!finalPlayed || player.ID !== finalPlayed.PlayerID) {
+      return { ...player, Hand: [...player.Hand] };
+    }
+    const remaining = [...player.Hand];
+    const matchIdx = remaining.findIndex(
+      (c) => c.Rank === finalPlayed.Card.Rank && c.Suit === finalPlayed.Card.Suit,
+    );
+    if (matchIdx >= 0) {
+      remaining.splice(matchIdx, 1);
+    } else if (remaining.length > 0) {
+      remaining.pop();
+    }
+    return { ...player, Hand: remaining };
+  });
+
+  const trickResult = nextMatch.LastTrickTie ? -1 : nextMatch.LastTrickTeam;
+  return {
+    ...previousMatch,
+    Players: players,
+    CurrentHand: {
+      ...previousMatch.CurrentHand,
+      RoundCards: [],
+      TrickResults: [...previousMatch.CurrentHand.TrickResults, trickResult],
+      PendingRaiseFor: -1,
+    },
+    PendingRaiseFor: -1,
+    LastTrickCards: nextMatch.LastTrickCards,
+    LastTrickSeq: nextMatch.LastTrickSeq,
+    LastTrickTeam: nextMatch.LastTrickTeam,
+    LastTrickWinner: nextMatch.LastTrickWinner,
+    LastTrickTie: nextMatch.LastTrickTie,
+    LastTrickRound: nextMatch.LastTrickRound,
+    Logs: nextMatch.Logs,
+  };
+}
+
+function consumeCardAnimationKey(key: string): boolean {
+  if (state.uiFx.animatedCardKeys.has(key)) {
+    return false;
+  }
+  state.uiFx.animatedCardKeys.add(key);
+  if (state.uiFx.animatedCardKeys.size > 240) {
+    const first = state.uiFx.animatedCardKeys.values().next().value;
+    if (first) {
+      state.uiFx.animatedCardKeys.delete(first);
+    }
+  }
+  return true;
 }
 
 function isIntenseEvent(event: RuntimeEvent): boolean {
@@ -1885,29 +2263,46 @@ function isIntenseEvent(event: RuntimeEvent): boolean {
 }
 
 function triggerShake(durationMs: number): void {
-  state.uiFx.shakeUntil = Math.max(state.uiFx.shakeUntil, Date.now() + durationMs);
+  window.clearTimeout(shakeTimeout);
+  viewLayer.classList.add("fx-shake");
+  shakeTimeout = window.setTimeout(() => {
+    viewLayer.classList.remove("fx-shake");
+  }, durationMs);
 }
 
 function triggerPulse(durationMs: number): void {
-  state.uiFx.pulseUntil = Math.max(state.uiFx.pulseUntil, Date.now() + durationMs);
+  window.clearTimeout(pulseTimeout);
+  viewLayer.classList.add("fx-pulse");
+  pulseTimeout = window.setTimeout(() => {
+    viewLayer.classList.remove("fx-pulse");
+  }, durationMs);
 }
 
 function triggerConfetti(durationMs: number, strength: number): void {
-  state.uiFx.confettiUntil = Math.max(state.uiFx.confettiUntil, Date.now() + durationMs);
-  state.uiFx.confettiStrength = Math.max(state.uiFx.confettiStrength, strength);
+  fxSeq++;
+  state.uiFx.confetti = {
+    id: fxSeq,
+    strength,
+    until: Date.now() + durationMs,
+  };
 }
 
-function showTrucoCallFlash(callLabel: string): void {
+function showTrucoCallFlash(callLabel: string, requesterName: string): void {
+  fxSeq++;
   state.uiFx.trucoCall = {
+    id: fxSeq,
     text: `${callLabel.toUpperCase()}!`,
-    until: Date.now() + 1600,
+    sub: requesterName ? t("game_call_banner_title", requesterName, callLabel) : "",
+    until: Date.now() + 1450,
   };
   triggerShake(380);
-  triggerPulse(600);
+  triggerPulse(520);
 }
 
 function showAnnouncement(title: string, sub: string, kind: string, durationMs: number): void {
+  fxSeq++;
   state.uiFx.announcement = {
+    id: fxSeq,
     title,
     sub,
     kind,
@@ -2034,19 +2429,16 @@ function lastTrickCopy(match: MatchSnapshot): string {
   return t("trick_win", playerName(match, match.LastTrickWinner), match.LastTrickRound);
 }
 
-function handCardKey(card: Card, index: number): string {
-  return `${index}:${card.Rank}:${card.Suit}`;
+function handIdentity(match: MatchSnapshot): string {
+  return `${match.MatchPoints["0"] || 0}:${match.MatchPoints["1"] || 0}:${match.CurrentHand.Vira.Rank}:${match.CurrentHand.Vira.Suit}`;
 }
 
-function roundCardKey(round: number, played: PlayedCard, index: number): string {
-  return `${round}:${index}:${played.PlayerID}:${played.Card.Rank}:${played.Card.Suit}:${played.FaceDown ? "down" : "up"}`;
+function handCardKey(match: MatchSnapshot, card: Card): string {
+  return `deal:${handIdentity(match)}:${card.Rank}:${card.Suit}`;
 }
 
-function playerHand(match: MatchSnapshot | undefined, playerId: number): Card[] {
-  if (!match) {
-    return [];
-  }
-  return match.Players.find((player) => player.ID === playerId)?.Hand || [];
+function roundCardKey(match: MatchSnapshot, played: PlayedCard, index: number): string {
+  return `play:${handIdentity(match)}:${match.CurrentHand.Round}:${index}:${played.PlayerID}:${played.Card.Rank}:${played.Card.Suit}:${played.FaceDown ? "down" : "up"}`;
 }
 
 function playerName(match: MatchSnapshot, playerId: number): string {
@@ -2091,7 +2483,35 @@ function raiseLabel(value: number): string {
   }
 }
 
+function formatConnectionStatus(status: string): string {
+  switch (status) {
+    case "host_lobby":
+      return t("lobby_status_host_lobby");
+    case "client_lobby":
+      return t("lobby_status_client_lobby");
+    case "host_match":
+    case "client_match":
+      return t("lobby_status_online_match");
+    default:
+      return status;
+  }
+}
+
+function formatRoleLabel(role: string): string {
+  switch (role) {
+    case "partner":
+      return t("role_partner");
+    case "opponent":
+      return t("role_opponent");
+    default:
+      return t("role_auto");
+  }
+}
+
 function cardLabel(card: Card): string {
+  if (!card || !card.Rank) {
+    return t("game_covered_card");
+  }
   return t("card_of", card.Rank, t(`suit_${card.Suit}`));
 }
 
@@ -2110,27 +2530,13 @@ function suitSymbol(suit: string): string {
   }
 }
 
-function protocolLabel(network?: SnapshotBundle["connection"]["network"]): string {
-  if (!network) {
-    return "-";
-  }
-  if (network.negotiated_protocol_version) {
-    return `v${network.negotiated_protocol_version}`;
-  }
-  const versions = Object.values(network.seat_protocol_versions || {}).filter((value) => value > 0);
-  if (versions.length === 0) {
-    return "-";
-  }
-  return Array.from(new Set(versions)).sort((a, b) => a - b).map((value) => `v${value}`).join(", ");
-}
-
 function seatPositions(match: MatchSnapshot): Map<number, string> {
   const positions = new Map<number, string>();
   const local = match.CurrentPlayerIdx;
-  const layout = match.NumPlayers === 2 ? ["bottom", "top"] : ["bottom", "right", "top", "left"];
+  const layoutOrder = match.NumPlayers === 2 ? ["bottom", "top"] : ["bottom", "right", "top", "left"];
   for (const player of match.Players) {
     const offset = (player.ID - local + match.NumPlayers) % match.NumPlayers;
-    positions.set(player.ID, layout[offset] || "top");
+    positions.set(player.ID, layoutOrder[offset] || "top");
   }
   return positions;
 }
